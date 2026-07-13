@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HP Robot Customizer</title>
+  <meta name="description" content="Standalone HP Robot Customizer">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="./styles/app.css">
+</head>
+<body>
+  <main class="page-shell">
+    <div id="viewer-container" aria-label="HP Robot Customizer">
+      <div id="skeleton" class="u-hidden" aria-hidden="true"></div>
+      <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+      <div id="rotate-overlay" class="rotate-overlay" role="dialog" aria-modal="true" aria-labelledby="rotate-title" aria-describedby="rotate-desc" tabindex="-1">
+        <div id="rotate-card">
+          <div id="rotate-icon"><span class="material-icons" aria-hidden="true">screen_rotation</span></div>
+          <div id="rotate-title">Rotate to landscape</div>
+          <p id="rotate-desc">This viewer is landscape-first. Please rotate your device for the best experience.</p>
+          <div class="rotate-actions">
+            <button id="rotate-dismiss" class="rotate-btn">Use anyway (this session)</button>
+            <button id="rotate-never" class="rotate-btn">Don’t show again</button>
+            <button id="rotate-help" class="rotate-btn primary">Got it</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="consent-overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title" tabindex="-1">
+        <div id="consent-card">
+          <h2 id="consent-title">Terms &amp; Conditions</h2>
+          <div id="consent-text">
+            <p>The file you are going to download is for personal and educational use only. Copyright MORAVIA Consulting s.r.o., Brno, CZ.</p>
+            <p>Any other use is prohibited without permission. By downloading, you accept these terms and conditions.</p>
+            <p>By downloading 3D files, manuals, textbooks, lessons, software, or any other material from the HP Robots ecosystem you confirm they are intended for personal or educational use only.</p>
+            <p>Any other use is prohibited without the permission of MORAVIA Consulting spol. s r.o. Any violation may result in claims for damages.</p>
+            <p>In case of any questions please contact info@moravia-consulting.com.</p>
+          </div>
+          <label id="consent-checkbox-container">
+            <input type="checkbox" id="consent-checkbox">
+            <span>I accept the terms and conditions</span>
+          </label>
+          <div class="consent-actions">
+            <button id="consent-cancel" class="rotate-btn">Cancel</button>
+            <button id="consent-confirm" class="rotate-btn primary" disabled>Continue</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="exit-maximize" class="btn btn--lg" title="Exit maximized view" aria-label="Exit maximized view">
+        <span class="material-icons">close_fullscreen</span>
+      </button>
+
+      <div id="preset-menu" class="preset-menu" role="group" aria-label="Preset configurations">
+        <button id="preset-toggle" class="preset-toggle" aria-haspopup="listbox" aria-expanded="false" aria-label="Active preset: Starter Kit">
+          <span class="material-icons">layers</span>
+          <span id="preset-active-label" class="preset-label">Starter Kit</span>
+          <span class="material-icons caret">expand_more</span>
+        </button>
+        <div id="preset-options" class="preset-options" role="listbox" aria-label="Preset configurations">
+          <button class="preset-option active" data-preset="starter" role="option" aria-selected="true">
+            <span class="option-title">Starter Kit</span>
+            <span class="option-desc">Essentials, advanced hidden</span>
+          </button>
+          <button class="preset-option" data-preset="invent" role="option" aria-selected="false">
+            <span class="option-title">Walk and Roll</span>
+            <span class="option-desc">Invent expansion kit</span>
+          </button>
+          <button class="preset-option" data-preset="sensor" role="option" aria-selected="false">
+            <span class="option-title">Sensor Scout</span>
+            <span class="option-desc">Dual sensors with RGB face</span>
+          </button>
+          <button class="preset-option" data-preset="showtime" role="option" aria-selected="false">
+            <span class="option-title">Showtime Parade</span>
+            <span class="option-desc">MP3 top, matrix face and hat</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="controls-toggle" role="tablist" aria-label="Customizer sections">
+        <button id="show-essential" class="toggle-btn active" role="tab" aria-selected="true">
+          <span class="material-icons">tune</span>&nbsp;Essential
+        </button>
+        <button id="show-advanced" class="toggle-btn" role="tab" aria-selected="false">
+          <span class="material-icons">construction</span>&nbsp;Advanced
+        </button>
+      </div>
+
+      <div id="info-container" class="u-glass" role="group" aria-label="Viewer actions">
+        <button id="infoBtn" class="btn btn--lg" title="Info" aria-haspopup="dialog" aria-expanded="false">
+          <span class="material-icons">info</span>
+        </button>
+        <div id="info-tooltip" role="dialog" aria-label="About Customizer">
+          HP Robot Customizer standalone<br>
+          <a href="#" id="startTourLink">Quick tour</a>
+        </div>
+
+        <div id="action-buttons">
+          <button id="fullscreenBtn" class="btn btn--lg" title="Fullscreen" aria-label="Toggle fullscreen">
+            <span class="material-icons">fullscreen</span>
+          </button>
+          <button id="resetBtn" class="btn btn--lg" title="Reset View" aria-label="Reset camera">
+            <span class="material-icons">refresh</span>
+          </button>
+          <button id="factoryResetBtn" class="btn btn--lg" title="Reset Build" aria-label="Reset build to default">
+            <span class="material-icons">restart_alt</span>
+          </button>
+          <button id="randomizeBtn" class="btn btn--lg" title="Randomize Parts" aria-label="Randomize all parts">
+            <span class="material-icons">casino</span>
+          </button>
+          <div id="download-group" role="group" aria-label="Downloads">
+            <button id="download-primary" class="btn btn--lg" title="Download STEP" aria-label="Download STEP">
+              <span class="material-icons">download</span>
+            </button>
+            <button id="download-toggle" class="btn btn--lg" title="More formats" aria-haspopup="menu" aria-expanded="false" aria-controls="download-menu">
+              <span class="material-icons">arrow_drop_down</span>
+            </button>
+            <div id="download-menu" role="menu" aria-label="Download options">
+              <button id="downloadGlbBtn" role="menuitem">Download GLB files</button>
+              <button id="download3mfBtn" role="menuitem">Download 3MF files</button>
+            </div>
+          </div>
+          <div id="slicer-group" role="group" aria-label="Preferred slicer">
+            <button id="slicer-toggle" class="btn btn--lg" title="Preferred slicer" aria-haspopup="menu" aria-expanded="false" aria-controls="slicer-menu">
+              <span class="slicer-badge" id="slicer-badge-current" data-slicer="orca" aria-hidden="true">O</span>
+              <span class="material-icons caret">arrow_drop_down</span>
+            </button>
+            <div id="slicer-menu" role="menu" aria-label="Slicer options">
+              <button type="button" class="slicer-menu-item" data-slicer="orca" role="menuitemradio" aria-checked="true">
+                <span class="slicer-badge" data-slicer="orca" aria-hidden="true">O</span>
+                <span>OrcaSlicer</span>
+              </button>
+              <button type="button" class="slicer-menu-item" data-slicer="prusa" role="menuitemradio" aria-checked="false">
+                <span class="slicer-badge" data-slicer="prusa" aria-hidden="true">P</span>
+                <span>PrusaSlicer</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <span class="combo-chip" id="comboChip">Combos: —</span>
+      </div>
+
+      <div class="model-controls essential" id="panel-essential" role="tabpanel" aria-labelledby="show-essential"></div>
+      <div class="model-controls advanced" id="panel-advanced" role="tabpanel" aria-labelledby="show-advanced" style="display:none"></div>
+    </div>
+  </main>
+
+  <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.156.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.156.1/examples/jsm/"
+    }
+  }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script type="module" src="./scripts/app.js"></script>
+</body>
+</html>

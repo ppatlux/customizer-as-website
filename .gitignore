@@ -1,0 +1,4 @@
+exports/
+.dbg/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HP Robot Engraving Tool</title>
+  <meta name="description" content="SVG engraving editor for the HP Robot top template">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="./styles/engrave.css">
+</head>
+<body>
+  <main class="engrave-shell">
+    <div id="viewer-container">
+      <div id="preset-menu" class="engrave-header-card" role="group" aria-label="Engraving header">
+        <button id="backCustomizerBtn" class="preset-toggle" type="button" aria-label="Back to customizer">
+          <span class="material-icons">arrow_back</span>
+          <span class="preset-label">Back to Customizer</span>
+        </button>
+        <span class="engrave-badge" id="partBadge">Blank top ready</span>
+      </div>
+
+      <section class="engrave-stage-card">
+        <div id="viewer" aria-label="Engraving preview"></div>
+        <div class="viewer-hint">
+          <span class="swatch model"></span><span>Base part</span>
+          <span class="swatch logo"></span><span>Logo cutter preview</span>
+        </div>
+      </section>
+
+      <div id="progressOverlay" class="engrave-progress-overlay" hidden aria-hidden="true">
+        <div class="engrave-progress-card" role="status" aria-live="polite">
+          <div class="engrave-progress-spinner" aria-hidden="true"></div>
+          <p class="engrave-progress-kicker">Working</p>
+          <strong id="progressTitle">Preparing preview...</strong>
+          <p id="progressDetail" class="engrave-note">Building the cutter geometry.</p>
+        </div>
+      </div>
+
+      <div id="panel-essential" class="model-controls essential engrave-controls" role="group" aria-label="Engraving controls">
+        <div class="model-section">
+          <div class="model-controls-row">
+            <span class="model-label">Logo</span>
+          </div>
+          <input id="svgFileInput" type="file" accept=".svg,image/svg+xml" hidden multiple>
+          <div class="engrave-button-row">
+            <button id="uploadSvgBtn" class="top-engrave-btn" type="button">
+              <span class="material-icons" aria-hidden="true">upload_file</span>
+              <span>Add SVG</span>
+            </button>
+            <button id="removeSvgBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button" disabled>
+              <span class="material-icons" aria-hidden="true">delete</span>
+              <span>Delete Selected</span>
+            </button>
+          </div>
+          <div id="svgLayerList" class="engrave-layer-list" aria-label="SVG layers"></div>
+          <p class="engrave-note" id="svgName">No SVG layers loaded yet.</p>
+        </div>
+
+        <div class="model-section">
+          <div class="model-controls-row">
+            <span class="model-label">Placement</span>
+          </div>
+          <div class="pill-container">
+            <button class="btn btn--sm btn--ghost engrave-mode-btn active" id="moveModeBtn" type="button" aria-label="Move logo">
+              <span class="material-icons">open_with</span>
+            </button>
+            <button class="btn btn--sm btn--ghost engrave-mode-btn" id="rotateModeBtn" type="button" aria-label="Rotate logo">
+              <span class="material-icons">rotate_right</span>
+            </button>
+            <button id="centerLogoBtn" class="btn btn--sm btn--ghost" type="button" aria-label="Center logo">
+              <span class="material-icons">center_focus_strong</span>
+            </button>
+          </div>
+          <label class="engrave-range-label" for="scaleRange">
+            <span>Size</span>
+            <output id="scaleValue">100%</output>
+          </label>
+          <input id="scaleRange" type="range" min="30" max="400" step="1" value="100">
+          <label class="engrave-range-label" for="posXRange">
+            <span>Left / Right</span>
+            <output id="posXValue">0.0 mm</output>
+          </label>
+          <input id="posXRange" type="range" min="-20" max="20" step="0.1" value="0">
+          <label class="engrave-range-label" for="posZRange">
+            <span>Front / Back</span>
+            <output id="posZValue">0.0 mm</output>
+          </label>
+          <input id="posZRange" type="range" min="-20" max="20" step="0.1" value="0">
+          <label class="engrave-range-label" for="posYRange">
+            <span>Z Offset</span>
+            <output id="posYValue">12.6 mm</output>
+          </label>
+          <input id="posYRange" type="range" min="0.0" max="20.0" step="0.1" value="12.6">
+          <label class="engrave-range-label" for="depthRange">
+            <span>Depth</span>
+            <output id="depthValue">1.2 mm</output>
+          </label>
+          <input id="depthRange" type="range" min="0.4" max="2.4" step="0.1" value="1.2">
+          <p class="engrave-note">Use the sliders for precise placement, or drag the logo directly in the viewer. Rotation stays constrained to the top surface.</p>
+        </div>
+
+        <div class="model-section">
+          <div class="model-controls-row">
+            <span class="model-label">Output</span>
+          </div>
+          <button id="previewCutBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button">
+            <span class="material-icons">visibility</span>
+            <span>Preview Cut</span>
+          </button>
+          <button id="backToEditBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button" disabled>
+            <span class="material-icons">edit</span>
+            <span>Back to Edit</span>
+          </button>
+          <button id="downloadStlBtn" class="top-engrave-btn" type="button">
+            <span class="material-icons">download</span>
+            <span>Download STL</span>
+          </button>
+          <div id="slicerSendGroup" class="slicer-send-group">
+            <button id="sendToSlicerBtn" class="top-engrave-btn top-engrave-btn--secondary slicer-send-btn" type="button">
+              <span class="slicer-badge" id="slicerBadge" data-slicer="orca" aria-hidden="true">O</span>
+              <span id="sendToSlicerLabel">Send to OrcaSlicer</span>
+            </button>
+            <button id="slicerMenuToggle" class="top-engrave-btn top-engrave-btn--secondary slicer-caret-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="slicerMenu" aria-label="Choose slicer">
+              <span class="material-icons">arrow_drop_down</span>
+            </button>
+            <div id="slicerMenu" class="slicer-menu" role="listbox" aria-label="Slicer options" hidden>
+              <button type="button" class="slicer-menu-item" data-slicer="orca" role="option" aria-selected="true">
+                <span class="slicer-badge" data-slicer="orca" aria-hidden="true">O</span>
+                <span>OrcaSlicer</span>
+              </button>
+              <button type="button" class="slicer-menu-item" data-slicer="prusa" role="option" aria-selected="false">
+                <span class="slicer-badge" data-slicer="prusa" aria-hidden="true">P</span>
+                <span>PrusaSlicer</span>
+              </button>
+            </div>
+          </div>
+          <p class="engrave-note">Download saves the engraved model as an STL file. Send to Slicer opens it directly in the chosen slicer on this computer.</p>
+        </div>
+      </div>
+
+      <div id="info-container" class="u-glass engrave-status-card" role="group" aria-label="Engraving status">
+        <span class="combo-chip" id="statusMessage">Loading blank top...</span>
+      </div>
+    </div>
+  </main>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.181.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.181.1/examples/jsm/",
+      "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.9/build/index.module.js",
+      "three-bvh-csg": "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.18/build/index.module.js"
+    }
+  }
+  </script>
+  <script type="module" src="./scripts/engrave.js"></script>
+</body>
+</html>

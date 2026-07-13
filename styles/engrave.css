@@ -1,0 +1,604 @@
+:root{
+  --brand: #0A84FF;
+  --brand-ink: #005ec4;
+  --brand-ghost: color-mix(in srgb, var(--brand) 12%, transparent);
+  --text: #111316;
+  --muted: rgba(17,19,22,0.62);
+  --glass-bg: #FFFFFF;
+  --glass-hover: #F6F7F9;
+  --glass-press: #EDF1F5;
+  --stroke: rgba(0,0,0,0.08);
+  --stroke-strong: rgba(0,0,0,0.12);
+  --radius: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 18px;
+  --shadow-sm: 0 4px 12px rgba(0,0,0,0.10);
+  --shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-lg: 0 18px 50px rgba(0,0,0,0.16), 0 6px 16px rgba(0,0,0,0.08);
+  --transition: 180ms cubic-bezier(.2,.8,.2,1);
+  --ok: #15C66D;
+  --warn: #FFB02E;
+  --err: #E5484D;
+  --z-toolbar: 60;
+  --z-panels: 55;
+  --z-floating: 10000;
+}
+
+*{ box-sizing:border-box; }
+html, body{
+  width:100%;
+  height:100%;
+}
+body{
+  margin:0;
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Roboto,Segoe UI,system-ui,Arial,sans-serif;
+  background:#cccccc;
+  overflow:hidden;
+}
+
+.engrave-shell{
+  position:fixed;
+  inset:0;
+  width:100vw;
+  height:100vh;
+  height:100svh;
+  margin:0;
+  padding:0;
+}
+
+.u-glass{
+  background:var(--glass-bg);
+  border:1px solid var(--stroke);
+}
+
+#viewer-container{
+  width:100%;
+  height:100%;
+  position:relative;
+  overflow:hidden;
+  background:#cccccc;
+  isolation:isolate;
+  margin:0;
+  padding:0;
+}
+
+.material-icons{
+  font-variation-settings:'wght' 500;
+  font-size:20px;
+  line-height:1;
+  display:block;
+  pointer-events:none;
+}
+
+.btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  user-select:none;
+  border:1px solid var(--stroke);
+  background:var(--glass-bg);
+  border-radius:12px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);
+  transition:transform var(--transition), background var(--transition), box-shadow var(--transition);
+}
+.btn:hover{ background:var(--glass-hover); transform:translateY(-1px); }
+.btn:active{ transform:translateY(0); background:var(--glass-press); }
+.btn--sm{ width:32px; height:32px; border-radius:10px; }
+.btn--ghost{ background:transparent; }
+.btn--ghost:hover{ background:var(--glass-hover); }
+.btn--ghost:active{ background:var(--glass-press); }
+
+#preset-menu{
+  position:absolute;
+  top:16px;
+  left:16px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  z-index:var(--z-toolbar);
+}
+
+.preset-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 14px;
+  min-width:210px;
+  background:var(--glass-bg);
+  border:1px solid var(--stroke);
+  border-radius:var(--radius-lg);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04), var(--shadow-sm);
+  color:var(--text);
+  font:600 13px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+.preset-toggle:hover{
+  background:var(--glass-hover);
+  transform:translateY(-1px);
+}
+.preset-label{
+  flex:1;
+  text-align:left;
+}
+
+#controls-toggle{
+  position:absolute;
+  top:16px;
+  right:14px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+  width:min(430px, calc(100% - 32px));
+  padding:12px 14px;
+  background:white;
+  border:1px solid var(--stroke);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);
+  z-index:var(--z-toolbar);
+}
+
+.engrave-title-copy{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+}
+
+.engrave-kicker{
+  color:var(--brand);
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+
+.engrave-title-copy strong{
+  font:700 14px/1.1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+.engrave-subtle{
+  color:var(--muted);
+  font:500 12px/1.35 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+.engrave-badge,
+.combo-chip{
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:0 10px;
+  border-radius:999px;
+  background:rgba(10,132,255,0.08);
+  border:1px solid rgba(10,132,255,0.12);
+  color:var(--brand-ink);
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+
+.engrave-stage-card{
+  position:absolute;
+  inset:0;
+  border-radius:0;
+  overflow:hidden;
+  z-index:1;
+}
+
+#viewer{
+  position:absolute;
+  inset:0;
+  z-index:1;
+}
+
+#viewer canvas{
+  display:block;
+  width:100% !important;
+  height:100% !important;
+}
+
+.model-controls{
+  position:absolute;
+  top:96px;
+  right:14px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  background:var(--glass-bg);
+  padding:8px;
+  border-radius:var(--radius-lg);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow);
+  width:260px;
+  max-height:calc(100vh - 140px);
+  max-height:calc(100svh - 140px);
+  overflow:auto;
+  z-index:var(--z-panels);
+  pointer-events:auto;
+}
+
+.model-section{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  background:#FFFFFF;
+  padding:8px;
+  border-radius:12px;
+  border:1px solid var(--stroke);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.35);
+}
+
+.model-controls-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+.model-label{
+  flex:1;
+  text-align:center;
+  font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  user-select:none;
+  color:var(--text);
+}
+
+.pill-container{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  justify-content:center;
+  flex-wrap:wrap;
+}
+
+.top-engrave-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  width:100%;
+  min-height:34px;
+  padding:0 12px;
+  border:1px solid var(--stroke);
+  border-radius:10px;
+  background:linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 84%, black));
+  color:#fff;
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:transform var(--transition), box-shadow var(--transition), filter var(--transition), opacity var(--transition);
+  box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
+}
+.top-engrave-btn:hover{
+  transform:translateY(-1px);
+}
+.top-engrave-btn:active{
+  transform:translateY(0);
+}
+.top-engrave-btn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+  transform:none;
+  box-shadow:none;
+}
+.top-engrave-btn--secondary{
+  background:#FFFFFF;
+  color:var(--text);
+  box-shadow:none;
+}
+
+.engrave-button-row{
+  display:flex;
+  gap:8px;
+}
+
+.engrave-button-row .top-engrave-btn{
+  flex:1;
+}
+
+.slicer-send-group{
+  position:relative;
+  display:flex;
+  gap:0;
+}
+
+.slicer-send-btn{
+  flex:1;
+  border-top-right-radius:0;
+  border-bottom-right-radius:0;
+}
+
+.slicer-caret-btn{
+  width:34px;
+  flex:none;
+  padding:0;
+  border-top-left-radius:0;
+  border-bottom-left-radius:0;
+  border-left:1px solid color-mix(in srgb, var(--stroke) 60%, transparent);
+}
+
+.slicer-caret-btn .material-icons{
+  font-size:18px;
+}
+
+.slicer-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  font:800 10px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:#fff;
+  flex-shrink:0;
+}
+
+.slicer-badge[data-slicer="orca"]{ background:#0F9E9E; }
+.slicer-badge[data-slicer="prusa"]{ background:#FF6A13; }
+
+.slicer-menu{
+  position:absolute;
+  bottom:calc(100% + 8px);
+  right:0;
+  min-width:180px;
+  background:#FFFFFF;
+  border:1px solid var(--stroke);
+  border-radius:12px;
+  box-shadow:var(--shadow-lg, 0 12px 28px rgba(0,0,0,0.18));
+  padding:6px;
+  z-index:20;
+}
+
+.slicer-menu[hidden]{
+  display:none;
+}
+
+.slicer-menu-item{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:100%;
+  padding:8px 10px;
+  border:none;
+  background:transparent;
+  border-radius:8px;
+  cursor:pointer;
+  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+  text-align:left;
+}
+
+.slicer-menu-item:hover{
+  background:color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.slicer-menu-item[aria-selected="true"]{
+  background:color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.engrave-mode-btn.active{
+  background:rgba(10,132,255,0.1);
+  border-color:rgba(10,132,255,0.16);
+  color:var(--brand-ink);
+}
+
+.engrave-layer-list{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.engrave-layer-btn{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:3px;
+  width:100%;
+  padding:8px 10px;
+  border:1px solid var(--stroke);
+  border-radius:10px;
+  background:#FFFFFF;
+  color:var(--text);
+  cursor:pointer;
+  transition:background var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+.engrave-layer-btn:hover{
+  background:var(--glass-hover);
+  transform:translateY(-1px);
+}
+
+.engrave-layer-btn.active{
+  border-color:rgba(10,132,255,0.28);
+  background:rgba(10,132,255,0.08);
+}
+
+.engrave-layer-btn strong{
+  font:600 12px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+.engrave-layer-btn span{
+  color:var(--muted);
+  font:500 11px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+.engrave-layer-empty{
+  padding:8px 10px;
+  border:1px dashed var(--stroke-strong);
+  border-radius:10px;
+  color:var(--muted);
+  font:500 11px/1.4 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+.engrave-note{
+  margin:0;
+  color:var(--muted);
+  font:500 12px/1.4 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+.engrave-range-label{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+
+input[type="range"]{
+  width:100%;
+}
+
+#info-container{
+  position:absolute;
+  left:16px;
+  bottom:16px;
+  z-index:var(--z-floating);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px;
+  background:var(--glass-bg);
+  border:1px solid var(--stroke);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-sm);
+  pointer-events:auto;
+}
+
+.combo-chip.ok{
+  color:var(--ok);
+  border-color:color-mix(in srgb, var(--ok) 24%, transparent);
+  background:color-mix(in srgb, var(--ok) 8%, white);
+}
+.combo-chip.warn{
+  color:var(--warn);
+  border-color:color-mix(in srgb, var(--warn) 24%, transparent);
+  background:color-mix(in srgb, var(--warn) 10%, white);
+}
+.combo-chip.err{
+  color:var(--err);
+  border-color:color-mix(in srgb, var(--err) 24%, transparent);
+  background:color-mix(in srgb, var(--err) 10%, white);
+}
+
+.viewer-hint{
+  position:absolute;
+  right:16px;
+  bottom:16px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.92);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow-sm);
+  font:500 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+  z-index:var(--z-toolbar);
+}
+
+.engrave-progress-overlay{
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:rgba(255,255,255,0.18);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  z-index:calc(var(--z-floating) - 1);
+  pointer-events:auto;
+}
+
+.engrave-progress-overlay[hidden]{
+  display:none;
+}
+
+.engrave-progress-card{
+  width:min(360px, calc(100vw - 48px));
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:10px;
+  padding:18px;
+  border-radius:18px;
+  background:rgba(255,255,255,0.96);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow-lg);
+}
+
+.engrave-progress-spinner{
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  border:3px solid rgba(10,132,255,0.16);
+  border-top-color:var(--brand);
+  animation:engrave-spin 0.8s linear infinite;
+}
+
+.engrave-progress-kicker{
+  margin:0;
+  color:var(--brand);
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+
+.engrave-progress-card strong{
+  font:700 16px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+
+@keyframes engrave-spin{
+  to{
+    transform:rotate(360deg);
+  }
+}
+
+.swatch{
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  display:inline-block;
+}
+
+.swatch.model{ background:#d9dee6; }
+.swatch.logo{ background:#0A84FF; }
+
+@media (max-width: 900px){
+  #controls-toggle{
+    left:16px;
+    right:16px;
+    top:72px;
+    width:auto;
+  }
+
+  .model-controls{
+    top:150px;
+    left:16px;
+    right:16px;
+    width:auto;
+    max-height:none;
+  }
+
+  #info-container,
+  .viewer-hint{
+    position:static;
+    margin:12px 16px 0;
+  }
+
+  .engrave-stage-card{
+    inset:0;
+  }
+
+  #viewer-container{
+    height:auto;
+    min-height:980px;
+  }
+}
