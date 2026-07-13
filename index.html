@@ -9,6 +9,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link rel="stylesheet" href="./styles/app.css">
+  <script>
+    if (!('startViewTransition' in document)) {
+      document.documentElement.classList.add('vt-fallback');
+    }
+  </script>
 </head>
 <body>
   <main class="page-shell">
@@ -152,8 +157,8 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.156.1/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.156.1/examples/jsm/"
+      "three": "https://unpkg.com/three@0.181.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.181.1/examples/jsm/"
     }
   }
   </script>

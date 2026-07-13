@@ -9,6 +9,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link rel="stylesheet" href="./styles/engrave.css">
+  <script>
+    if (!('startViewTransition' in document)) {
+      document.documentElement.classList.add('vt-fallback');
+    }
+  </script>
 </head>
 <body>
   <main class="engrave-shell">
@@ -41,26 +46,26 @@
       <div id="panel-essential" class="model-controls essential engrave-controls" role="group" aria-label="Engraving controls">
         <div class="model-section">
           <div class="model-controls-row">
-            <span class="model-label">Logo</span>
+            <span class="model-label">1. Your Logo</span>
           </div>
           <input id="svgFileInput" type="file" accept=".svg,image/svg+xml" hidden multiple>
           <div class="engrave-button-row">
             <button id="uploadSvgBtn" class="top-engrave-btn" type="button">
-              <span class="material-icons" aria-hidden="true">upload_file</span>
-              <span>Add SVG</span>
+              <span class="material-icons" aria-hidden="true">add_photo_alternate</span>
+              <span>Add Logo</span>
             </button>
             <button id="removeSvgBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button" disabled>
               <span class="material-icons" aria-hidden="true">delete</span>
-              <span>Delete Selected</span>
+              <span>Remove</span>
             </button>
           </div>
-          <div id="svgLayerList" class="engrave-layer-list" aria-label="SVG layers"></div>
-          <p class="engrave-note" id="svgName">No SVG layers loaded yet.</p>
+          <div id="svgLayerList" class="engrave-layer-list" aria-label="Logos added"></div>
+          <p class="engrave-note" id="svgName">No logo added yet.</p>
         </div>
 
         <div class="model-section">
           <div class="model-controls-row">
-            <span class="model-label">Placement</span>
+            <span class="model-label">2. Move &amp; Resize</span>
           </div>
           <div class="pill-container">
             <button class="btn btn--sm btn--ghost engrave-mode-btn active" id="moveModeBtn" type="button" aria-label="Move logo">
@@ -78,41 +83,52 @@
             <output id="scaleValue">100%</output>
           </label>
           <input id="scaleRange" type="range" min="30" max="400" step="1" value="100">
-          <label class="engrave-range-label" for="posXRange">
-            <span>Left / Right</span>
-            <output id="posXValue">0.0 mm</output>
-          </label>
-          <input id="posXRange" type="range" min="-20" max="20" step="0.1" value="0">
-          <label class="engrave-range-label" for="posZRange">
-            <span>Front / Back</span>
-            <output id="posZValue">0.0 mm</output>
-          </label>
-          <input id="posZRange" type="range" min="-20" max="20" step="0.1" value="0">
-          <label class="engrave-range-label" for="posYRange">
-            <span>Z Offset</span>
-            <output id="posYValue">12.6 mm</output>
-          </label>
-          <input id="posYRange" type="range" min="0.0" max="20.0" step="0.1" value="12.6">
-          <label class="engrave-range-label" for="depthRange">
-            <span>Depth</span>
-            <output id="depthValue">1.2 mm</output>
-          </label>
-          <input id="depthRange" type="range" min="0.4" max="2.4" step="0.1" value="1.2">
-          <p class="engrave-note">Use the sliders for precise placement, or drag the logo directly in the viewer. Rotation stays constrained to the top surface.</p>
+          <p class="engrave-note">Drag the logo right on the model to move it, or use the size slider above.</p>
+          <details class="engrave-advanced">
+            <summary>
+              <span class="material-icons" aria-hidden="true">tune</span>
+              <span>Fine-tune with exact numbers</span>
+              <span class="material-icons engrave-advanced-caret" aria-hidden="true">expand_more</span>
+            </summary>
+            <div class="engrave-advanced-body">
+              <label class="engrave-range-label" for="posXRange">
+                <span>Left / Right</span>
+                <output id="posXValue">0.0 mm</output>
+              </label>
+              <input id="posXRange" type="range" min="-20" max="20" step="0.1" value="0">
+              <label class="engrave-range-label" for="posZRange">
+                <span>Front / Back</span>
+                <output id="posZValue">0.0 mm</output>
+              </label>
+              <input id="posZRange" type="range" min="-20" max="20" step="0.1" value="0">
+              <label class="engrave-range-label" for="posYRange">
+                <span>Height</span>
+                <output id="posYValue">12.6 mm</output>
+              </label>
+              <input id="posYRange" type="range" min="0.0" max="20.0" step="0.1" value="12.6">
+              <label class="engrave-range-label" for="depthRange">
+                <span>Cut depth</span>
+                <output id="depthValue">1.2 mm</output>
+              </label>
+              <input id="depthRange" type="range" min="0.4" max="2.4" step="0.1" value="1.2">
+            </div>
+          </details>
         </div>
 
         <div class="model-section">
           <div class="model-controls-row">
-            <span class="model-label">Output</span>
+            <span class="model-label">3. Save &amp; Print</span>
           </div>
-          <button id="previewCutBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button">
-            <span class="material-icons">visibility</span>
-            <span>Preview Cut</span>
-          </button>
-          <button id="backToEditBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button" disabled>
-            <span class="material-icons">edit</span>
-            <span>Back to Edit</span>
-          </button>
+          <div class="engrave-button-row">
+            <button id="previewCutBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button">
+              <span class="material-icons">visibility</span>
+              <span>Preview Cut</span>
+            </button>
+            <button id="backToEditBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button" disabled>
+              <span class="material-icons">edit</span>
+              <span>Back to Edit</span>
+            </button>
+          </div>
           <button id="downloadStlBtn" class="top-engrave-btn" type="button">
             <span class="material-icons">download</span>
             <span>Download STL</span>
@@ -136,7 +152,6 @@
               </button>
             </div>
           </div>
-          <p class="engrave-note">Download saves the engraved model as an STL file. Send to Slicer opens it directly in the chosen slicer on this computer.</p>
         </div>
       </div>
 

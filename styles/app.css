@@ -1,17 +1,22 @@
 :root{
-  --brand: #0A84FF;
-  --brand-ink: #005ec4;
+  --brand: #3D7FFD;
+  --brand-ink: #2A5FE0;
   --brand-ghost: color-mix(in srgb, var(--brand) 12%, transparent);
-  --text: #111316;
-  --muted: rgba(17,19,22,0.62);
+  --canvas: #ECF4F9;
+  --text: #000000;
+  --muted: #515E80;
   --bg-start: #FFFFFF;
   --bg-end: #FFFFFF;
   --glass-bg: #FFFFFF;
   --glass-hover: #F6F7F9;
   --glass-strong: #FFFFFF;
   --glass-press: #EDF1F5;
-  --stroke: rgba(0,0,0,0.08);
-  --stroke-strong: rgba(0,0,0,0.12);
+  --track: #D4E2EA;
+  --stroke: #B9CCD8;
+  --stroke-strong: #B9CCD8;
+  --edge: 16px;
+  --control-h: 44px;
+  --row-gap: 12px;
   --blur: 0px;
   --radius: 14px;
   --radius-lg: 16px;
@@ -24,14 +29,20 @@
   --transition-fast: 120ms cubic-bezier(.2,.8,.2,1);
   --focus-ring: 0 0 0 2px color-mix(in srgb, var(--brand) 64%, white),
     0 0 0 6px color-mix(in srgb, var(--brand) 18%, transparent);
-  --ok: #15C66D;
-  --warn: #FFB02E;
-  --err: #E5484D;
+  --ok: #3CD278;
+  --warn: #F9BD3E;
+  --err: #F6231E;
   --z-toolbar: 60;
   --z-panels: 55;
   --z-toasts: 7000;
   --z-floating: 10000;
   --z-max: 2147483647;
+}
+
+/* Native seamless cross-document transition between index.html <-> engrave.html
+   (needs the same @view-transition rule on both pages; unsupported browsers ignore it). */
+@view-transition{
+  navigation: auto;
 }
 
 *{ box-sizing:border-box; }
@@ -43,8 +54,28 @@ body{
   margin:0;
   color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Roboto,Segoe UI,system-ui,Arial,sans-serif;
-  background:#cccccc;
+  background:var(--canvas);
   overflow:hidden;
+}
+
+/* Fallback crossfade for browsers without cross-document View Transitions support.
+   html.vt-fallback is set by an inline head script; html.vt-leaving is toggled
+   right before navigating away. */
+html.vt-fallback body{
+  opacity:0;
+  animation:hp-page-fade-in 220ms ease both;
+  transition:opacity 180ms ease;
+}
+html.vt-fallback.vt-leaving body{
+  opacity:0;
+  animation:none;
+}
+@keyframes hp-page-fade-in{
+  from{ opacity:0; }
+  to{ opacity:1; }
+}
+@media (prefers-reduced-motion: reduce){
+  html.vt-fallback body{ animation:none; opacity:1; transition:none; }
 }
 
 .page-shell{
@@ -70,7 +101,7 @@ body{
   height:100%;
   position:relative;
   overflow:hidden;
-  background:#cccccc;
+  background:var(--canvas);
   isolation:isolate;
 }
 
@@ -96,22 +127,23 @@ body{
   user-select:none;
   border:1px solid var(--stroke);
   background:var(--glass-bg);
-  border-radius:12px;
+  color:var(--muted);
+  border-radius:50%;
   box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);
-  transition:transform var(--transition), background var(--transition), box-shadow var(--transition);
+  transition:transform var(--transition), background var(--transition), box-shadow var(--transition), color var(--transition);
 }
 .btn:hover{ background:var(--glass-hover); transform:translateY(-1px); }
 .btn:active{ transform:translateY(0); background:var(--glass-press); }
-.btn--lg{ width:40px; height:40px; }
-.btn--sm{ width:32px; height:32px; border-radius:10px; }
+.btn--lg{ width:var(--control-h); height:var(--control-h); }
+.btn--sm{ width:32px; height:32px; }
 .btn--ghost{ background:transparent; }
 .btn--ghost:hover{ background:var(--glass-hover); }
 .btn--ghost:active{ background:var(--glass-press); }
 
 #preset-menu{
   position:absolute;
-  top:calc(16px + env(safe-area-inset-top, 0px));
-  left:16px;
+  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+  left:var(--edge);
   display:flex;
   flex-direction:column;
   align-items:flex-start;
@@ -123,7 +155,8 @@ body{
   display:inline-flex;
   align-items:center;
   gap:10px;
-  padding:10px 14px;
+  min-height:var(--control-h);
+  padding:0 14px;
   min-width:200px;
   background:var(--glass-bg);
   border:1px solid var(--stroke);
@@ -177,11 +210,11 @@ body{
   width:100%;
   padding:10px;
   background:transparent;
-  border:none;
+  border:1px solid transparent;
   border-radius:10px;
   cursor:pointer;
   color:var(--text);
-  transition:background var(--transition), transform var(--transition), box-shadow var(--transition);
+  transition:background var(--transition), border-color var(--transition), color var(--transition), transform var(--transition), box-shadow var(--transition);
   text-align:left;
 }
 .preset-option:hover{
@@ -190,9 +223,9 @@ body{
   transform:translateY(-1px);
 }
 .preset-option.active{
-  background:linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 82%, black));
-  color:white;
-  box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 38%, transparent);
+  background:var(--glass-hover);
+  border:1px solid var(--brand);
+  color:var(--brand);
 }
 .option-title{
   font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
@@ -204,25 +237,30 @@ body{
   color:var(--muted);
 }
 .preset-option.active .option-desc{
-  color:color-mix(in srgb, white 86%, transparent);
+  color:var(--brand);
 }
 
 #controls-toggle{
   position:absolute;
-  top:calc(17% + env(safe-area-inset-top, 0px));
-  right:14px;
-  transform:translateY(-50%);
+  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+  right:var(--edge);
+  height:var(--control-h);
   display:inline-flex;
+  align-items:center;
   gap:0;
   z-index:var(--z-toolbar);
-  padding:6px;
-  background:white;
+  padding:0 6px;
+  background:var(--track);
   border:1px solid var(--stroke);
-  border-radius:10px;
+  border-radius:999px;
   box-shadow:var(--shadow-sm);
 }
 .toggle-btn{
-  padding:8px 16px;
+  height:calc(var(--control-h) - 12px);
+  padding:0 16px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   background:transparent;
   border:none;
   cursor:pointer;
@@ -232,31 +270,29 @@ body{
   transition:background var(--transition), color var(--transition), transform var(--transition);
 }
 .toggle-btn:hover{
-  background:var(--glass-hover);
   color:var(--text);
 }
 .toggle-btn.active{
-  background:linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 88%, black));
-  color:white;
-  box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 45%, transparent);
-  transform:translateY(-1px);
+  background:#FFFFFF;
+  color:var(--brand);
+  box-shadow:var(--shadow-xs);
 }
 
 .model-controls{
   position:absolute;
-  top:calc(17% + 56px);
-  right:14px;
+  top:calc(var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
+  right:var(--edge);
   display:none;
   flex-direction:column;
-  gap:8px;
+  gap:10px;
   background:var(--glass-bg);
   -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
   backdrop-filter:blur(var(--blur)) saturate(140%);
-  padding:10px;
+  padding:12px;
   border-radius:var(--radius-lg);
   border:1px solid var(--stroke);
   box-shadow:var(--shadow);
-  width:260px;
+  width:280px;
   max-height:calc(100vh - 140px);
   max-height:calc(100svh - 140px);
   overflow:auto;
@@ -270,11 +306,11 @@ body{
   position:relative;
   display:flex;
   flex-direction:column;
-  gap:6px;
+  gap:8px;
   background:#FFFFFF;
   -webkit-backdrop-filter:blur(1px);
   backdrop-filter:blur(1px);
-  padding:8px;
+  padding:10px;
   border-radius:12px;
   border:1px solid var(--stroke);
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.35);
@@ -327,22 +363,22 @@ body{
   justify-content:center;
   gap:8px;
   width:100%;
-  min-height:34px;
+  min-height:38px;
   padding:0 12px;
-  border:1px solid var(--stroke);
-  border-radius:10px;
-  background:linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 84%, black));
+  border:1px solid var(--brand);
+  border-radius:999px;
+  background:var(--brand);
   color:#fff;
-  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  letter-spacing:.08em;
-  text-transform:uppercase;
+  font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.04em;
+  text-transform:none;
   cursor:pointer;
-  transition:transform var(--transition), box-shadow var(--transition), filter var(--transition);
+  transition:transform var(--transition), box-shadow var(--transition), background var(--transition);
   box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
 }
 .top-engrave-btn:hover{
   transform:translateY(-1px);
-  filter:saturate(1.05);
+  background:var(--brand-ink);
 }
 .top-engrave-btn:active{
   transform:translateY(0);
@@ -417,7 +453,8 @@ body{
 
 #info-container{
   position:absolute;
-  bottom:calc(14px + env(safe-area-inset-bottom, 0px));
+  left:var(--edge);
+  bottom:calc(var(--edge) + env(safe-area-inset-bottom, 0px));
   z-index:calc(var(--z-max) - 1);
   display:flex;
   align-items:center;
@@ -464,7 +501,7 @@ body{
   display:flex;
   position:relative;
   width:96px;
-  height:40px;
+  height:var(--control-h);
   border-radius:12px;
   overflow:visible;
   border:1px solid var(--stroke);
@@ -481,10 +518,11 @@ body{
   cursor:pointer;
   transition:background var(--transition);
 }
-#download-primary{ flex:1; }
+#download-primary{ flex:1; border-radius:11px 0 0 11px; }
 #download-toggle{
   width:40px;
   border-left:1px solid var(--stroke);
+  border-radius:0 11px 11px 0;
 }
 #download-group:hover :where(#download-primary,#download-toggle){ background:var(--glass-hover); }
 #download-menu{
@@ -518,7 +556,7 @@ body{
 #slicer-group{
   display:flex;
   position:relative;
-  height:40px;
+  height:var(--control-h);
   border-radius:12px;
   overflow:visible;
   border:1px solid var(--stroke);
@@ -533,9 +571,11 @@ body{
   align-items:center;
   gap:4px;
   padding:0 10px;
+  height:100%;
   border:none;
   outline:none;
   background:transparent;
+  border-radius:11px;
   cursor:pointer;
   transition:background var(--transition);
   color:var(--text);
@@ -751,7 +791,7 @@ body{
 
 .rotate-btn{
   padding:10px 14px;
-  border-radius:12px;
+  border-radius:999px;
   border:1px solid var(--stroke);
   background:var(--glass-bg);
   cursor:pointer;
@@ -763,9 +803,13 @@ body{
   transform:translateY(-1px);
 }
 .rotate-btn.primary{
-  background:linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 88%, black));
+  background:var(--brand);
+  border-color:var(--brand);
   color:white;
   box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 45%, transparent);
+}
+.rotate-btn.primary:hover{
+  background:var(--brand-ink);
 }
 
 #viewer-container.is-maximized{
@@ -786,8 +830,8 @@ body.hp-lock-scroll{
 }
 #exit-maximize{
   position:absolute;
-  top:calc(8px + env(safe-area-inset-top, 0px));
-  right:calc(8px + env(safe-area-inset-right, 0px));
+  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+  right:calc(var(--edge) + env(safe-area-inset-right, 0px));
   z-index:var(--z-max);
   display:none;
 }
@@ -849,7 +893,7 @@ body.hp-lock-scroll{
   padding:8px 12px;
   background:var(--glass-bg);
   border:1px solid var(--stroke);
-  border-radius:10px;
+  border-radius:999px;
   cursor:pointer;
   font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   transition:background var(--transition), transform var(--transition), color var(--transition), box-shadow var(--transition);
@@ -859,9 +903,13 @@ body.hp-lock-scroll{
   transform:translateY(-1px);
 }
 .tour-btn.primary{
-  background:linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 88%, black));
+  background:var(--brand);
+  border-color:var(--brand);
   color:white;
   box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 45%, transparent);
+}
+.tour-btn.primary:hover{
+  background:var(--brand-ink);
 }
 .tour-close{
   position:absolute;
@@ -914,17 +962,15 @@ body.hp-lock-scroll{
 }
 
 @media (pointer: coarse){
-  .btn--sm{ width:40px; height:40px; border-radius:12px; }
-  #download-group{ height:44px; }
-  .toggle-btn{ padding:10px 18px; }
+  :root{ --control-h: 48px; }
+  .btn--sm{ width:40px; height:40px; }
+  .toggle-btn{ padding:0 18px; }
 }
 
 @media (max-width: 1024px), (max-height: 720px){
-  #controls-toggle{ top:calc(12px + env(safe-area-inset-top, 0px)); }
+  :root{ --edge: 12px; }
   .model-controls{
-    top:56px;
-    right:12px;
-    bottom:12px;
+    bottom:var(--edge);
     width:min(44vw, 320px);
     overflow:auto;
     max-height:none;
@@ -940,16 +986,14 @@ body.hp-lock-scroll{
 
 @media (max-width: 640px){
   #info-container{
-    top:calc(12px + env(safe-area-inset-top, 0px));
-    left:12px;
+    top:calc(var(--edge) + env(safe-area-inset-top, 0px));
     bottom:auto;
   }
   .model-controls{
-    left:12px;
-    right:12px;
+    left:var(--edge);
     width:auto;
     top:auto;
-    bottom:calc(12px + env(safe-area-inset-bottom, 0px));
+    bottom:calc(var(--edge) + env(safe-area-inset-bottom, 0px));
     max-height:min(50dvh, 60svh, 480px);
     overflow:auto;
   }
@@ -967,4 +1011,12 @@ body.hp-lock-scroll{
 @media (prefers-reduced-motion: reduce){
   *{ animation:none !important; transition:none !important; }
   #rotate-overlay, #consent-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+}
+
+/* Shared chrome that also exists on engrave.html with the same view-transition-name:
+   the browser morphs these in place across the navigation instead of crossfading them. */
+@media (prefers-reduced-motion: no-preference){
+  #preset-menu{ view-transition-name: hp-nav-header; }
+  #info-container{ view-transition-name: hp-status-bar; }
+  #panel-essential{ view-transition-name: hp-settings-panel; }
 }

@@ -16,6 +16,22 @@ const SVG_SURFACE_LIFT = 0.05;
 const DEFAULT_Z_OFFSET = 12.6;
 const MIN_SHAPE_AREA = 0.05;
 const SLICER_BRIDGE_URL = 'http://127.0.0.1:32123/open-model';
+const CUSTOMIZER_STATE_KEY = 'hp_robot_customizer_state';
+const DEFAULT_PART_COLOR = '#d9d9d9';
+
+// Reads the color the user picked for the top part in the main customizer
+// (same localStorage key it saves to), so the part shown here matches
+// instead of reverting to a generic default.
+function getSavedTopColor() {
+  try {
+    const raw = localStorage.getItem(CUSTOMIZER_STATE_KEY);
+    if (!raw) return DEFAULT_PART_COLOR;
+    const saved = JSON.parse(raw);
+    return saved?.modelCols?.top || DEFAULT_PART_COLOR;
+  } catch {
+    return DEFAULT_PART_COLOR;
+  }
+}
 
 const search = new URLSearchParams(window.location.search);
 const requestedPart = search.get('part') || SUPPORTED_PART;
@@ -64,7 +80,7 @@ const evaluator = new Evaluator();
 evaluator.useGroups = false;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf0f0f0);
+scene.background = new THREE.Color(0xecf4f9);
 
 const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
 camera.position.set(-90, 100, 120);
@@ -72,7 +88,7 @@ camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio || 1);
-renderer.setClearColor(0xcccccc);
+renderer.setClearColor(0xecf4f9);
 renderer.shadowMap.enabled = true;
 viewer.appendChild(renderer.domElement);
 
@@ -128,7 +144,7 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 const previewMaterial = new THREE.MeshStandardMaterial({
-  color: 0x0a84ff,
+  color: 0x3d7ffd,
   transparent: true,
   opacity: 0.72,
   metalness: 0.05,
@@ -136,7 +152,7 @@ const previewMaterial = new THREE.MeshStandardMaterial({
 });
 
 const modelMaterial = new THREE.MeshStandardMaterial({
-  color: 0xd9dee6,
+  color: getSavedTopColor(),
   metalness: 0.08,
   roughness: 0.82
 });
@@ -185,7 +201,7 @@ function setupUi() {
   depthValue.textContent = `${Number(depthRange.value).toFixed(1)} mm`;
 
   backCustomizerBtn.addEventListener('click', () => {
-    window.location.assign('./index.html');
+    navigateWithFade('./index.html');
   });
   uploadSvgBtn.addEventListener('click', () => svgFileInput.click());
   removeSvgBtn.addEventListener('click', removeActiveSvgLayer);
@@ -308,7 +324,7 @@ async function loadSupportedModel() {
     const urls = getModelCandidates(partEntry);
     const gltf = await loadFirstAvailableModel(urls);
     mountModel(gltf.scene);
-    setStatus('ok', `${partEntry.file} loaded. Upload one or more SVG logos to start engraving.`);
+    setStatus('ok', 'Ready! Add a logo to get started.');
   } catch (error) {
     console.error(error);
     setStatus('err', `Failed to load ${partEntry.file}.`);
@@ -346,9 +362,17 @@ function mountModel(sceneObject) {
 
   modelRoot = sceneObject;
   modelRoot.position.set(0, MODEL_Y_OFFSET, 0);
+  const partColor = getSavedTopColor();
+  modelMaterial.color.set(partColor);
   modelRoot.traverse((child) => {
     if (!child.isMesh) return;
     child.material = cloneMaterial(child.material);
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      if (!material?.color) return;
+      material.color.set(partColor);
+      material.needsUpdate = true;
+    });
     child.castShadow = true;
     child.receiveShadow = true;
   });
@@ -389,14 +413,14 @@ function syncActiveLayerGlobals() {
 
 function updateSvgSummary() {
   if (!svgLayers.length) {
-    svgName.textContent = 'No SVG layers loaded yet.';
+    svgName.textContent = 'No logo added yet.';
     updateActionButtonsState();
     return;
   }
 
-  const activeLayer = getActiveLayer();
-  const label = activeLayer ? `Selected: ${activeLayer.filename}` : 'No layer selected';
-  svgName.textContent = `${svgLayers.length} SVG layer${svgLayers.length === 1 ? '' : 's'} loaded. ${label}.`;
+  const activeIndex = svgLayers.findIndex((layer) => layer.id === activeLayerId);
+  const label = activeIndex >= 0 ? `Logo ${activeIndex + 1} selected` : 'No logo selected';
+  svgName.textContent = `${svgLayers.length} logo${svgLayers.length === 1 ? '' : 's'} added. ${label}.`;
   updateActionButtonsState();
 }
 
@@ -412,7 +436,7 @@ function renderSvgLayerList() {
   if (!svgLayers.length) {
     const emptyState = document.createElement('div');
     emptyState.className = 'engrave-layer-empty';
-    emptyState.textContent = 'Add one or more SVGs, then click a layer here to position it.';
+    emptyState.textContent = 'Add a logo above, then tap it here to move it.';
     svgLayerList.appendChild(emptyState);
     removeSvgBtn.disabled = true;
     return;
@@ -427,9 +451,9 @@ function renderSvgLayerList() {
     button.setAttribute('aria-pressed', layer.id === activeLayerId ? 'true' : 'false');
 
     const title = document.createElement('strong');
-    title.textContent = layer.filename;
+    title.textContent = `Logo ${index + 1}`;
     const meta = document.createElement('span');
-    meta.textContent = `Layer ${index + 1}`;
+    meta.textContent = layer.filename;
 
     button.append(title, meta);
     button.addEventListener('click', () => setActiveSvgLayer(layer.id));
@@ -516,8 +540,8 @@ function removeActiveSvgLayer() {
   markPreviewDirty();
   updateControlsFromActiveLayer();
   setStatus('ok', svgLayers.length
-    ? `Removed selected layer: ${removedFilename}.`
-    : `Removed selected layer: ${removedFilename}. No SVG layers remain.`);
+    ? `Removed ${removedFilename}.`
+    : `Removed ${removedFilename}. No logos remain.`);
 }
 
 async function handleSvgUpload(event) {
@@ -543,11 +567,11 @@ async function handleSvgUpload(event) {
     }
 
     if (addedCount > 0 && failedCount === 0) {
-      setStatus('ok', `${addedCount} SVG layer${addedCount === 1 ? '' : 's'} loaded. Select a layer to move, scale, or rotate it.`);
+      setStatus('ok', `${addedCount} logo${addedCount === 1 ? '' : 's'} added! Drag it on the model, or resize it below.`);
     } else if (addedCount > 0) {
-      setStatus('warn', `${addedCount} SVG layer${addedCount === 1 ? '' : 's'} loaded, ${failedCount} failed. Convert text and strokes to filled outlines, then retry the failed files.`);
+      setStatus('warn', `${addedCount} logo${addedCount === 1 ? '' : 's'} added, ${failedCount} couldn't be used. Try a simpler picture file.`);
     } else {
-      setStatus('err', 'Could not use those SVGs. Convert text and strokes to filled outlines, then try again.');
+      setStatus('err', "Couldn't use that file. Try a different SVG picture.");
     }
   } finally {
     svgFileInput.value = '';
@@ -1103,17 +1127,26 @@ function collectMergedGeometry(root) {
   return normalizeCsgGeometry(indexed);
 }
 
+// Same relative viewing angle as the main customizer's default camera
+// (position (-90, 100, 120) looking at the origin), so switching between
+// the customizer and the engraving tool keeps the same sense of orientation.
+const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(-90, 100, 120).normalize();
+
 function fitCameraToObject(box) {
   const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
   box.getSize(size);
-  box.getCenter(center);
 
+  // Look at the part's mount point (same X/Z/Y anchor the main customizer
+  // uses for every part), not the mesh's own bounding-box center -- some
+  // top variants aren't perfectly centered on their own origin, which
+  // previously made the part appear to sit in a different spot on screen
+  // than it does in the main customizer.
+  const target = new THREE.Vector3(0, MODEL_Y_OFFSET, 0);
   const maxSize = Math.max(size.x, size.y, size.z);
   const distance = maxSize * 2.2;
 
-  camera.position.set(center.x + distance, center.y + distance * 0.85, center.z + distance);
-  controls.target.copy(center);
+  camera.position.copy(DEFAULT_VIEW_DIRECTION).multiplyScalar(distance).add(target);
+  controls.target.copy(target);
   controls.update();
 }
 
@@ -1141,6 +1174,15 @@ function normalizeCsgGeometry(geometry) {
   normalized.computeBoundingBox();
   normalized.computeBoundingSphere();
   return normalized;
+}
+
+function navigateWithFade(url) {
+  if ('startViewTransition' in document) {
+    window.location.assign(url);
+    return;
+  }
+  document.documentElement.classList.add('vt-leaving');
+  window.setTimeout(() => window.location.assign(url), 180);
 }
 
 function setStatus(type, message) {

@@ -124,11 +124,11 @@ const loader = new GLTFLoader();
 loader.setCrossOrigin('anonymous');
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf0f0f0);
+scene.background = new THREE.Color(0xecf4f9);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setPixelRatio(window.devicePixelRatio || 1);
-renderer.setClearColor(0xcccccc);
+renderer.setClearColor(0xecf4f9);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
@@ -793,7 +793,7 @@ function setupGlobalClickHandler() {
       const url = new URL('./engrave.html', window.location.href);
       url.searchParams.set('part', 'top');
       url.searchParams.set('file', 'Toplights_NOlogo.glb');
-      window.location.assign(url.href);
+      navigateWithFade(url.href);
       return;
     }
 
@@ -861,6 +861,15 @@ function initPillsAndButtons() {
       visBtn.innerHTML = `<span class="material-icons">${partVis[part] ? 'visibility' : 'visibility_off'}</span>`;
     }
   }
+}
+
+function navigateWithFade(url) {
+  if ('startViewTransition' in document) {
+    window.location.assign(url);
+    return;
+  }
+  document.documentElement.classList.add('vt-leaving');
+  window.setTimeout(() => window.location.assign(url), 180);
 }
 
 function toast(message, type = 'ok', ms = 2000) {
