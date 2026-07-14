@@ -18,6 +18,8 @@ const MIN_SHAPE_AREA = 0.05;
 const SLICER_BRIDGE_URL = 'http://127.0.0.1:32123/open-model';
 const CUSTOMIZER_STATE_KEY = 'hp_robot_customizer_state';
 const DEFAULT_PART_COLOR = '#d9d9d9';
+const SHAPE_LIBRARY_MANIFEST_URL = './assets/engrave-shapes/manifest.json';
+const SHAPE_LIBRARY_BASE_URL = './assets/engrave-shapes/';
 
 // Reads the color the user picked for the top part in the main customizer
 // (same localStorage key it saves to), so the part shown here matches
@@ -47,9 +49,11 @@ const removeSvgBtn = document.getElementById('removeSvgBtn');
 const svgFileInput = document.getElementById('svgFileInput');
 const svgLayerList = document.getElementById('svgLayerList');
 const svgName = document.getElementById('svgName');
+const shapeLibraryGrid = document.getElementById('shapeLibraryGrid');
 const moveModeBtn = document.getElementById('moveModeBtn');
 const rotateModeBtn = document.getElementById('rotateModeBtn');
 const centerLogoBtn = document.getElementById('centerLogoBtn');
+const gizmoToggleBtn = document.getElementById('gizmoToggleBtn');
 const scaleRange = document.getElementById('scaleRange');
 const scaleValue = document.getElementById('scaleValue');
 const posXRange = document.getElementById('posXRange');
@@ -106,7 +110,9 @@ controls.dampingFactor = 0.08;
 controls.target.set(0, MODEL_Y_OFFSET, 0);
 
 const transformControls = new TransformControls(camera, renderer.domElement);
-transformControls.setSize(0.8);
+// Bigger gizmo handles on touch devices, since a fingertip is far less
+// precise than a mouse pointer at hitting the thin default handles.
+transformControls.setSize(window.matchMedia('(pointer: coarse)').matches ? 1.3 : 0.8);
 transformControls.visible = false;
 transformControls.addEventListener('dragging-changed', (event) => {
   controls.enabled = !event.value;
@@ -176,6 +182,7 @@ let viewMode = 'edit';
 let transformMode = 'translate';
 let positionLimits = { x: 20, z: 20, yMin: -5.0, yMax: 5.0 };
 let isProcessing = false;
+let gizmoUserVisible = true;
 
 setupUi();
 setupResize();
@@ -209,10 +216,14 @@ function setupUi() {
   moveModeBtn.addEventListener('click', () => setTransformMode('translate'));
   rotateModeBtn.addEventListener('click', () => setTransformMode('rotate'));
   centerLogoBtn.addEventListener('click', centerLogo);
+  gizmoToggleBtn.addEventListener('click', toggleGizmoVisibility);
+  isCoarsePointer() && setGizmoUserVisible(false);
   scaleRange.addEventListener('input', applyLogoScale);
   posXRange.addEventListener('input', applyLogoPositionFromInputs);
   posZRange.addEventListener('input', applyLogoPositionFromInputs);
   posYRange.addEventListener('input', applyLogoPositionFromInputs);
+  setupStepButtons();
+  loadShapeLibrary();
   depthRange.addEventListener('input', async () => {
     depthValue.textContent = `${Number(depthRange.value).toFixed(1)} mm`;
     try {
@@ -306,11 +317,15 @@ function disableEditorActions(disabled) {
   moveModeBtn.disabled = disabled;
   rotateModeBtn.disabled = disabled;
   centerLogoBtn.disabled = disabled;
+  gizmoToggleBtn.disabled = disabled;
   scaleRange.disabled = disabled;
   depthRange.disabled = disabled;
   previewCutBtn.disabled = disabled;
   downloadStlBtn.disabled = disabled;
   sendToSlicerBtn.disabled = disabled;
+  shapeLibraryGrid.querySelectorAll('.engrave-shape-btn').forEach((button) => {
+    button.disabled = disabled;
+  });
 }
 
 async function loadSupportedModel() {
@@ -544,6 +559,70 @@ function removeActiveSvgLayer() {
     : `Removed ${removedFilename}. No logos remain.`);
 }
 
+function setupStepButtons() {
+  document.querySelectorAll('.engrave-step-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = document.getElementById(button.dataset.stepTarget);
+      if (!target) return;
+      const step = Number(button.dataset.step);
+      const min = target.min !== '' ? Number(target.min) : -Infinity;
+      const max = target.max !== '' ? Number(target.max) : Infinity;
+      const next = THREE.MathUtils.clamp(Number(target.value) + step, min, max);
+      target.value = String(next);
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+}
+
+async function loadShapeLibrary() {
+  try {
+    const response = await fetch(SHAPE_LIBRARY_MANIFEST_URL);
+    if (!response.ok) throw new Error(`Failed to load shape manifest (HTTP ${response.status}).`);
+    const shapes = await response.json();
+    renderShapeLibrary(Array.isArray(shapes) ? shapes : []);
+  } catch (error) {
+    console.error(error);
+    shapeLibraryGrid.replaceChildren();
+  }
+}
+
+function renderShapeLibrary(shapes) {
+  shapeLibraryGrid.replaceChildren();
+
+  shapes.forEach((shape) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'engrave-shape-btn';
+    button.setAttribute('aria-label', shape.name || shape.id);
+    button.title = shape.name || shape.id;
+
+    const thumb = document.createElement('img');
+    thumb.src = `${SHAPE_LIBRARY_BASE_URL}${shape.file}`;
+    thumb.alt = '';
+    thumb.setAttribute('aria-hidden', 'true');
+    button.appendChild(thumb);
+
+    button.addEventListener('click', () => handleShapeSelect(shape));
+    shapeLibraryGrid.appendChild(button);
+  });
+}
+
+async function handleShapeSelect(shape) {
+  backToEdit();
+
+  try {
+    const response = await fetch(`${SHAPE_LIBRARY_BASE_URL}${shape.file}`);
+    if (!response.ok) throw new Error(`Failed to load shape (HTTP ${response.status}).`);
+    const text = await response.text();
+    const layer = await buildLogoFromSvg(text, `${shape.name || shape.id}.svg`);
+    addSvgLayer(layer);
+    setStatus('ok', `${shape.name || 'Shape'} added! Drag it on the model, or resize it below.`);
+  } catch (error) {
+    console.error(error);
+    setStatus('err', `Couldn't add the ${shape.name || 'shape'}. Try another one.`);
+  }
+}
+
 async function handleSvgUpload(event) {
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
@@ -710,8 +789,26 @@ function captureLogoTransform(layer = getActiveLayer()) {
 }
 
 function setTransformVisible(visible) {
-  transformControls.visible = visible;
-  if (transformHelper) transformHelper.visible = visible;
+  const actualVisible = visible && gizmoUserVisible;
+  transformControls.visible = actualVisible;
+  if (transformHelper) transformHelper.visible = actualVisible;
+}
+
+function isCoarsePointer() {
+  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+}
+
+function setGizmoUserVisible(visible) {
+  gizmoUserVisible = visible;
+  gizmoToggleBtn.classList.toggle('active', visible);
+  gizmoToggleBtn.setAttribute('aria-pressed', String(visible));
+  gizmoToggleBtn.setAttribute('aria-label', visible ? 'Hide on-model handles' : 'Show on-model handles');
+  setTransformVisible(Boolean(logoRoot) && viewMode === 'edit');
+  render();
+}
+
+function toggleGizmoVisibility() {
+  setGizmoUserVisible(!gizmoUserVisible);
 }
 
 function ensureTransformHelper() {

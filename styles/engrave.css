@@ -231,6 +231,9 @@ html.vt-fallback.vt-leaving body{
   display:block;
   width:100% !important;
   height:100% !important;
+  /* Let Three.js own single/multi-touch gestures on the canvas instead of the
+     browser's native pinch-zoom/pan, which otherwise fights OrbitControls/TransformControls. */
+  touch-action:none;
 }
 
 .model-controls{
@@ -417,6 +420,93 @@ html.vt-fallback.vt-leaving body{
 
 .slicer-menu-item[aria-selected="true"]{
   background:color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.engrave-shape-grid{
+  display:flex;
+  flex-wrap:nowrap;
+  gap:8px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scroll-snap-type:x proximity;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;
+  touch-action:pan-x;
+  padding-bottom:2px;
+  margin:0 -2px;
+  padding-left:2px;
+  padding-right:2px;
+}
+.engrave-shape-grid::-webkit-scrollbar{ height:6px; }
+.engrave-shape-grid::-webkit-scrollbar-thumb{ background:var(--stroke); border-radius:999px; }
+
+.engrave-shape-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:none;
+  width:44px;
+  height:44px;
+  padding:6px;
+  border:1px solid var(--stroke);
+  border-radius:10px;
+  background:#FFFFFF;
+  cursor:pointer;
+  scroll-snap-align:start;
+  transition:background var(--transition), border-color var(--transition), transform var(--transition);
+}
+.engrave-shape-btn:hover{
+  background:var(--glass-hover);
+  transform:translateY(-1px);
+}
+.engrave-shape-btn:active{
+  transform:translateY(0);
+  background:var(--glass-press);
+}
+.engrave-shape-btn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+  transform:none;
+}
+.engrave-shape-btn img{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  pointer-events:none;
+}
+
+.engrave-step-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.engrave-step-row input[type="range"]{
+  flex:1;
+}
+.engrave-step-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:none;
+  width:32px;
+  height:32px;
+  min-width:32px;
+  border:1px solid var(--stroke);
+  border-radius:50%;
+  background:#FFFFFF;
+  color:var(--muted);
+  cursor:pointer;
+  transition:background var(--transition), transform var(--transition);
+}
+.engrave-step-btn .material-icons{
+  font-size:18px;
+}
+.engrave-step-btn:hover{
+  background:var(--glass-hover);
+}
+.engrave-step-btn:active{
+  transform:scale(0.94);
+  background:var(--glass-press);
 }
 
 .engrave-mode-btn.active{
@@ -650,6 +740,62 @@ input[type="range"]{
 
 .swatch.model{ background:#d9dee6; }
 .swatch.logo{ background:var(--brand); }
+
+/* Touch devices: enlarge slider thumbs, step buttons, and small icon buttons
+   past the mouse-tuned defaults so a fingertip can hit them reliably. */
+@media (pointer: coarse){
+  input[type="range"]{
+    height:32px;
+  }
+  input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:28px;
+    height:28px;
+    border-radius:50%;
+    background:var(--brand);
+    border:2px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,0.25);
+    margin-top:-12px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track{
+    height:8px;
+    border-radius:999px;
+    background:var(--track);
+  }
+  input[type="range"]::-moz-range-thumb{
+    width:28px;
+    height:28px;
+    border-radius:50%;
+    background:var(--brand);
+    border:2px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,0.25);
+  }
+  input[type="range"]::-moz-range-track{
+    height:8px;
+    border-radius:999px;
+    background:var(--track);
+  }
+  .engrave-step-btn{
+    width:44px;
+    height:44px;
+    min-width:44px;
+  }
+  .btn--sm{
+    width:44px;
+    height:44px;
+  }
+  .engrave-shape-btn{
+    width:52px;
+    height:52px;
+  }
+  .top-engrave-btn,
+  .engrave-layer-btn{
+    min-height:44px;
+  }
+  .slicer-caret-btn{
+    width:44px;
+  }
+}
 
 @media (max-width: 900px){
   #controls-toggle{

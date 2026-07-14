@@ -314,7 +314,8 @@ function setupRotateOverlay() {
     const mqPortrait = window.matchMedia?.('(orientation: portrait)').matches;
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
-    return Boolean(mqPortrait) || h > w;
+    const isNarrow = w < 820; // large tablets (iPad-sized, ~768-834px portrait) have room to work in portrait
+    return (Boolean(mqPortrait) || h > w) && isNarrow;
   }
 
   function userDismissedSession() {
@@ -427,6 +428,20 @@ function setupInfo() {
   });
   infoTip.addEventListener('mouseenter', () => clearTimeout(tipTimeout));
   infoTip.addEventListener('mouseleave', () => {
+    infoTip.style.display = 'none';
+    infoBtn.setAttribute('aria-expanded', 'false');
+  });
+
+  // Touch devices have no hover, so tapping the info button toggles the tip directly.
+  infoBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    clearTimeout(tipTimeout);
+    const isOpen = infoTip.style.display === 'block';
+    infoTip.style.display = isOpen ? 'none' : 'block';
+    infoBtn.setAttribute('aria-expanded', String(!isOpen));
+  });
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('#info-container')) return;
     infoTip.style.display = 'none';
     infoBtn.setAttribute('aria-expanded', 'false');
   });

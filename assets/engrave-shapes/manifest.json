@@ -1,0 +1,11 @@
+[
+  { "id": "star", "name": "Star", "file": "star.svg" },
+  { "id": "heart", "name": "Heart", "file": "heart.svg" },
+  { "id": "paw", "name": "Paw Print", "file": "paw.svg" },
+  { "id": "bolt", "name": "Lightning Bolt", "file": "bolt.svg" },
+  { "id": "moon", "name": "Moon", "file": "moon.svg" },
+  { "id": "sun", "name": "Sun", "file": "sun.svg" },
+  { "id": "flower", "name": "Flower", "file": "flower.svg" },
+  { "id": "circle", "name": "Circle", "file": "circle.svg" },
+  { "id": "letter-h", "name": "Letter H", "file": "letter-h.svg" }
+]
