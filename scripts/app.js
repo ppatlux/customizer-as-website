@@ -27,7 +27,7 @@ const ADVANCED_DEFAULTS = new Set(['hat', 'arms', 'bumper', 'tail']);
 const localModelSets = Object.fromEntries(
   Object.entries(ASSET_MANIFEST).map(([part, files]) => [
     part,
-    files.map((entry) => `./assets/models/${entry.file}`)
+    files.map((entry) => `./assets/models/${entry.folder}/${entry.file}`)
   ])
 );
 

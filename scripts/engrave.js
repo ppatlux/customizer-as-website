@@ -334,7 +334,7 @@ async function loadSupportedModel() {
 
 function getModelCandidates(entry) {
   return [...new Set([
-    `./assets/models/${entry.file}`,
+    entry.folder ? `./assets/models/${entry.folder}/${entry.file}` : `./assets/models/${entry.file}`,
     entry.source
   ].filter(Boolean))];
 }
