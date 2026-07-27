@@ -6,6 +6,13 @@ export const ASSET_MANIFEST = {
     { file: 'hat_2.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/07/hat_2.glb' },
     { file: 'hat_3.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/07/hat_3.glb' },
     { file: 'Spoiler_F1.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Spoiler_F1.glb' },
+    { file: 'Hat_Round.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Flat.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Pumpkin.glb', folder: 'hat', source: '' },
+    { file: 'Hat_SumoBand.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Prusa.glb', folder: 'hat', source: '' },
+    { file: 'Hat_dome.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Magic.glb', folder: 'hat', source: '' },
     { file: 'Hat_Santa.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Hat_Santa.glb' }
   ],
   arms: [
@@ -48,6 +55,9 @@ export const ASSET_MANIFEST = {
     { file: 'FaceUS_eyebrows_angry.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUS_eyebrows_angry.glb' },
     { file: 'FaceUS_Pumpkin.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUS_Pumpkin.glb' },
     { file: 'FaceUSOLED.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSOLED.glb' },
+    { file: 'FaceUSF1_v1.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSF1_v1.glb' },
+    { file: 'FaceUSF1_v2.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSF1_v2.glb' },
+    { file: 'FaceUSflat_v3.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSflat_v3.glb' },
     { file: 'FaceSanta.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceSanta.glb' }
   ],
   bottom: [
