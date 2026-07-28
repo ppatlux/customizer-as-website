@@ -15,7 +15,7 @@ const MODEL_Y_OFFSET = 30;
 const SVG_SURFACE_LIFT = 0.05;
 const DEFAULT_Z_OFFSET = 12.6;
 const MIN_SHAPE_AREA = 0.05;
-const SLICER_BRIDGE_URL = 'http://127.0.0.1:32123/open-model';
+const SLICER_PROTOCOL = 'hprobotslicer';
 const CUSTOMIZER_STATE_KEY = 'hp_robot_customizer_state';
 const DEFAULT_PART_COLOR = '#d9d9d9';
 const SHAPE_LIBRARY_MANIFEST_URL = './assets/engrave-shapes/manifest.json';
@@ -1067,51 +1067,37 @@ async function handleSendToSlicer() {
   try {
     isProcessing = true;
     updateActionButtonsState();
-    await updateProgress(`Preparing ${slicerLabel} import...`, `Generating the engraved STL for the local ${slicerLabel} helper.`);
+    await updateProgress(`Preparing ${slicerLabel} import...`, `Generating the engraved STL.`);
     setStatus('ok', `Preparing the engraved STL for ${slicerLabel}...`);
     const mesh = await buildEngravedMesh(async ({ title, detail }) => {
       await updateProgress(title, detail);
     });
-    await updateProgress('Packaging STL...', 'Cleaning the engraved mesh and converting it into a transferable STL file.');
+    await updateProgress('Packaging STL...', 'Cleaning the engraved mesh and converting it into an STL file.');
     const exportMesh = createExportMesh(mesh);
     const stlData = exporter.parse(exportMesh, { binary: true });
-    const filename = getEngravedFilename();
-    const payload = {
-      slicer,
-      filename,
-      content_base64: bytesToBase64(stlData)
-    };
+    // Unique per send so the local protocol handler (which looks the file up by name in the
+    // Downloads folder) never picks up a stale file left over from an earlier send.
+    const filename = getEngravedFilename().replace(/\.stl$/i, `_${Date.now()}.stl`);
+    const blob = new Blob([stlData], { type: 'model/stl' });
 
-    await updateProgress(`Opening ${slicerLabel}...`, `Saving the STL and opening ${slicerLabel}.`);
-    const response = await fetch(SLICER_BRIDGE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    await updateProgress(`Opening ${slicerLabel}...`, `Saving the STL and handing it to ${slicerLabel}.`);
+    downloadBlob(blob, filename);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let bridgeMessage = errorText;
-      try {
-        const parsed = JSON.parse(errorText);
-        bridgeMessage = parsed?.error || parsed?.message || errorText;
-      } catch {
-      }
-      throw new Error(bridgeMessage || `Bridge returned HTTP ${response.status}.`);
-    }
+    // The download write and the protocol handler's own lookup both race the browser's disk
+    // I/O; the handler retries for a few seconds on its side, but give it a head start here too.
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const result = await response.json();
-    const savedName = result?.filename || filename;
-    setStatus('ok', `Sent ${savedName} to ${slicerLabel}.`);
+    const protocolUrl = `${SLICER_PROTOCOL}://open?file=${encodeURIComponent(filename)}&slicer=${encodeURIComponent(slicer)}`;
+    const link = document.createElement('a');
+    link.href = protocolUrl;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setStatus('ok', `Sent ${filename} to ${slicerLabel}. First time here? Your browser asked to open "HP Robot Slicer Bridge" — allow it (and check "always allow") so future sends are instant.`);
   } catch (error) {
     console.error(error);
-    const errorMessage = String(error?.message || error);
-    const message = /Failed to fetch|NetworkError/i.test(errorMessage)
-      ? `Could not reach ${slicerLabel}. Make sure the slicer helper is running on this computer, then try again.`
-      : errorMessage || `Failed to send the STL to ${slicerLabel}.`;
-    setStatus('err', message);
+    setStatus('err', String(error?.message || error) || `Failed to send the STL to ${slicerLabel}.`);
   } finally {
     isProcessing = false;
     hideProgress();
@@ -1401,22 +1387,6 @@ function sanitizeExportGeometry(geometry) {
   welded.computeBoundingBox();
   welded.computeBoundingSphere();
   return welded;
-}
-
-function bytesToBase64(data) {
-  const bytes = data instanceof ArrayBuffer
-    ? new Uint8Array(data)
-    : ArrayBuffer.isView(data)
-      ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-      : new TextEncoder().encode(String(data));
-
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, index + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
 }
 
 function animate() {
