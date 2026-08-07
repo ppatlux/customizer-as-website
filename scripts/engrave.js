@@ -74,6 +74,8 @@ const slicerMenuToggle = document.getElementById('slicerMenuToggle');
 const slicerMenu = document.getElementById('slicerMenu');
 const statusMessage = document.getElementById('statusMessage');
 const partBadge = document.getElementById('partBadge');
+const panelEssential = document.getElementById('panel-essential');
+const infoContainerEl = document.getElementById('info-container');
 
 const loader = new GLTFLoader();
 loader.setCrossOrigin('anonymous');
@@ -183,6 +185,7 @@ let transformMode = 'translate';
 let positionLimits = { x: 20, z: 20, yMin: -5.0, yMax: 5.0 };
 let isProcessing = false;
 let gizmoUserVisible = true;
+let mobileSheetEl = null;
 
 setupUi();
 setupResize();
@@ -241,6 +244,69 @@ function setupUi() {
   renderSvgLayerList();
   updateSvgSummary();
   updateActionButtonsState();
+  if (isCoarsePointer()) setupMobileSheet();
+}
+
+// Moves the real #panel-essential and #info-container into the mobile bottom
+// sheet instead of rendering copies — every existing control (shape grid,
+// sliders, layer list, download/send-to-slicer...) keeps working with zero
+// duplicated logic, it just lives in a new DOM location. Mirrors index.html's
+// setupMobileSheet(), simplified: engrave has one panel, not essential/
+// advanced, so there's no separate "actions" host or per-part focus target.
+function setupMobileSheet() {
+  mobileSheetEl = document.getElementById('mobile-sheet');
+  const handle = document.getElementById('mobile-sheet-handle');
+  const listHost = document.getElementById('mobile-sheet-list');
+
+  if (!mobileSheetEl || !handle || !listHost || !panelEssential) return;
+
+  listHost.appendChild(panelEssential);
+  if (infoContainerEl) listHost.appendChild(infoContainerEl);
+
+  function setState(state) {
+    mobileSheetEl.dataset.state = state;
+    handle.setAttribute('aria-expanded', String(state === 'expanded'));
+    listHost.scrollTop = 0;
+  }
+
+  let dragStartY = null;
+  let dragMoved = false;
+
+  handle.addEventListener('click', () => {
+    if (dragMoved) {
+      dragMoved = false;
+      return;
+    }
+    setState(mobileSheetEl.dataset.state === 'expanded' ? 'peek' : 'expanded');
+  });
+
+  handle.addEventListener('touchstart', (event) => {
+    dragStartY = event.touches[0].clientY;
+    dragMoved = false;
+  }, { passive: true });
+
+  handle.addEventListener('touchmove', (event) => {
+    if (dragStartY === null) return;
+    if (Math.abs(event.touches[0].clientY - dragStartY) > 10) dragMoved = true;
+  }, { passive: true });
+
+  handle.addEventListener('touchend', (event) => {
+    if (dragStartY === null) return;
+    const endY = event.changedTouches[0]?.clientY ?? dragStartY;
+    const deltaY = endY - dragStartY;
+    dragStartY = null;
+    if (deltaY < -30) setState('expanded');
+    else if (deltaY > 30) setState('peek');
+  });
+
+  // Tapping the 3D viewer itself (not the sheet) collapses an expanded sheet.
+  viewer.addEventListener('pointerdown', (event) => {
+    if (mobileSheetEl.dataset.state !== 'expanded') return;
+    if (event.target.closest('#mobile-sheet')) return;
+    setState('peek');
+  });
+
+  setState('peek');
 }
 
 function setupSlicerMenu() {

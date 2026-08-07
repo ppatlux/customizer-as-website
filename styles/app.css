@@ -1319,25 +1319,25 @@ body.hp-lock-scroll{
 
 /* Below ~480px, a centered preset pill and the right-anchored Essential/
    Advanced pill physically overlap (each needs ~200-260px, more than half
-   the viewport). Stack them into two full-width rows instead of fighting
-   for the same horizontal space — this is the width bucket portrait phones
-   fall into (the sheet layout's other primary target besides landscape). */
+   the viewport). Stack them into two rows instead of fighting for the same
+   horizontal space — this is the width bucket portrait phones fall into
+   (the sheet layout's other primary target besides landscape). Both pills
+   keep their natural content width and center themselves, rather than
+   stretching edge-to-edge — Essential/Advanced only has ~230px of actual
+   content, so stretching it left a wide pill with a lot of dead space
+   around two small buttons. */
 @media (max-width: 480px){
   #preset-menu{
-    left:var(--edge);
-    right:var(--edge);
+    left:50%;
+    right:auto;
     top:calc(var(--edge) + env(safe-area-inset-top, 0px));
-    transform:none;
-    align-items:stretch;
-  }
-  .preset-toggle{
-    width:100%;
+    transform:translateX(-50%);
   }
   #controls-toggle{
-    left:var(--edge);
-    right:var(--edge);
+    left:50%;
+    right:auto;
     top:calc(var(--edge) + var(--control-h) + 8px + env(safe-area-inset-top, 0px));
-    justify-content:center;
+    transform:translateX(-50%);
   }
 }
 

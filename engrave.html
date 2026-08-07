@@ -203,6 +203,16 @@
       <div id="info-container" class="u-glass engrave-status-card" role="group" aria-label="Engraving status">
         <span class="combo-chip" id="statusMessage">Loading blank top...</span>
       </div>
+
+      <!-- Mobile-only (pointer:coarse) bottom sheet. On touch devices engrave.js
+           moves the real #panel-essential and #info-container in here (not
+           copies), same pattern as index.html's #mobile-sheet. -->
+      <div id="mobile-sheet" class="mobile-sheet" data-state="peek">
+        <button id="mobile-sheet-handle" class="mobile-sheet-handle" type="button" aria-expanded="false" aria-controls="mobile-sheet-list" aria-label="Expand engraving controls">
+          <span class="mobile-sheet-grip" aria-hidden="true"></span>
+        </button>
+        <div id="mobile-sheet-list" class="mobile-sheet-list"></div>
+      </div>
     </div>
   </main>
 

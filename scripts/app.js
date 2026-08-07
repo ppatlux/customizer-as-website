@@ -591,16 +591,40 @@ function showAdvancedPanel() {
   if (mobileLayoutActive) setMobileSheetState('expanded');
 }
 
-function setMobileSheetState(state) {
+// focusPart: which part's row peek should land on. Omit for "top of list"
+// (e.g. opening the sheet fresh); pass a part key after interacting with it
+// (variant/color change) so peek keeps showing that same part instead of
+// always jumping back to the first one.
+function setMobileSheetState(state, focusPart) {
   if (!mobileSheetEl) return;
+  const listHost = document.getElementById('mobile-sheet-list');
+  const row = focusPart ? document.getElementById(`${focusPart}-controls`) : null;
+
+  if (row && listHost) {
+    // Without this, the list keeps whatever scroll offset it had before —
+    // collapsing back to peek without a focus part could show a random
+    // mid-scroll slice of some part's card with its label and prev/next
+    // arrows scrolled out of view above it, looking like a rendering bug.
+    //
+    // .mobile-sheet has `transition:height`, so simply flipping data-state
+    // and then reading geometry measures a layout that's still mid-animation
+    // toward its target height, not the final one — computing a scroll
+    // offset against the wrong reference frame. Suspend the transition,
+    // force a synchronous reflow so the *final* target layout is what gets
+    // measured, then restore animation for the next (manual) toggle.
+    mobileSheetEl.style.transition = 'none';
+    mobileSheetEl.dataset.state = state;
+    mobileSheetHandleEl?.setAttribute('aria-expanded', String(state === 'expanded'));
+    void mobileSheetEl.offsetHeight; // force reflow at the new, final height
+    const rowRect = row.getBoundingClientRect();
+    const listRect = listHost.getBoundingClientRect();
+    listHost.scrollTop += rowRect.top - listRect.top;
+    requestAnimationFrame(() => { mobileSheetEl.style.transition = ''; });
+    return;
+  }
+
   mobileSheetEl.dataset.state = state;
   mobileSheetHandleEl?.setAttribute('aria-expanded', String(state === 'expanded'));
-  // Without this, the list keeps whatever scroll offset it had from the last
-  // time it was expanded — collapsing back to peek (or switching Essential/
-  // Advanced) could then show a random mid-scroll slice of some part's card
-  // with its label and prev/next arrows scrolled out of view above it,
-  // looking exactly like a rendering bug. Always start from the top instead.
-  const listHost = document.getElementById('mobile-sheet-list');
   if (listHost) listHost.scrollTop = 0;
 }
 
@@ -845,6 +869,9 @@ function setupPaletteWiring() {
 
     markCustomPreset();
     reallyClosePalette();
+    // Same as changing a variant — collapse back to the model with this part
+    // still front and center in peek instead of leaving the sheet expanded.
+    if (mobileLayoutActive) setMobileSheetState('peek', part);
   }, { passive: false });
 
   document.addEventListener('click', (event) => {
@@ -899,6 +926,10 @@ function setupGlobalClickHandler() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] - 1);
       loadModel(part);
       if (wasHidden) enforceArmsBumperExclusion(part);
+      // Collapse back to the model instead of leaving the sheet expanded —
+      // the point of changing a variant is to immediately see the result.
+      // Land peek on this same part so it's right there to keep adjusting.
+      if (mobileLayoutActive) setMobileSheetState('peek', part);
       touched = true;
     }
 
@@ -908,6 +939,7 @@ function setupGlobalClickHandler() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] + 1);
       loadModel(part);
       if (wasHidden) enforceArmsBumperExclusion(part);
+      if (mobileLayoutActive) setMobileSheetState('peek', part);
       touched = true;
     }
 
