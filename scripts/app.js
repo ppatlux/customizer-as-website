@@ -23,6 +23,8 @@ const STATE_KEY = 'hp_robot_customizer_state';
 const TOUR_VERSION = 'standalone-v1';
 const TOUR_STATE_KEY = 'hp_robot_tour_state';
 const ADVANCED_DEFAULTS = new Set(['hat', 'arms', 'bumper', 'tail']);
+const MODEL_VIEWER_SRC = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
+const QRCODE_LIB_SRC = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
 
 const localModelSets = Object.fromEntries(
   Object.entries(ASSET_MANIFEST).map(([part, files]) => [
@@ -98,6 +100,16 @@ const fullscreenBtn = document.getElementById('fullscreenBtn');
 const resetBtn = document.getElementById('resetBtn');
 const factoryResetBtn = document.getElementById('factoryResetBtn');
 const randomizeBtn = document.getElementById('randomizeBtn');
+const shareBtn = document.getElementById('shareBtn');
+const arBtn = document.getElementById('arBtn');
+const arOverlay = document.getElementById('ar-overlay');
+const arClose = document.getElementById('ar-close');
+const arTitle = document.getElementById('ar-title');
+const arDesc = document.getElementById('ar-desc');
+const arQrPanel = document.getElementById('ar-qr-panel');
+const arQrHolder = document.getElementById('ar-qr-holder');
+const arModelPanel = document.getElementById('ar-model-panel');
+const arModelHost = document.getElementById('ar-model-host');
 const exitMaxBtn = document.getElementById('exit-maximize');
 const dlMenu = document.getElementById('download-menu');
 const dlPrimary = document.getElementById('download-primary');
@@ -262,9 +274,11 @@ function bootstrap() {
   setupPaletteWiring();
   setupKeyboardNav();
   setupGlobalClickHandler();
+  setupArPreview();
   populatePresetMenu();
 
-  tryRestoreFromLocal();
+  const restoredFromShareLink = tryRestoreFromUrl();
+  if (!restoredFromShareLink) tryRestoreFromLocal();
 
   for (const part of Object.keys(modelSets)) {
     if (part === 'spacer' && !partVis.spacer) continue;
@@ -279,6 +293,7 @@ function bootstrap() {
     updateAllCounters();
     updateComboChip();
     saveStateToLocal();
+    if (restoredFromShareLink) toast('Loaded shared build', 'ok', 1800);
   }
 
   initPillsAndButtons();
@@ -1025,37 +1040,273 @@ function saveStateToLocal() {
   } catch {}
 }
 
+function applySavedState(saved) {
+  if (saved.currentIdx) {
+    for (const part of Object.keys(saved.currentIdx)) {
+      if (modelSets[part]) currentIdx[part] = clampPresetIndex(part, saved.currentIdx[part]);
+    }
+  }
+
+  if (saved.partVis) {
+    for (const part of Object.keys(saved.partVis)) {
+      if (typeof saved.partVis[part] === 'boolean') partVis[part] = saved.partVis[part];
+    }
+  }
+
+  if (saved.modelCols) {
+    for (const part of Object.keys(saved.modelCols)) {
+      if (!modelCols[part]) modelCols[part] = new THREE.Color('#d9d9d9');
+      modelCols[part].set(saved.modelCols[part] || '#d9d9d9');
+    }
+  }
+}
+
 function tryRestoreFromLocal() {
   let raw = null;
   try {
     raw = localStorage.getItem(STATE_KEY);
   } catch {}
-  if (!raw) return;
+  if (!raw) return false;
 
   try {
     const saved = JSON.parse(raw);
-    if (saved.currentIdx) {
-      for (const part of Object.keys(saved.currentIdx)) {
-        if (modelSets[part]) currentIdx[part] = clampPresetIndex(part, saved.currentIdx[part]);
-      }
-    }
-
-    if (saved.partVis) {
-      for (const part of Object.keys(saved.partVis)) {
-        if (typeof saved.partVis[part] === 'boolean') partVis[part] = saved.partVis[part];
-      }
-    }
-
-    if (saved.modelCols) {
-      for (const part of Object.keys(saved.modelCols)) {
-        if (!modelCols[part]) modelCols[part] = new THREE.Color('#d9d9d9');
-        modelCols[part].set(saved.modelCols[part] || '#d9d9d9');
-      }
-    }
-
+    applySavedState(saved);
     activePresetKey = saved.presetKey || 'custom';
     restoredFromLocal = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Compact, URL-safe base64 of the same shape saveStateToLocal() persists, so a
+// shared link and a locally-saved session decode through the same path.
+function encodeShareState() {
+  const state = {
+    currentIdx,
+    partVis,
+    modelCols: Object.fromEntries(Object.entries(modelCols).map(([part, color]) => [part, `#${color.getHexString()}`]))
+  };
+  const json = JSON.stringify(state);
+  const bytes = new TextEncoder().encode(json);
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+  const base64 = btoa(binary);
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function decodeShareState(param) {
+  let base64 = param.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) base64 += '=';
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  const json = new TextDecoder().decode(bytes);
+  return JSON.parse(json);
+}
+
+function getShareUrl() {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('c', encodeShareState());
+  return url.href;
+}
+
+function tryRestoreFromUrl() {
+  const param = new URLSearchParams(window.location.search).get('c');
+  if (!param) return false;
+
+  try {
+    applySavedState(decodeShareState(param));
+    activePresetKey = 'custom';
+    restoredFromLocal = true;
+
+    // Strip the config param once loaded so it doesn't keep overriding
+    // localStorage on every refresh of a bookmarked shared link.
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('c');
+    window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    return true;
+  } catch (error) {
+    console.error('Failed to parse shared config', error);
+    return false;
+  }
+}
+
+async function copyShareLink() {
+  const url = getShareUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('Share link copied to clipboard!', 'ok', 1800);
+    return;
   } catch {}
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = url;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+    toast('Share link copied to clipboard!', 'ok', 1800);
+  } catch {
+    window.prompt('Copy this link to share your build:', url);
+  }
+}
+
+function isTouchLikeDevice() {
+  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+}
+
+let modelViewerLoadPromise = null;
+function ensureModelViewerLoaded() {
+  if (customElements.get('model-viewer')) return Promise.resolve();
+  if (!modelViewerLoadPromise) {
+    modelViewerLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.src = MODEL_VIEWER_SRC;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load the AR viewer library'));
+      document.head.appendChild(script);
+    });
+  }
+  return modelViewerLoadPromise;
+}
+
+let qrLibLoadPromise = null;
+function ensureQrLibLoaded() {
+  if (window.QRCode) return Promise.resolve();
+  if (!qrLibLoadPromise) {
+    qrLibLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = QRCODE_LIB_SRC;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load the QR code library'));
+      document.head.appendChild(script);
+    });
+  }
+  return qrLibLoadPromise;
+}
+
+// Bakes only the currently visible parts (with their applied colors) into a single
+// binary glTF so a mobile AR viewer has one self-contained file to place, instead of
+// the app's per-part GLBs it normally juggles.
+async function exportVisiblePartsAsGlb() {
+  const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
+  const roots = Object.keys(modelSets)
+    .filter((part) => partVis[part] && loadedMods[part])
+    .map((part) => loadedMods[part]);
+
+  if (!roots.length) throw new Error('No visible parts to export');
+
+  const exporter = new GLTFExporter();
+  const result = await new Promise((resolve, reject) => {
+    exporter.parse(roots, resolve, reject, { binary: true, onlyVisible: true });
+  });
+
+  return new Blob([result], { type: 'model/gltf-binary' });
+}
+
+let arModelViewerEl = null;
+let arBlobUrl = null;
+
+function closeArOverlay() {
+  arOverlay.classList.remove('show');
+  if (arModelViewerEl) {
+    arModelViewerEl.remove();
+    arModelViewerEl = null;
+  }
+  if (arBlobUrl) {
+    URL.revokeObjectURL(arBlobUrl);
+    arBlobUrl = null;
+  }
+  arModelHost.innerHTML = '';
+}
+
+function hasAnyVisiblePart() {
+  return Object.keys(modelSets).some((part) => partVis[part] && loadedMods[part]);
+}
+
+async function openArQrFlow() {
+  arTitle.textContent = 'View on Your Phone';
+  arDesc.textContent = 'Scan this with your phone’s camera to open your exact build, then tap the AR icon there to place it in your space.';
+  arQrPanel.hidden = false;
+  arModelPanel.hidden = true;
+  arQrHolder.innerHTML = '';
+  arOverlay.classList.add('show');
+  arClose.focus();
+
+  const shareUrl = getShareUrl();
+  try {
+    await ensureQrLibLoaded();
+    new window.QRCode(arQrHolder, {
+      text: shareUrl,
+      width: 180,
+      height: 180,
+      correctLevel: window.QRCode.CorrectLevel.M
+    });
+  } catch (error) {
+    console.error(error);
+    arQrHolder.innerHTML = '';
+    const fallback = document.createElement('p');
+    fallback.className = 'engrave-note';
+    fallback.textContent = 'Could not generate a QR code. Copy this link instead:';
+    const code = document.createElement('code');
+    code.textContent = shareUrl;
+    arQrHolder.appendChild(fallback);
+    arQrHolder.appendChild(code);
+  }
+}
+
+async function openArModelFlow() {
+  arTitle.textContent = 'View in AR';
+  arDesc.textContent = 'Preparing your build…';
+  arQrPanel.hidden = true;
+  arModelPanel.hidden = false;
+  arModelHost.innerHTML = '<div class="ar-model-loading">Preparing preview…</div>';
+  arOverlay.classList.add('show');
+  arClose.focus();
+
+  try {
+    const [blob] = await Promise.all([exportVisiblePartsAsGlb(), ensureModelViewerLoaded()]);
+    arBlobUrl = URL.createObjectURL(blob);
+
+    arModelHost.innerHTML = '';
+    const mv = document.createElement('model-viewer');
+    mv.setAttribute('src', arBlobUrl);
+    mv.setAttribute('ar', '');
+    mv.setAttribute('ar-modes', 'webxr scene-viewer quick-look');
+    mv.setAttribute('camera-controls', '');
+    mv.setAttribute('auto-rotate', '');
+    mv.setAttribute('shadow-intensity', '1');
+    arModelHost.appendChild(mv);
+    arModelViewerEl = mv;
+    arDesc.textContent = 'Rotate to preview, then tap the AR icon (bottom right) to place it in your space.';
+  } catch (error) {
+    console.error(error);
+    arDesc.textContent = 'Could not prepare the AR preview. Please try again.';
+    arModelHost.innerHTML = '<div class="ar-model-loading">Something went wrong.</div>';
+  }
+}
+
+function setupArPreview() {
+  arBtn.addEventListener('click', () => {
+    if (!hasAnyVisiblePart()) {
+      toast('No visible parts to preview.', 'warn', 1800);
+      return;
+    }
+    if (isTouchLikeDevice()) {
+      openArModelFlow();
+    } else {
+      openArQrFlow();
+    }
+  });
+
+  arClose.addEventListener('click', closeArOverlay);
+  arOverlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeArOverlay();
+  });
 }
 
 function applyColor(part) {
@@ -1550,4 +1801,8 @@ randomizeBtn.addEventListener('click', () => {
   }
   markCustomPreset();
   toast('Randomized!', 'ok', 900);
+});
+
+shareBtn.addEventListener('click', () => {
+  copyShareLink();
 });

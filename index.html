@@ -55,6 +55,25 @@
         </div>
       </div>
 
+      <div id="ar-overlay" role="dialog" aria-modal="true" aria-labelledby="ar-title" tabindex="-1">
+        <div id="ar-card">
+          <button id="ar-close" class="ar-close" type="button" aria-label="Close AR preview">
+            <span class="material-icons">close</span>
+          </button>
+          <h2 id="ar-title">View on Your Phone</h2>
+          <p class="ar-desc" id="ar-desc">Scan this with your phone's camera to open your exact build, then tap the AR icon there to place it in your space.</p>
+
+          <div id="ar-qr-panel" class="ar-panel">
+            <div id="ar-qr-holder" aria-label="QR code linking to this build"></div>
+            <p class="engrave-note ar-note">AR needs a phone camera — recent Android (Chrome) or iPhone/iPad (Safari + ARKit) work best.</p>
+          </div>
+
+          <div id="ar-model-panel" class="ar-panel" hidden>
+            <div id="ar-model-host"></div>
+          </div>
+        </div>
+      </div>
+
       <button id="exit-maximize" class="btn btn--lg" title="Exit maximized view" aria-label="Exit maximized view">
         <span class="material-icons">close_fullscreen</span>
       </button>
@@ -116,6 +135,12 @@
           <button id="randomizeBtn" class="btn btn--lg" title="Randomize Parts" aria-label="Randomize all parts">
             <span class="material-icons">casino</span>
           </button>
+          <button id="shareBtn" class="btn btn--lg" title="Copy shareable link" aria-label="Copy a link to this build">
+            <span class="material-icons">share</span>
+          </button>
+          <button id="arBtn" class="btn btn--lg" title="View in AR / on your phone" aria-label="View this build in AR or on your phone">
+            <span class="material-icons">view_in_ar</span>
+          </button>
           <div id="download-group" role="group" aria-label="Downloads">
             <button id="download-primary" class="btn btn--lg" title="Download STEP" aria-label="Download STEP">
               <span class="material-icons">download</span>
@@ -157,8 +182,8 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.181.1/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.181.1/examples/jsm/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/"
     }
   }
   </script>
