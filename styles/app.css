@@ -38,6 +38,7 @@
   --err: #F6231E;
   --z-toolbar: 60;
   --z-panels: 55;
+  --z-sheet: 200;
   --z-toasts: 7000;
   --z-floating: 10000;
   --z-max: 2147483647;
@@ -636,8 +637,10 @@ html.vt-fallback.vt-leaving body{
 /* Mobile-only overflow menu (Factory Reset + Downloads). Hidden on pointer:fine
    devices, where those actions have their own dedicated buttons instead. */
 .action-mobile-cluster{ display:none; }
+/* display intentionally omitted here — it must stay governed by
+   .action-mobile-cluster (display:none, flipped to flex on pointer:coarse)
+   rather than being forced on unconditionally by this ID selector. */
 #more-group{
-  display:flex;
   position:relative;
   height:var(--control-h);
 }
@@ -766,6 +769,12 @@ html.vt-fallback.vt-leaving body{
 @keyframes app-loader-spin{
   to{ transform:rotate(360deg); }
 }
+
+/* Hidden by default (pointer:fine) — the full mobile-sheet ruleset that turns
+   this into a real bottom sheet only exists inside @media (pointer: coarse).
+   Without this, the unstyled #mobile-sheet-handle button (default UA button
+   chrome) would render as a stray element on desktop. */
+.mobile-sheet{ display:none; }
 
 #rotate-overlay,
 #consent-overlay,
@@ -1159,6 +1168,113 @@ body.hp-lock-scroll{
   #action-buttons{ gap:8px; }
   .action-desktop-cluster{ display:none !important; }
   .action-mobile-cluster{ display:flex !important; }
+
+  /* ---- Mobile bottom sheet ----
+     app.js's setupMobileSheet() moves the real #info-container and both
+     .model-controls panels into this sheet (see index.html's #mobile-sheet
+     shell) — not copies, the same elements — so every existing control
+     (color pills, palettes, counters, the download/more menus...) keeps
+     working with zero duplicated logic. This block only restyles them from
+     "floating desktop card" to "sheet content". The 3D viewer stays
+     full-bleed underneath; the sheet just floats over its bottom edge. */
+  .mobile-sheet{
+    display:flex;
+    flex-direction:column;
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:var(--z-sheet);
+    height:128px;
+    background:var(--glass-strong);
+    border:1px solid var(--stroke);
+    border-bottom:none;
+    border-top-left-radius:var(--radius-xl);
+    border-top-right-radius:var(--radius-xl);
+    box-shadow:0 -10px 30px rgba(0,0,0,0.14);
+    overflow:hidden;
+    transition:height var(--transition);
+  }
+  .mobile-sheet[data-state="expanded"]{
+    height:min(70vh, 560px);
+    height:min(70svh, 560px);
+  }
+
+  .mobile-sheet-handle{
+    flex:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:100%;
+    height:28px;
+    border:none;
+    background:transparent;
+    cursor:grab;
+    touch-action:none;
+  }
+  .mobile-sheet-grip{
+    width:40px;
+    height:5px;
+    border-radius:999px;
+    background:var(--stroke-strong);
+  }
+
+  .mobile-sheet-list{
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    padding:0 12px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .mobile-sheet[data-state="peek"] .mobile-sheet-list{
+    overflow:hidden;
+  }
+
+  .mobile-sheet-actions{
+    flex:none;
+    display:none;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top:1px solid var(--stroke);
+  }
+  .mobile-sheet[data-state="expanded"] .mobile-sheet-actions{
+    display:block;
+  }
+
+  /* Reflow the reparented panels to sit as plain sheet content — the sheet
+     itself is already the "card", so strip the nested card chrome. Display
+     (which panel is active) stays fully controlled by the existing
+     .essential/.advanced classes + JS inline-style toggle, untouched here. */
+  .mobile-sheet-list .model-controls{
+    position:static;
+    width:100%;
+    max-height:none;
+    background:none;
+    border:none;
+    box-shadow:none;
+    padding:10px 0;
+    animation:none;
+  }
+
+  /* Reflow the reparented toolbar the same way. */
+  .mobile-sheet-actions #info-container{
+    position:static;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    padding:0;
+    background:none;
+    border:none;
+    box-shadow:none;
+  }
+  .mobile-sheet-actions #action-buttons{
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .mobile-sheet-actions .combo-chip{
+    margin-left:0;
+  }
 }
 
 @media (max-width: 1024px), (max-height: 720px){

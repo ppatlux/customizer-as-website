@@ -26,6 +26,14 @@ const ADVANCED_DEFAULTS = new Set(['hat', 'arms', 'bumper', 'tail']);
 const MODEL_VIEWER_SRC = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
 const QRCODE_LIB_SRC = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
 const MM_TO_M = 0.001;
+// Small per-part lightness offsets applied only to the AR export, and only when
+// every visible part still shares the identical default color (see
+// exportVisiblePartsAsGlb) — enough contrast for edges to read under any
+// lighting, subtle enough to still look like "the same neutral gray".
+const AR_TINT_OFFSETS = {
+  top: 0.05, middle: -0.05, face: 0.09, bottom: -0.09, wheels: 0.13,
+  hat: -0.13, arms: 0.07, bumper: -0.07, spacer: 0.11, tail: -0.11
+};
 
 const localModelSets = Object.fromEntries(
   Object.entries(ASSET_MANIFEST).map(([part, files]) => [
@@ -163,6 +171,18 @@ controls.dampingFactor = 0.08;
 controls.update();
 controls.saveState();
 
+if (isTouchLikeDevice()) {
+  // The desktop framing leaves the robot small and low in the frame on a
+  // short landscape-phone viewport, made worse by the bottom sheet now
+  // covering part of it — zoom in and lift the look-at point into the body
+  // of the model instead of its base.
+  camera.position.set(-61, 68, 82);
+  camera.lookAt(0, 15, 0);
+  controls.target.set(0, 15, 0);
+  controls.update();
+  controls.saveState();
+}
+
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
 keyLight.position.set(100, 200, 100);
 keyLight.castShadow = true;
@@ -205,6 +225,9 @@ let consentReject = null;
 let tourRunning = false;
 let pendingInitialLoads = 0;
 let appLoaderHidden = false;
+let mobileLayoutActive = false;
+let mobileSheetEl = null;
+let mobileSheetHandleEl = null;
 
 for (const part of Object.keys(modelSets)) {
   currentIdx[part] = 0;
@@ -290,6 +313,7 @@ function bootstrap() {
   setupKeyboardNav();
   setupGlobalClickHandler();
   setupArPreview();
+  if (isTouchLikeDevice()) setupMobileSheet();
   populatePresetMenu();
 
   const restoredFromShareLink = tryRestoreFromUrl();
@@ -604,6 +628,7 @@ function showEssentialPanel() {
   essBtn.setAttribute('aria-selected', 'true');
   advBtn.setAttribute('aria-selected', 'false');
   reallyClosePalette();
+  if (mobileLayoutActive) setMobileSheetState('expanded');
 }
 
 function showAdvancedPanel() {
@@ -614,6 +639,78 @@ function showAdvancedPanel() {
   advBtn.setAttribute('aria-selected', 'true');
   essBtn.setAttribute('aria-selected', 'false');
   reallyClosePalette();
+  if (mobileLayoutActive) setMobileSheetState('expanded');
+}
+
+function setMobileSheetState(state) {
+  if (!mobileSheetEl) return;
+  mobileSheetEl.dataset.state = state;
+  mobileSheetHandleEl?.setAttribute('aria-expanded', String(state === 'expanded'));
+}
+
+function toggleMobileSheet() {
+  if (!mobileSheetEl) return;
+  setMobileSheetState(mobileSheetEl.dataset.state === 'expanded' ? 'peek' : 'expanded');
+}
+
+// Moves the real #info-container and both .model-controls panels into the
+// mobile bottom sheet instead of rendering separate copies — every existing
+// control (color pills, palettes, counters, the more/download menus...) keeps
+// working with zero duplicated logic, it just lives in a new DOM location.
+function setupMobileSheet() {
+  mobileSheetEl = document.getElementById('mobile-sheet');
+  mobileSheetHandleEl = document.getElementById('mobile-sheet-handle');
+  const listHost = document.getElementById('mobile-sheet-list');
+  const actionsHost = document.getElementById('mobile-sheet-actions');
+  const infoContainerEl = document.getElementById('info-container');
+
+  if (!mobileSheetEl || !mobileSheetHandleEl || !listHost || !actionsHost || !infoContainerEl) return;
+
+  mobileLayoutActive = true;
+  listHost.appendChild(essPanel);
+  listHost.appendChild(advPanel);
+  actionsHost.appendChild(infoContainerEl);
+
+  let dragStartY = null;
+  let dragMoved = false;
+
+  mobileSheetHandleEl.addEventListener('click', () => {
+    if (dragMoved) {
+      dragMoved = false;
+      return;
+    }
+    toggleMobileSheet();
+  });
+
+  mobileSheetHandleEl.addEventListener('touchstart', (event) => {
+    dragStartY = event.touches[0].clientY;
+    dragMoved = false;
+  }, { passive: true });
+
+  mobileSheetHandleEl.addEventListener('touchmove', (event) => {
+    if (dragStartY === null) return;
+    if (Math.abs(event.touches[0].clientY - dragStartY) > 10) dragMoved = true;
+  }, { passive: true });
+
+  mobileSheetHandleEl.addEventListener('touchend', (event) => {
+    if (dragStartY === null) return;
+    const endY = event.changedTouches[0]?.clientY ?? dragStartY;
+    const deltaY = endY - dragStartY;
+    dragStartY = null;
+    if (deltaY < -30) setMobileSheetState('expanded');
+    else if (deltaY > 30) setMobileSheetState('peek');
+    // small movement or none: the click listener above handles it as a tap
+  });
+
+  // Tapping the 3D viewer itself (not the sheet) collapses an expanded sheet,
+  // handing the view back to the model without needing the handle.
+  container.addEventListener('pointerdown', (event) => {
+    if (mobileSheetEl.dataset.state !== 'expanded') return;
+    if (event.target.closest('#mobile-sheet')) return;
+    setMobileSheetState('peek');
+  });
+
+  setMobileSheetState('peek');
 }
 
 function setupDownloadMenu() {
@@ -981,6 +1078,7 @@ function toast(message, type = 'ok', ms = 2000) {
 }
 
 function adjustControlsWidth() {
+  if (mobileLayoutActive) return; // sheet content is full-width via CSS instead
   const toggle = document.getElementById('controls-toggle');
   if (!toggle) return;
   const width = toggle.getBoundingClientRect().width;
@@ -1273,11 +1371,20 @@ function ensureQrLibLoaded() {
 // the app's per-part GLBs it normally juggles.
 async function exportVisiblePartsAsGlb() {
   const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
-  const roots = Object.keys(modelSets)
-    .filter((part) => partVis[part] && loadedMods[part])
-    .map((part) => loadedMods[part]);
+  const visibleParts = Object.keys(modelSets).filter((part) => partVis[part] && loadedMods[part]);
 
-  if (!roots.length) throw new Error('No visible parts to export');
+  if (!visibleParts.length) throw new Error('No visible parts to export');
+
+  // If nothing has been customized, every part shares the exact same default
+  // gray. Native AR viewers (Android Scene Viewer / iOS Quick Look) light the
+  // scene with real-world camera-estimated lighting, not this page's in-browser
+  // environment/shadow settings, so identically-colored parts can end up
+  // completely indistinguishable regardless of how the in-page preview looks.
+  // Nudge each part's lightness slightly apart in this exported copy only —
+  // real per-part color choices (2+ distinct colors already in use) are left
+  // untouched, since that already provides real separation.
+  const uniqueColors = new Set(visibleParts.map((part) => `#${modelCols[part].getHexString()}`));
+  const shouldTint = uniqueColors.size === 1;
 
   // The app's model space is millimeters (see MODEL_Y_OFFSET, and engrave.html's
   // sliders which label these same raw units as "mm"), but glTF - and every AR
@@ -1286,7 +1393,27 @@ async function exportVisiblePartsAsGlb() {
   // file carries its real-world size instead.
   const exportRoot = new THREE.Group();
   exportRoot.scale.setScalar(MM_TO_M);
-  roots.forEach((root) => exportRoot.add(root.clone(true)));
+
+  visibleParts.forEach((part) => {
+    const clone = loadedMods[part].clone(true);
+    if (shouldTint) {
+      const offset = AR_TINT_OFFSETS[part] ?? 0;
+      clone.traverse((node) => {
+        if (!node.isMesh) return;
+        // Object3D.clone() copies materials by reference, so clone (not mutate)
+        // before tinting or this would recolor the live customizer scene too.
+        const wasArray = Array.isArray(node.material);
+        const materials = wasArray ? node.material : [node.material];
+        const tinted = materials.map((material) => {
+          const tintedMaterial = material.clone();
+          tintedMaterial.color?.offsetHSL(0, 0, offset);
+          return tintedMaterial;
+        });
+        node.material = wasArray ? tinted : tinted[0];
+      });
+    }
+    exportRoot.add(clone);
+  });
 
   const exporter = new GLTFExporter();
   const result = await new Promise((resolve, reject) => {

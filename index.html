@@ -203,6 +203,17 @@
 
       <div class="model-controls essential" id="panel-essential" role="tabpanel" aria-labelledby="show-essential"></div>
       <div class="model-controls advanced" id="panel-advanced" role="tabpanel" aria-labelledby="show-advanced" style="display:none"></div>
+
+      <!-- Mobile-only (pointer:coarse) bottom sheet. On touch devices app.js moves the
+           real #info-container and both .model-controls panels in here (not copies) so
+           every existing control keeps working unchanged; empty and unused on desktop. -->
+      <div id="mobile-sheet" class="mobile-sheet" data-state="peek">
+        <button id="mobile-sheet-handle" class="mobile-sheet-handle" type="button" aria-expanded="false" aria-controls="mobile-sheet-list" aria-label="Expand build controls">
+          <span class="mobile-sheet-grip" aria-hidden="true"></span>
+        </button>
+        <div id="mobile-sheet-list" class="mobile-sheet-list"></div>
+        <div id="mobile-sheet-actions" class="mobile-sheet-actions"></div>
+      </div>
     </div>
   </main>
 
