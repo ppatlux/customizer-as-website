@@ -25,6 +25,7 @@ const TOUR_STATE_KEY = 'hp_robot_tour_state';
 const ADVANCED_DEFAULTS = new Set(['hat', 'arms', 'bumper', 'tail']);
 const MODEL_VIEWER_SRC = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
 const QRCODE_LIB_SRC = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+const MM_TO_M = 0.001;
 
 const localModelSets = Object.fromEntries(
   Object.entries(ASSET_MANIFEST).map(([part, files]) => [
@@ -1200,9 +1201,18 @@ async function exportVisiblePartsAsGlb() {
 
   if (!roots.length) throw new Error('No visible parts to export');
 
+  // The app's model space is millimeters (see MODEL_Y_OFFSET, and engrave.html's
+  // sliders which label these same raw units as "mm"), but glTF - and every AR
+  // viewer that consumes it - assumes 1 unit = 1 meter. Exporting the raw roots
+  // makes AR place a robot ~1000x too large. Wrap scaled clones so the exported
+  // file carries its real-world size instead.
+  const exportRoot = new THREE.Group();
+  exportRoot.scale.setScalar(MM_TO_M);
+  roots.forEach((root) => exportRoot.add(root.clone(true)));
+
   const exporter = new GLTFExporter();
   const result = await new Promise((resolve, reject) => {
-    exporter.parse(roots, resolve, reject, { binary: true, onlyVisible: true });
+    exporter.parse(exportRoot, resolve, reject, { binary: true, onlyVisible: true });
   });
 
   return new Blob([result], { type: 'model/gltf-binary' });
