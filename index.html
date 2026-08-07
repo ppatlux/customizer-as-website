@@ -18,6 +18,11 @@
 <body>
   <main class="page-shell">
     <div id="viewer-container" aria-label="HP Robot Customizer">
+      <div id="app-loader" aria-live="polite" aria-busy="true">
+        <div id="app-loader-spinner" aria-hidden="true"></div>
+        <div id="app-loader-mark">HP Robot Customizer</div>
+        <p id="app-loader-text">Loading your robot…</p>
+      </div>
       <div id="skeleton" class="u-hidden" aria-hidden="true"></div>
       <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
@@ -129,7 +134,7 @@
           <button id="resetBtn" class="btn btn--lg" title="Reset View" aria-label="Reset camera">
             <span class="material-icons">refresh</span>
           </button>
-          <button id="factoryResetBtn" class="btn btn--lg" title="Reset Build" aria-label="Reset build to default">
+          <button id="factoryResetBtn" class="btn btn--lg action-desktop-cluster" title="Reset Build" aria-label="Reset build to default">
             <span class="material-icons">restart_alt</span>
           </button>
           <button id="randomizeBtn" class="btn btn--lg" title="Randomize Parts" aria-label="Randomize all parts">
@@ -141,7 +146,7 @@
           <button id="arBtn" class="btn btn--lg" title="View in AR / on your phone" aria-label="View this build in AR or on your phone">
             <span class="material-icons">view_in_ar</span>
           </button>
-          <div id="download-group" role="group" aria-label="Downloads">
+          <div id="download-group" class="action-desktop-cluster" role="group" aria-label="Downloads">
             <button id="download-primary" class="btn btn--lg" title="Download STEP" aria-label="Download STEP">
               <span class="material-icons">download</span>
             </button>
@@ -153,7 +158,30 @@
               <button id="download3mfBtn" role="menuitem">Download 3MF files</button>
             </div>
           </div>
-          <div id="slicer-group" role="group" aria-label="Preferred slicer">
+          <div id="more-group" class="action-mobile-cluster" role="group" aria-label="More actions">
+            <button id="more-toggle" class="btn btn--lg" title="More actions" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">
+              <span class="material-icons">more_horiz</span>
+            </button>
+            <div id="more-menu" role="menu" aria-label="More actions">
+              <button id="moreFactoryResetBtn" role="menuitem">
+                <span class="material-icons">restart_alt</span>
+                <span>Reset Build</span>
+              </button>
+              <button id="moreDownloadStepBtn" role="menuitem">
+                <span class="material-icons">download</span>
+                <span>Download STEP</span>
+              </button>
+              <button id="moreDownloadGlbBtn" role="menuitem">
+                <span class="material-icons">download</span>
+                <span>Download GLB files</span>
+              </button>
+              <button id="moreDownload3mfBtn" role="menuitem">
+                <span class="material-icons">download</span>
+                <span>Download 3MF files</span>
+              </button>
+            </div>
+          </div>
+          <div id="slicer-group" class="action-desktop-cluster" role="group" aria-label="Preferred slicer">
             <button id="slicer-toggle" class="btn btn--lg" title="Preferred slicer" aria-haspopup="menu" aria-expanded="false" aria-controls="slicer-menu">
               <span class="slicer-badge" id="slicer-badge-current" data-slicer="orca" aria-hidden="true">O</span>
               <span class="material-icons caret">arrow_drop_down</span>

@@ -744,6 +744,12 @@ input[type="range"]{
 /* Touch devices: enlarge slider thumbs, step buttons, and small icon buttons
    past the mouse-tuned defaults so a fingertip can hit them reliably. */
 @media (pointer: coarse){
+  /* Sending to a desktop slicer app is meaningless on a phone with no slicer
+     installed — drop it and let "Download STL" stand alone as the primary action. */
+  #slicerSendGroup{
+    display:none;
+  }
+
   input[type="range"]{
     height:32px;
   }

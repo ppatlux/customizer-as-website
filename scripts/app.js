@@ -91,6 +91,7 @@ renderPanels();
 const container = document.getElementById('viewer-container');
 const toastStack = document.getElementById('toastStack');
 const skeleton = document.getElementById('skeleton');
+const appLoader = document.getElementById('app-loader');
 const infoBtn = document.getElementById('infoBtn');
 const infoTip = document.getElementById('info-tooltip');
 const presetMenu = document.getElementById('preset-menu');
@@ -117,6 +118,12 @@ const dlPrimary = document.getElementById('download-primary');
 const dlToggle = document.getElementById('download-toggle');
 const dlGlbBtn = document.getElementById('downloadGlbBtn');
 const dl3mfBtn = document.getElementById('download3mfBtn');
+const moreToggle = document.getElementById('more-toggle');
+const moreMenu = document.getElementById('more-menu');
+const moreFactoryResetBtn = document.getElementById('moreFactoryResetBtn');
+const moreDownloadStepBtn = document.getElementById('moreDownloadStepBtn');
+const moreDownloadGlbBtn = document.getElementById('moreDownloadGlbBtn');
+const moreDownload3mfBtn = document.getElementById('moreDownload3mfBtn');
 const slicerToggle = document.getElementById('slicer-toggle');
 const slicerMenu = document.getElementById('slicer-menu');
 const slicerBadgeCurrent = document.getElementById('slicer-badge-current');
@@ -196,6 +203,8 @@ let __scrollYBeforeMax = 0;
 let consentResolve = null;
 let consentReject = null;
 let tourRunning = false;
+let pendingInitialLoads = 0;
+let appLoaderHidden = false;
 
 for (const part of Object.keys(modelSets)) {
   currentIdx[part] = 0;
@@ -263,6 +272,10 @@ function bootstrap() {
     toast('Use a local web server for the best results. Some browsers block local file loading.', 'warn', 5000);
   }
 
+  // Safety net: never leave a user staring at the splash forever if a model
+  // request hangs (flaky connection, blocked CDN, etc.) instead of erroring.
+  setTimeout(hideAppLoader, 12000);
+
   setupResize();
   setupRotateOverlay();
   setupConsentPopup();
@@ -271,6 +284,7 @@ function bootstrap() {
   setupPresetMenu();
   setupPanels();
   setupDownloadMenu();
+  setupMoreMenu();
   setupSlicerMenu();
   setupPaletteWiring();
   setupKeyboardNav();
@@ -345,6 +359,7 @@ function setupRotateOverlay() {
   function showRotateOverlay() {
     reallyClosePalette();
     closeDlMenu();
+    closeMoreMenu();
     closePresetMenu();
     rotateOverlay.classList.add('show');
     (rotateHelp || rotateDismiss)?.focus();
@@ -416,6 +431,7 @@ function showConsentPopup() {
     if (consentConfirm) consentConfirm.disabled = true;
     reallyClosePalette();
     closeDlMenu();
+    closeMoreMenu();
     closePresetMenu();
     consentOverlay.classList.add('show');
     consentOverlay.focus();
@@ -501,6 +517,7 @@ function setupFullscreen() {
     if (__isMaximized) return;
     reallyClosePalette();
     closeDlMenu();
+    closeMoreMenu();
     closePresetMenu();
     __scrollYBeforeMax = window.scrollY || 0;
     document.body.classList.add('hp-lock-scroll');
@@ -538,6 +555,7 @@ function setupFullscreen() {
   document.addEventListener('fullscreenchange', () => {
     reallyClosePalette();
     closeDlMenu();
+    closeMoreMenu();
     closePresetMenu();
     updateFullscreenUI();
   });
@@ -627,6 +645,53 @@ function setupDownloadMenu() {
     if (event.target.closest('#download-group')) return;
     closeDlMenu();
   });
+}
+
+// Mobile-only overflow menu standing in for factoryResetBtn + #download-group,
+// which are hidden on touch devices (see .action-desktop-cluster in app.css).
+// Reuses the exact same underlying actions, just behind one combined button.
+function setupMoreMenu() {
+  if (!moreToggle) return;
+
+  moreToggle.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (moreMenu.classList.contains('open')) closeMoreMenu();
+    else openMoreMenu();
+  });
+
+  moreFactoryResetBtn.addEventListener('click', () => {
+    closeMoreMenu();
+    resetToFactory();
+  });
+  moreDownloadStepBtn.addEventListener('click', () => {
+    closeMoreMenu();
+    downloadSelection('step');
+  });
+  moreDownloadGlbBtn.addEventListener('click', () => {
+    closeMoreMenu();
+    downloadSelection('glb');
+  });
+  moreDownload3mfBtn.addEventListener('click', () => {
+    closeMoreMenu();
+    downloadSelection('3mf');
+  });
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('#more-group')) return;
+    closeMoreMenu();
+  });
+}
+
+function openMoreMenu() {
+  moreMenu.classList.add('open');
+  moreToggle.setAttribute('aria-expanded', 'true');
+}
+
+function closeMoreMenu() {
+  if (!moreMenu) return;
+  moreMenu.classList.remove('open');
+  moreToggle.setAttribute('aria-expanded', 'false');
 }
 
 function setupSlicerMenu() {
@@ -1134,6 +1199,19 @@ function tryRestoreFromUrl() {
 
 async function copyShareLink() {
   const url = getShareUrl();
+
+  // On a phone the native share sheet (Messages/WhatsApp/email/...) is the
+  // expected action for a share tap, not a silent clipboard copy.
+  if (isTouchLikeDevice() && navigator.share) {
+    try {
+      await navigator.share({ title: 'HP Robot Customizer', text: 'Check out my robot build', url });
+      return;
+    } catch (error) {
+      if (error?.name === 'AbortError') return; // user dismissed the share sheet, not a failure
+      // otherwise fall through to the clipboard/prompt fallback below
+    }
+  }
+
   try {
     await navigator.clipboard.writeText(url);
     toast('Share link copied to clipboard!', 'ok', 1800);
@@ -1289,7 +1367,15 @@ async function openArModelFlow() {
     mv.setAttribute('ar-modes', 'webxr scene-viewer quick-look');
     mv.setAttribute('camera-controls', '');
     mv.setAttribute('auto-rotate', '');
-    mv.setAttribute('shadow-intensity', '1');
+    // model-viewer's default "neutral" studio lighting is very flat/even, which
+    // on a build made of same-colored parts (the common case before someone
+    // picks colors) makes part boundaries nearly invisible. "legacy" has a
+    // stronger directional key light, and a tighter, more intense contact
+    // shadow reads as real depth between stacked/adjacent parts.
+    mv.setAttribute('environment-image', 'legacy');
+    mv.setAttribute('exposure', '1.1');
+    mv.setAttribute('shadow-intensity', '1.4');
+    mv.setAttribute('shadow-softness', '0.6');
     arModelHost.appendChild(mv);
     arModelViewerEl = mv;
     arDesc.textContent = 'Rotate to preview, then tap the AR icon (bottom right) to place it in your space.';
@@ -1397,6 +1483,14 @@ function enablePart(part, withToast = true) {
   markCustomPreset();
 }
 
+function hideAppLoader() {
+  if (appLoaderHidden || !appLoader) return;
+  appLoaderHidden = true;
+  appLoader.classList.add('hide');
+  appLoader.setAttribute('aria-busy', 'false');
+  setTimeout(() => appLoader.remove(), 450);
+}
+
 function loadModel(part) {
   if (part === 'spacer' && !partVis.spacer) return;
   const urls = getAssetCandidates(part, currentIdx[part], 'glb');
@@ -1406,6 +1500,18 @@ function loadModel(part) {
   }
 
   skeleton.classList.remove('u-hidden');
+
+  // Counts every in-flight loadModel() call so the first-paint splash can stay
+  // up until the initial build has actually finished loading, not just until
+  // the page's JS has started running.
+  pendingInitialLoads += 1;
+  let settled = false;
+  const settleInitialLoad = () => {
+    if (settled) return;
+    settled = true;
+    pendingInitialLoads = Math.max(0, pendingInitialLoads - 1);
+    if (pendingInitialLoads === 0) hideAppLoader();
+  };
 
   const tryLoad = (index) => {
     loader.load(
@@ -1428,6 +1534,7 @@ function loadModel(part) {
         updateVariantCounter(part);
         updateComboChip();
         skeleton.classList.add('u-hidden');
+        settleInitialLoad();
       },
       undefined,
       (error) => {
@@ -1438,6 +1545,7 @@ function loadModel(part) {
         console.error('Load error', error);
         toast(`Failed to load ${part} variant.`, 'err', 2400);
         skeleton.classList.add('u-hidden');
+        settleInitialLoad();
       }
     );
   };

@@ -17,6 +17,10 @@
   --edge: 16px;
   --control-h: 44px;
   --row-gap: 12px;
+  /* #info-container's actual rendered height: its buttons (--control-h) plus its
+     own 8px top/bottom padding and 1px border. Used to reserve clearance above
+     the toolbar without hardcoding a second number that can drift out of sync. */
+  --toolbar-h: calc(var(--control-h) + 18px);
   --blur: 0px;
   --radius: 14px;
   --radius-lg: 16px;
@@ -629,6 +633,47 @@ html.vt-fallback.vt-leaving body{
 .slicer-badge[data-slicer="orca"]{ background:#0F9E9E; }
 .slicer-badge[data-slicer="prusa"]{ background:#FF6A13; }
 
+/* Mobile-only overflow menu (Factory Reset + Downloads). Hidden on pointer:fine
+   devices, where those actions have their own dedicated buttons instead. */
+.action-mobile-cluster{ display:none; }
+#more-group{
+  display:flex;
+  position:relative;
+  height:var(--control-h);
+}
+#more-menu{
+  display:none;
+  position:absolute;
+  bottom:calc(100% + 10px);
+  right:0;
+  min-width:200px;
+  max-width:92vw;
+  background:var(--glass-strong);
+  border:1px solid var(--stroke-strong);
+  border-radius:12px;
+  box-shadow:var(--shadow-lg);
+  overflow:hidden;
+  z-index:var(--z-max);
+  animation:menuPop var(--transition-fast) ease-out both;
+}
+#more-menu.open{ display:block; }
+#more-menu button{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  padding:10px 12px;
+  background:transparent;
+  border:none;
+  text-align:left;
+  cursor:pointer;
+  font-size:13px;
+  color:var(--text);
+  transition:background var(--transition);
+}
+#more-menu button:hover{ background:var(--glass-hover); }
+#more-menu .material-icons{ font-size:18px; color:var(--muted); }
+
 .combo-chip{
   margin-left:6px;
   padding:6px 10px;
@@ -679,6 +724,47 @@ html.vt-fallback.vt-leaving body{
   animation:shimmer 1600ms infinite linear;
   opacity:.8;
   border-radius:var(--radius-xl);
+}
+
+/* First-paint splash: present in the raw HTML (not injected by JS) so it shows
+   instantly, before three.js and the CDN scripts even finish downloading. */
+#app-loader{
+  position:absolute;
+  inset:0;
+  z-index:var(--z-max);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  background:var(--canvas);
+  transition:opacity 380ms ease, visibility 380ms ease;
+}
+#app-loader.hide{
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+}
+#app-loader-spinner{
+  width:52px;
+  height:52px;
+  border-radius:50%;
+  border:4px solid var(--stroke);
+  border-top-color:var(--brand);
+  animation:app-loader-spin 900ms linear infinite;
+}
+#app-loader-mark{
+  font:800 15px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.04em;
+  color:var(--text);
+}
+#app-loader-text{
+  margin:0;
+  font:600 13px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+}
+@keyframes app-loader-spin{
+  to{ transform:rotate(360deg); }
 }
 
 #rotate-overlay,
@@ -1058,12 +1144,30 @@ body.hp-lock-scroll{
     grid-template-columns:repeat(4, 36px);
     gap:12px;
   }
+
+  /* Sending to a desktop slicer app (OrcaSlicer/PrusaSlicer) is meaningless on a
+     phone with no slicer installed — drop those controls instead of showing
+     buttons that can never do anything here. */
+  #slicer-group,
+  [data-role="print"]{
+    display:none !important;
+  }
+
+  /* Fold the lower-priority actions (factory reset, file downloads) into one
+     overflow button so the touch toolbar stays short enough to never grow wide
+     enough to reach under the parts panel. */
+  #action-buttons{ gap:8px; }
+  .action-desktop-cluster{ display:none !important; }
+  .action-mobile-cluster{ display:flex !important; }
 }
 
 @media (max-width: 1024px), (max-height: 720px){
   :root{ --edge: 12px; }
   .model-controls{
-    bottom:var(--edge);
+    /* Reserve space above the bottom toolbar instead of sharing its edge — on
+       landscape-phone-sized viewports both would otherwise anchor to the same
+       bottom line and the toolbar (higher z-index) visually cuts into the panel. */
+    bottom:calc(var(--edge) + var(--toolbar-h) + var(--row-gap));
     width:min(44vw, 320px);
     overflow:auto;
     max-height:none;
