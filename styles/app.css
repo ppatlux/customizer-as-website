@@ -61,6 +61,12 @@ body{
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Roboto,Segoe UI,system-ui,Arial,sans-serif;
   background:var(--canvas);
   overflow:hidden;
+  /* Kills the browser's native double-tap-to-zoom on the UI chrome (buttons,
+     sheet, top bar) — this is an app-like interface, not a content page, and
+     the 3D viewer already has its own pinch-to-zoom via OrbitControls
+     (canvas overrides this with touch-action:none). Still allows normal
+     panning/scrolling. */
+  touch-action:manipulation;
 }
 
 /* Fallback crossfade for browsers without cross-document View Transitions support.
@@ -776,7 +782,6 @@ html.vt-fallback.vt-leaving body{
    chrome) would render as a stray element on desktop. */
 .mobile-sheet{ display:none; }
 
-#rotate-overlay,
 #consent-overlay,
 #ar-overlay{
   position:absolute;
@@ -791,13 +796,11 @@ html.vt-fallback.vt-leaving body{
   z-index:var(--z-max);
   pointer-events:auto;
 }
-#rotate-overlay.show,
 #consent-overlay.show,
 #ar-overlay.show{
   display:flex;
 }
 
-#rotate-card,
 #consent-card,
 #ar-card{
   border-radius:16px;
@@ -889,37 +892,6 @@ html.vt-fallback.vt-leaving body{
   color:var(--muted);
 }
 
-#rotate-card{
-  width:min(520px, 92vw);
-  padding:calc(18px + env(safe-area-inset-top, 0px)) 18px calc(18px + env(safe-area-inset-bottom, 0px));
-  text-align:center;
-}
-#rotate-icon{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:56px;
-  height:56px;
-  margin:4px auto 10px auto;
-  border-radius:50%;
-  border:1px solid var(--stroke);
-  background:var(--glass-bg);
-  box-shadow:var(--shadow-sm);
-}
-#rotate-icon .material-icons{ font-size:28px; }
-#rotate-title{
-  margin:8px 0 6px 0;
-  font:700 14px/1.1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  letter-spacing:.08em;
-  text-transform:uppercase;
-  color:var(--muted);
-}
-#rotate-desc{
-  margin:0 0 12px 0;
-  font:500 14px/1.35 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  color:var(--text);
-}
-
 #consent-card{
   width:min(600px, 92vw);
   padding:calc(18px + env(safe-area-inset-top, 0px)) 18px calc(18px + env(safe-area-inset-bottom, 0px));
@@ -963,14 +935,12 @@ html.vt-fallback.vt-leaving body{
   accent-color:var(--brand);
   cursor:pointer;
 }
-.consent-actions,
-.rotate-actions{
+.consent-actions{
   display:flex;
   flex-wrap:wrap;
   gap:8px;
-  justify-content:center;
+  justify-content:flex-end;
 }
-.consent-actions{ justify-content:flex-end; }
 
 .rotate-btn{
   padding:10px 14px;
@@ -1203,6 +1173,15 @@ body.hp-lock-scroll{
     height:min(48vh, 260px);
     height:min(48svh, 260px);
   }
+  /* Portrait phones have the opposite problem: plenty of height (~700-900px)
+     to spare, so the tight landscape cap leaves the sheet cramped for no
+     reason — let it use more of that room instead. */
+  @media (orientation: portrait){
+    .mobile-sheet[data-state="expanded"]{
+      height:min(55vh, 480px);
+      height:min(55svh, 480px);
+    }
+  }
 
   .mobile-sheet-handle{
     flex:none;
@@ -1265,11 +1244,15 @@ body.hp-lock-scroll{
      .model-controls-row and .pill-container are already internally flex
      rows; turning their shared parent into a wrapping row just sits them
      side by side instead of stacked. */
+  /* Deliberately kept as two stacked rows (nav row, then pill/action row) —
+     NOT squeezed onto one line. An earlier attempt let them sit side by side
+     and wrap onto a second line only when a row ran out of width, but
+     whether a given part's label+counter text happened to fit varied part to
+     part ("FACE 5/12" fit, "BOTTOM 3/3" didn't), so some rows looked one-line
+     and others two-line for no visible reason. Always-two-rows is a few px
+     taller but looks identical for every part regardless of label length. */
   .mobile-sheet-list .model-section{
-    flex-direction:row;
-    flex-wrap:wrap;
-    align-items:center;
-    gap:6px 10px;
+    gap:6px;
     padding:8px 2px;
     border:none;
     border-bottom:1px solid var(--stroke);
@@ -1282,16 +1265,6 @@ body.hp-lock-scroll{
   }
   .mobile-sheet-list .model-section:last-child{
     border-bottom:none;
-  }
-  .mobile-sheet-list .model-controls-row{
-    flex:1 1 auto;
-    min-width:120px;
-  }
-  .mobile-sheet-list .pill-container{
-    flex:none;
-  }
-  .mobile-sheet-list .top-engrave-btn{
-    flex-basis:100%;
   }
 
   /* Reflow the reparented toolbar into one horizontally-scrollable strip
@@ -1341,6 +1314,30 @@ body.hp-lock-scroll{
   }
 }
 
+/* Below ~480px, a centered preset pill and the right-anchored Essential/
+   Advanced pill physically overlap (each needs ~200-260px, more than half
+   the viewport). Stack them into two full-width rows instead of fighting
+   for the same horizontal space — this is the width bucket portrait phones
+   fall into (the sheet layout's other primary target besides landscape). */
+@media (max-width: 480px){
+  #preset-menu{
+    left:var(--edge);
+    right:var(--edge);
+    top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+    transform:none;
+    align-items:stretch;
+  }
+  .preset-toggle{
+    width:100%;
+  }
+  #controls-toggle{
+    left:var(--edge);
+    right:var(--edge);
+    top:calc(var(--edge) + var(--control-h) + 8px + env(safe-area-inset-top, 0px));
+    justify-content:center;
+  }
+}
+
 @media (max-width: 640px){
   #info-container{
     top:calc(var(--edge) + env(safe-area-inset-top, 0px));
@@ -1367,7 +1364,7 @@ body.hp-lock-scroll{
 
 @media (prefers-reduced-motion: reduce){
   *{ animation:none !important; transition:none !important; }
-  #rotate-overlay, #consent-overlay, #ar-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+  #consent-overlay, #ar-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
 }
 
 /* Shared chrome that also exists on engrave.html with the same view-transition-name:

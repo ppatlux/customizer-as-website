@@ -26,13 +26,13 @@ const ADVANCED_DEFAULTS = new Set(['hat', 'arms', 'bumper', 'tail']);
 const MODEL_VIEWER_SRC = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
 const QRCODE_LIB_SRC = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
 const MM_TO_M = 0.001;
-// Small per-part lightness offsets applied only to the AR export, and only when
-// every visible part still shares the identical default color (see
-// exportVisiblePartsAsGlb) — enough contrast for edges to read under any
-// lighting, subtle enough to still look like "the same neutral gray".
+// Small per-part lightness offsets always applied to the AR export (see
+// exportVisiblePartsAsGlb) so adjacent parts never end up looking flat and
+// indistinguishable under native AR's real-world lighting, regardless of
+// what colors are actually in use.
 const AR_TINT_OFFSETS = {
-  top: 0.05, middle: -0.05, face: 0.09, bottom: -0.09, wheels: 0.13,
-  hat: -0.13, arms: 0.07, bumper: -0.07, spacer: 0.11, tail: -0.11
+  top: 0.08, middle: -0.08, face: 0.14, bottom: -0.14, wheels: 0.20,
+  hat: -0.20, arms: 0.11, bumper: -0.11, spacer: 0.17, tail: -0.17
 };
 
 const localModelSets = Object.fromEntries(
@@ -139,10 +139,6 @@ const essBtn = document.getElementById('show-essential');
 const advBtn = document.getElementById('show-advanced');
 const essPanel = document.getElementById('panel-essential');
 const advPanel = document.getElementById('panel-advanced');
-const rotateOverlay = document.getElementById('rotate-overlay');
-const rotateDismiss = document.getElementById('rotate-dismiss');
-const rotateNever = document.getElementById('rotate-never');
-const rotateHelp = document.getElementById('rotate-help');
 const consentOverlay = document.getElementById('consent-overlay');
 const consentCheckbox = document.getElementById('consent-checkbox');
 const consentConfirm = document.getElementById('consent-confirm');
@@ -172,13 +168,27 @@ controls.update();
 controls.saveState();
 
 if (isTouchLikeDevice()) {
-  // The desktop framing leaves the robot small and low in the frame on a
-  // short landscape-phone viewport, made worse by the bottom sheet now
-  // covering part of it — zoom in and lift the look-at point into the body
-  // of the model instead of its base.
-  camera.position.set(-61, 68, 82);
-  camera.lookAt(0, 15, 0);
-  controls.target.set(0, 15, 0);
+  // PerspectiveCamera's fov is vertical, so at a fixed distance a narrow
+  // (portrait) aspect ratio sees much less width than a wide (landscape) one
+  // — the same tight distance that nicely fills a short landscape-phone
+  // frame crops the model edge-to-edge on a narrow portrait one. Only
+  // zoom in for landscape; portrait already has enough room at roughly the
+  // desktop framing since the sheet there doesn't eat much vertical space.
+  const initialAspect = (window.innerWidth || 1) / (window.innerHeight || 1);
+  if (initialAspect >= 1) {
+    // Landscape: desktop framing leaves the robot small and low in the frame
+    // on a short viewport, made worse by the bottom sheet covering part of
+    // it — zoom in and lift the look-at point into the body of the model.
+    camera.position.set(-61, 68, 82);
+    camera.lookAt(0, 15, 0);
+    controls.target.set(0, 15, 0);
+  } else {
+    // Portrait: plenty of vertical room already: keep the desktop distance,
+    // just lift the look-at point the same way for a better-centered frame.
+    camera.position.set(-90, 100, 120);
+    camera.lookAt(0, 15, 0);
+    controls.target.set(0, 15, 0);
+  }
   controls.update();
   controls.saveState();
 }
@@ -300,7 +310,6 @@ function bootstrap() {
   setTimeout(hideAppLoader, 12000);
 
   setupResize();
-  setupRotateOverlay();
   setupConsentPopup();
   setupInfo();
   setupFullscreen();
@@ -357,66 +366,6 @@ function setupResize() {
   window.addEventListener('resize', onResize, { passive: true });
   window.addEventListener('orientationchange', onResize, { passive: true });
   setTimeout(onResize, 50);
-}
-
-function setupRotateOverlay() {
-  function isCoarsePointer() {
-    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
-  }
-
-  function isPortraitLike() {
-    const mqPortrait = window.matchMedia?.('(orientation: portrait)').matches;
-    const w = container.clientWidth || window.innerWidth;
-    const h = container.clientHeight || window.innerHeight;
-    const isNarrow = w < 820; // large tablets (iPad-sized, ~768-834px portrait) have room to work in portrait
-    return (Boolean(mqPortrait) || h > w) && isNarrow;
-  }
-
-  function userDismissedSession() {
-    return sessionStorage.getItem('hp_rotate_dismiss') === '1';
-  }
-
-  function userDismissedForever() {
-    return localStorage.getItem('hp_rotate_never') === '1';
-  }
-
-  function showRotateOverlay() {
-    reallyClosePalette();
-    closeDlMenu();
-    closeMoreMenu();
-    closePresetMenu();
-    rotateOverlay.classList.add('show');
-    (rotateHelp || rotateDismiss)?.focus();
-  }
-
-  function hideRotateOverlay() {
-    rotateOverlay.classList.remove('show');
-  }
-
-  function updateRotateOverlay() {
-    if (!isCoarsePointer() || userDismissedForever() || userDismissedSession() || !isPortraitLike()) {
-      hideRotateOverlay();
-      return;
-    }
-    showRotateOverlay();
-  }
-
-  rotateDismiss?.addEventListener('click', () => {
-    sessionStorage.setItem('hp_rotate_dismiss', '1');
-    hideRotateOverlay();
-  });
-  rotateNever?.addEventListener('click', () => {
-    localStorage.setItem('hp_rotate_never', '1');
-    hideRotateOverlay();
-  });
-  rotateHelp?.addEventListener('click', hideRotateOverlay);
-  rotateOverlay?.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') hideRotateOverlay();
-  });
-
-  window.addEventListener('resize', updateRotateOverlay, { passive: true });
-  window.addEventListener('orientationchange', updateRotateOverlay, { passive: true });
-  setTimeout(updateRotateOverlay, 0);
 }
 
 function setupConsentPopup() {
@@ -1375,17 +1324,6 @@ async function exportVisiblePartsAsGlb() {
 
   if (!visibleParts.length) throw new Error('No visible parts to export');
 
-  // If nothing has been customized, every part shares the exact same default
-  // gray. Native AR viewers (Android Scene Viewer / iOS Quick Look) light the
-  // scene with real-world camera-estimated lighting, not this page's in-browser
-  // environment/shadow settings, so identically-colored parts can end up
-  // completely indistinguishable regardless of how the in-page preview looks.
-  // Nudge each part's lightness slightly apart in this exported copy only —
-  // real per-part color choices (2+ distinct colors already in use) are left
-  // untouched, since that already provides real separation.
-  const uniqueColors = new Set(visibleParts.map((part) => `#${modelCols[part].getHexString()}`));
-  const shouldTint = uniqueColors.size === 1;
-
   // The app's model space is millimeters (see MODEL_Y_OFFSET, and engrave.html's
   // sliders which label these same raw units as "mm"), but glTF - and every AR
   // viewer that consumes it - assumes 1 unit = 1 meter. Exporting the raw roots
@@ -1394,24 +1332,33 @@ async function exportVisiblePartsAsGlb() {
   const exportRoot = new THREE.Group();
   exportRoot.scale.setScalar(MM_TO_M);
 
+  // Native AR viewers (Android Scene Viewer / iOS Quick Look) light the scene
+  // with real-world camera-estimated lighting, not this page's in-browser
+  // environment/shadow settings — so parts that are the same or even just
+  // similar shades of gray can end up completely indistinguishable, no matter
+  // how the in-page preview looks. Always nudge each part's lightness apart by
+  // a small, fixed amount in this exported copy (never the live scene) —
+  // conditionally skipping this whenever 2+ colors were already "different"
+  // turned out fragile: adding a part like Hat/Arms from a non-Starter preset
+  // was enough to flip that check off and leave the whole build flat again.
+  // The offset is small enough that a deliberately-chosen color still reads
+  // as that color, just with guaranteed separation from its neighbors.
   visibleParts.forEach((part) => {
     const clone = loadedMods[part].clone(true);
-    if (shouldTint) {
-      const offset = AR_TINT_OFFSETS[part] ?? 0;
-      clone.traverse((node) => {
-        if (!node.isMesh) return;
-        // Object3D.clone() copies materials by reference, so clone (not mutate)
-        // before tinting or this would recolor the live customizer scene too.
-        const wasArray = Array.isArray(node.material);
-        const materials = wasArray ? node.material : [node.material];
-        const tinted = materials.map((material) => {
-          const tintedMaterial = material.clone();
-          tintedMaterial.color?.offsetHSL(0, 0, offset);
-          return tintedMaterial;
-        });
-        node.material = wasArray ? tinted : tinted[0];
+    const offset = AR_TINT_OFFSETS[part] ?? 0;
+    clone.traverse((node) => {
+      if (!node.isMesh) return;
+      // Object3D.clone() copies materials by reference, so clone (not mutate)
+      // before tinting or this would recolor the live customizer scene too.
+      const wasArray = Array.isArray(node.material);
+      const materials = wasArray ? node.material : [node.material];
+      const tinted = materials.map((material) => {
+        const tintedMaterial = material.clone();
+        tintedMaterial.color?.offsetHSL(0, 0, offset);
+        return tintedMaterial;
       });
-    }
+      node.material = wasArray ? tinted : tinted[0];
+    });
     exportRoot.add(clone);
   });
 

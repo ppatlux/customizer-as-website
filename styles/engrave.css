@@ -45,6 +45,9 @@ body{
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Roboto,Segoe UI,system-ui,Arial,sans-serif;
   background:var(--canvas);
   overflow:hidden;
+  /* Kills the browser's native double-tap-to-zoom on the UI chrome — this is
+     an app-like interface, not a content page. */
+  touch-action:manipulation;
 }
 
 /* Fallback crossfade for browsers without cross-document View Transitions support.
