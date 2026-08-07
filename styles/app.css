@@ -1238,19 +1238,13 @@ body.hp-lock-scroll{
     animation:none;
   }
 
-  /* Collapse each part card from a two-row desktop layout into one compact
-     line — [< Label 1/13 >]  [pill][eye][dl] — so several parts fit inside
-     the sheet's limited height instead of one card eating the whole thing.
-     .model-controls-row and .pill-container are already internally flex
-     rows; turning their shared parent into a wrapping row just sits them
-     side by side instead of stacked. */
-  /* Deliberately kept as two stacked rows (nav row, then pill/action row) —
-     NOT squeezed onto one line. An earlier attempt let them sit side by side
-     and wrap onto a second line only when a row ran out of width, but
-     whether a given part's label+counter text happened to fit varied part to
-     part ("FACE 5/12" fit, "BOTTOM 3/3" didn't), so some rows looked one-line
-     and others two-line for no visible reason. Always-two-rows is a few px
-     taller but looks identical for every part regardless of label length. */
+  /* Kept as two stacked rows (nav row, then pill/action row) — NOT squeezed
+     onto one line. An earlier attempt let them sit side by side and wrap
+     onto a second line only when a row ran out of width, but whether a given
+     part's label+counter text happened to fit varied part to part ("FACE
+     5/12" fit, "BOTTOM 3/3" didn't), so some rows looked one-line and others
+     two-line for no visible reason. Always-two-rows is a few px taller but
+     looks identical for every part regardless of label length. */
   .mobile-sheet-list .model-section{
     gap:6px;
     padding:8px 2px;
@@ -1265,6 +1259,15 @@ body.hp-lock-scroll{
   }
   .mobile-sheet-list .model-section:last-child{
     border-bottom:none;
+  }
+  /* The Engrave button's full desktop CTA treatment (glowing brand-color
+     shadow, taller padding) reads as an oversized, out-of-place element
+     wedged between two thin list rows in this denser context — tone it down
+     to sit flush with the rest of the compact list instead. */
+  .mobile-sheet-list .top-engrave-btn{
+    min-height:34px;
+    font-size:11.5px;
+    box-shadow:none;
   }
 
   /* Reflow the reparented toolbar into one horizontally-scrollable strip

@@ -595,6 +595,13 @@ function setMobileSheetState(state) {
   if (!mobileSheetEl) return;
   mobileSheetEl.dataset.state = state;
   mobileSheetHandleEl?.setAttribute('aria-expanded', String(state === 'expanded'));
+  // Without this, the list keeps whatever scroll offset it had from the last
+  // time it was expanded — collapsing back to peek (or switching Essential/
+  // Advanced) could then show a random mid-scroll slice of some part's card
+  // with its label and prev/next arrows scrolled out of view above it,
+  // looking exactly like a rendering bug. Always start from the top instead.
+  const listHost = document.getElementById('mobile-sheet-list');
+  if (listHost) listHost.scrollTop = 0;
 }
 
 function toggleMobileSheet() {
