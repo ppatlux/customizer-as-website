@@ -1625,15 +1625,27 @@ async function bakeContactShadows(exportRoot) {
       buckets[level].push(t);
     }
 
-    // Rebuild this part as one mesh per non-empty bucket, each a plain
-    // (local-space, untransformed) copy of that bucket's triangles from the
-    // original geometry, sharing the original mesh's transform. The material
-    // is a clone of the part's already-tinted material (see
+    // Rebuild this part as one mesh per non-empty bucket, each a world-space
+    // copy of that bucket's triangles from the original geometry (baking in
+    // mesh.matrixWorld rather than keeping it local + copying this mesh's
+    // own transform onto the bucket mesh). That matters because some parts'
+    // source files nest a detail mesh as a CHILD of another mesh instead of
+    // as a sibling — if the parent mesh is processed first in this same
+    // loop and removed from ITS OWN parent, a child mesh processed right
+    // after would have re-parented its bucket meshes onto that now-orphaned
+    // parent, silently dropping them from the export (they'd still exist as
+    // objects, just unreachable from exportRoot, so GLTFExporter — and any
+    // AR viewer — would never see them: real geometry that quietly
+    // vanished). Baking world transforms and adding straight to exportRoot
+    // sidesteps the whole "is this mesh's ancestor still attached" question.
+    // The material is a clone of the part's already-tinted material (see
     // AR_TINT_OFFSETS/exportVisiblePartsAsGlb, which runs before this),
     // darkened further by that bucket's AO factor — so part-level tint and
     // per-triangle contact AO compose correctly.
     const baseMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-    const parent = mesh.parent;
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    const worldPos = new THREE.Vector3();
+    const worldNormal = new THREE.Vector3();
     const bucketMeshes = [];
 
     for (let level = 0; level < AO_LEVELS; level++) {
@@ -1649,13 +1661,15 @@ async function bakeContactShadows(exportRoot) {
         for (let v = 0; v < 3; v++) {
           const srcIdx = srcStart + v;
           const dstIdx = bucketIdx * 3 + v;
-          bucketPositions[dstIdx * 3] = posAttr.getX(srcIdx);
-          bucketPositions[dstIdx * 3 + 1] = posAttr.getY(srcIdx);
-          bucketPositions[dstIdx * 3 + 2] = posAttr.getZ(srcIdx);
+          worldPos.fromBufferAttribute(posAttr, srcIdx).applyMatrix4(mesh.matrixWorld);
+          bucketPositions[dstIdx * 3] = worldPos.x;
+          bucketPositions[dstIdx * 3 + 1] = worldPos.y;
+          bucketPositions[dstIdx * 3 + 2] = worldPos.z;
           if (bucketNormals) {
-            bucketNormals[dstIdx * 3] = normalAttr.getX(srcIdx);
-            bucketNormals[dstIdx * 3 + 1] = normalAttr.getY(srcIdx);
-            bucketNormals[dstIdx * 3 + 2] = normalAttr.getZ(srcIdx);
+            worldNormal.fromBufferAttribute(normalAttr, srcIdx).applyMatrix3(normalMatrix).normalize();
+            bucketNormals[dstIdx * 3] = worldNormal.x;
+            bucketNormals[dstIdx * 3 + 1] = worldNormal.y;
+            bucketNormals[dstIdx * 3 + 2] = worldNormal.z;
           }
           if (bucketUvs) {
             bucketUvs[dstIdx * 2] = uvAttr.getX(srcIdx);
@@ -1678,17 +1692,12 @@ async function bakeContactShadows(exportRoot) {
       bucketMaterial.color?.multiplyScalar(ao);
 
       const bucketMesh = new THREE.Mesh(bucketGeom, bucketMaterial);
-      bucketMesh.position.copy(mesh.position);
-      bucketMesh.quaternion.copy(mesh.quaternion);
-      bucketMesh.scale.copy(mesh.scale);
       bucketMesh.name = `${mesh.name || 'part'}_ao${level}`;
       bucketMeshes.push(bucketMesh);
     }
 
-    if (parent) {
-      bucketMeshes.forEach((bucketMesh) => parent.add(bucketMesh));
-      parent.remove(mesh);
-    }
+    bucketMeshes.forEach((bucketMesh) => exportRoot.add(bucketMesh));
+    if (mesh.parent) mesh.parent.remove(mesh);
   }
 }
 
