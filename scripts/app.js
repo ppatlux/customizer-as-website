@@ -1389,17 +1389,33 @@ async function bakeContactShadows(exportRoot) {
   exportRoot.traverse((node) => { if (node.isMesh) meshes.push(node); });
   if (!meshes.length) return;
 
-  const worldPositionGeoms = meshes
-    .map((mesh) => {
-      const positions = mesh.geometry.getAttribute('position');
-      if (!positions) return null;
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', positions.clone());
-      if (mesh.geometry.index) geom.setIndex(mesh.geometry.index.clone());
-      geom.applyMatrix4(mesh.matrixWorld);
-      return geom.index ? geom.toNonIndexed() : geom;
-    })
-    .filter(Boolean);
+  // Tracks each mesh's own triangle range [start, end) within the merged BVH
+  // geometry below, in the same order mergeGeometries concatenates them —
+  // needed to exclude self-hits during raycasting (see MAX_DIST/rayHitsOtherPart) —
+  // and each mesh's world-space bounding box, used by isNearOtherPart below.
+  const meshTriRanges = [];
+  const meshBBoxes = [];
+  let triRangeOffset = 0;
+  const worldPositionGeoms = [];
+  meshes.forEach((mesh) => {
+    const positions = mesh.geometry.getAttribute('position');
+    if (!positions) {
+      meshTriRanges.push(null);
+      meshBBoxes.push(null);
+      return;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', positions.clone());
+    if (mesh.geometry.index) geom.setIndex(mesh.geometry.index.clone());
+    geom.applyMatrix4(mesh.matrixWorld);
+    const nonIndexed = geom.index ? geom.toNonIndexed() : geom;
+    const triCount = nonIndexed.getAttribute('position').count / 3;
+    meshTriRanges.push({ start: triRangeOffset, end: triRangeOffset + triCount });
+    triRangeOffset += triCount;
+    worldPositionGeoms.push(nonIndexed);
+    nonIndexed.computeBoundingBox();
+    meshBBoxes.push(nonIndexed.boundingBox.clone());
+  });
   if (!worldPositionGeoms.length) return;
 
   // A closestPointToPoint-based pre-filter (per-part BVHs, testing real
@@ -1415,6 +1431,49 @@ async function bakeContactShadows(exportRoot) {
   const STRENGTH = 0.6;
   const BIAS = 0.05; // mm lift off the surface so a ray doesn't immediately re-hit its own face
   const YIELD_EVERY_TRIS = 500; // triangles between UI-thread breathers, so the page never fully locks up
+  const AO_LEVELS = 12; // flat buckets the per-triangle hit field gets quantized into (decoupled from SAMPLES)
+
+  // Cheap pre-filter: is `point` (a triangle centroid on mesh `selfIndex`)
+  // even within MAX_DIST of some OTHER part's bounding box at all? This
+  // bake only cares about contact shadows BETWEEN parts (hat-into-head,
+  // arm-into-body seams) — and the vast majority of a part's own surface
+  // isn't anywhere near a different part, so for most triangles this single
+  // cheap box-distance check (not a BVH traversal) proves up front that no
+  // cross-part occlusion is even possible, letting them skip raycasting
+  // entirely. This is also what keeps mounting holes cheap AND correct: a
+  // hole through a panel is self-occlusion, not part-to-part contact, so it
+  // now gets skipped rather than raycast (and possibly misjudged) at all.
+  function isNearOtherPart(point, selfIndex) {
+    for (let i = 0; i < meshBBoxes.length; i++) {
+      if (i === selfIndex) continue;
+      const box = meshBBoxes[i];
+      if (box && box.distanceToPoint(point) <= MAX_DIST) return true;
+    }
+    return false;
+  }
+
+  // Whether `ray` hits anything OTHER than the current part's own geometry
+  // within [0, MAX_DIST]. Only called once isNearOtherPart has already
+  // established that some other part is close enough to matter — plain
+  // raycastFirst() was hitting the opposite wall of the current part's own
+  // small mounting holes otherwise, a real, geometrically correct hit, but
+  // not the "contact between parts" seam this bake is meant to shade. With
+  // only SAMPLES rays per triangle, whether a given hole-rim triangle's
+  // sample directions happen to cross that narrow gap is highly sensitive
+  // to its exact normal, so neighboring triangles (near-identical normals)
+  // ended up in different AO buckets — a jagged self-shadow seam baked
+  // right through the hole.
+  function rayHitsOtherPart(selfRange) {
+    const firstHit = combinedBvh.raycastFirst(ray, THREE.DoubleSide, 0, MAX_DIST);
+    if (!firstHit) return false;
+    if (!selfRange || firstHit.faceIndex < selfRange.start || firstHit.faceIndex >= selfRange.end) return true;
+    const intersections = combinedBvh.raycast(ray, THREE.DoubleSide, 0, MAX_DIST);
+    for (let i = 0; i < intersections.length; i++) {
+      const hit = intersections[i];
+      if (hit.faceIndex < selfRange.start || hit.faceIndex >= selfRange.end) return true;
+    }
+    return false;
+  }
 
   const ray = new THREE.Ray();
   const pA = new THREE.Vector3();
@@ -1448,11 +1507,11 @@ async function bakeContactShadows(exportRoot) {
     const normalAttr = geom.getAttribute('normal');
     const uvAttr = geom.getAttribute('uv');
     const triCount = Math.floor(posAttr.count / 3);
+    const selfRange = meshTriRanges[meshIndex];
 
-    // Bucket triangles by their exact hit count (0..SAMPLES) instead of
-    // writing a per-vertex color. Every triangle in the same bucket ends up
-    // sharing one flat material a moment from now.
-    const buckets = Array.from({ length: SAMPLES + 1 }, () => []);
+    // Raw hit count per triangle (0..SAMPLES). Defaults to 0 (fully lit) so
+    // degenerate triangles that skip raycasting below need no special-casing.
+    const rawHits = new Float32Array(triCount);
 
     for (let t = 0; t < triCount; t++) {
       if (t % YIELD_EVERY_TRIS === 0) {
@@ -1467,6 +1526,12 @@ async function bakeContactShadows(exportRoot) {
       pC.fromBufferAttribute(posAttr, i2).applyMatrix4(mesh.matrixWorld);
 
       centroid.copy(pA).add(pB).add(pC).multiplyScalar(1 / 3);
+
+      // No other part is even within range — nothing can occlude this
+      // triangle, so there's no point raycasting it at all. rawHits[t]
+      // stays 0 (fully lit), same as the degenerate-triangle case below.
+      if (!isNearOtherPart(centroid, meshIndex)) continue;
+
       edge1.subVectors(pB, pA);
       edge2.subVectors(pC, pA);
       faceNormal.crossVectors(edge1, edge2);
@@ -1478,17 +1543,27 @@ async function bakeContactShadows(exportRoot) {
       // per-ray failure, and was actually behind the 40+ second hangs and
       // outright page crashes seen while developing this. Treat it as fully
       // lit (bucket 0) rather than spending rays on a face with no normal.
-      if (faceNormal.lengthSq() < 1e-10) {
-        buckets[0].push(t);
-        continue;
-      }
+      // rawHits[t] is already 0 by default — nothing further to do.
+      if (faceNormal.lengthSq() < 1e-10) continue;
       faceNormal.normalize();
 
-      // Arbitrary tangent basis around the face normal, for hemisphere sampling.
-      tangent.set(1, 0, 0);
-      if (Math.abs(faceNormal.dot(tangent)) > 0.9) tangent.set(0, 1, 0);
-      tangent.crossVectors(faceNormal, tangent).normalize();
-      bitangent.crossVectors(faceNormal, tangent);
+      // Tangent basis around the face normal, for hemisphere sampling. Uses
+      // the branchless ONB construction (Duff et al. 2017, "Building an
+      // Orthonormal Basis, Revisited") instead of the more common
+      // pick-an-axis-then-cross approach, which has a hard discontinuity
+      // exactly where |normal·referenceAxis| crosses its switchover
+      // threshold — harmless for an isolated triangle, but on a curved
+      // surface built from many small triangles (a bevelled hole rim) that
+      // flip rotates the whole sample pattern between two neighboring
+      // triangles with near-identical normals, for no physical reason.
+      const nx = faceNormal.x;
+      const ny = faceNormal.y;
+      const nz = faceNormal.z;
+      const sign = nz >= 0 ? 1 : -1;
+      const aTerm = -1 / (sign + nz);
+      const bTerm = nx * ny * aTerm;
+      tangent.set(1 + sign * nx * nx * aTerm, sign * bTerm, -sign * nx);
+      bitangent.set(bTerm, sign + ny * ny * aTerm, -ny);
 
       ray.origin.copy(centroid).addScaledVector(faceNormal, BIAS);
 
@@ -1508,10 +1583,24 @@ async function bakeContactShadows(exportRoot) {
           .normalize();
 
         ray.direction.copy(sampleDir);
-        if (combinedBvh.raycastFirst(ray, THREE.DoubleSide, 0, MAX_DIST)) hits++;
+        if (rayHitsOtherPart(selfRange)) hits++;
       }
 
-      buckets[hits].push(t);
+      rawHits[t] = hits;
+    }
+
+    // Bucket triangles by their quantized AO level instead of writing a
+    // per-vertex color. Every triangle in the same bucket ends up sharing
+    // one flat material a moment from now. Quantizing into a fixed AO_LEVELS
+    // (rather than one bucket per raw hit count) keeps mesh-building cost
+    // flat regardless of SAMPLES — building a BufferGeometry+Mesh per bucket
+    // is real overhead, and letting bucket count scale with SAMPLES was what
+    // made raising SAMPLES blow up bake time, not the extra raycasting.
+    const buckets = Array.from({ length: AO_LEVELS }, () => []);
+    for (let t = 0; t < triCount; t++) {
+      const normalized = Math.min(1, Math.max(0, rawHits[t] / SAMPLES));
+      const level = Math.round(normalized * (AO_LEVELS - 1));
+      buckets[level].push(t);
     }
 
     // Rebuild this part as one mesh per non-empty bucket, each a plain
@@ -1525,8 +1614,8 @@ async function bakeContactShadows(exportRoot) {
     const parent = mesh.parent;
     const bucketMeshes = [];
 
-    for (let hits = 0; hits <= SAMPLES; hits++) {
-      const tris = buckets[hits];
+    for (let level = 0; level < AO_LEVELS; level++) {
+      const tris = buckets[level];
       if (!tris.length) continue;
 
       const bucketPositions = new Float32Array(tris.length * 9);
@@ -1562,7 +1651,7 @@ async function bakeContactShadows(exportRoot) {
       }
       if (bucketUvs) bucketGeom.setAttribute('uv', new THREE.BufferAttribute(bucketUvs, 2));
 
-      const ao = 1 - (hits / SAMPLES) * STRENGTH;
+      const ao = 1 - (level / (AO_LEVELS - 1)) * STRENGTH;
       const bucketMaterial = baseMaterial.clone();
       bucketMaterial.color?.multiplyScalar(ao);
 
@@ -1570,7 +1659,7 @@ async function bakeContactShadows(exportRoot) {
       bucketMesh.position.copy(mesh.position);
       bucketMesh.quaternion.copy(mesh.quaternion);
       bucketMesh.scale.copy(mesh.scale);
-      bucketMesh.name = `${mesh.name || 'part'}_ao${hits}`;
+      bucketMesh.name = `${mesh.name || 'part'}_ao${level}`;
       bucketMeshes.push(bucketMesh);
     }
 
