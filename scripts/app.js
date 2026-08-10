@@ -689,6 +689,16 @@ function setupMobileSheet() {
   container.addEventListener('pointerdown', (event) => {
     if (mobileSheetEl.dataset.state !== 'expanded') return;
     if (event.target.closest('#mobile-sheet')) return;
+    // A color palette is deliberately reparented OUT of #mobile-sheet into
+    // `container` while open (mountPaletteToBody), so it doesn't get clipped
+    // by the sheet's overflow/stacking context — but that means a tap on a
+    // swatch looks identical to a tap on the bare 3D viewer here. Without
+    // this check, touching a swatch collapses the sheet (mutating its height
+    // via CSS transition) on pointerdown, i.e. while the finger is still
+    // down — and mutating layout mid-touch is a common trigger for mobile
+    // browsers to cancel the gesture (touchcancel instead of touchend)
+    // instead of completing it, silently dropping the color pick.
+    if (event.target.closest('.color-palette')) return;
     setMobileSheetState('peek');
   });
 
