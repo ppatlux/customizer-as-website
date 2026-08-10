@@ -970,6 +970,17 @@ function setupGlobalClickHandler() {
         loadModel('wheels');
       } else if (loadedMods[part]) {
         loadedMods[part].visible = partVis[part];
+        // bootstrap() preloads every part up front, including ones that start
+        // hidden (hat/arms/bumper/tail) — but a part that started hidden was
+        // never added to the scene in the first place (loadModel only calls
+        // scene.add() when partVis is already true), so loadedMods[part]
+        // exists yet is a detached, parent-less Object3D. Flipping .visible
+        // on an object outside the scene graph does nothing renderable; it
+        // has to be (re-)added. Mirrors enablePart()'s equivalent check.
+        if (partVis[part] && !loadedMods[part].parent) scene.add(loadedMods[part]);
+      } else if (partVis[part]) {
+        // Model has genuinely never loaded at all (e.g. a load error earlier).
+        loadModel(part);
       }
 
       if (partVis[part]) enforceArmsBumperExclusion(part);
