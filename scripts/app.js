@@ -1398,69 +1398,79 @@ async function bakeContactShadows(exportRoot) {
   // across an entire mesh instead of just being conservative.
   const combinedBvh = new MeshBVH(mergeGeometries(worldPositionGeoms, false));
 
-  const totalVerts = meshes.reduce((sum, m) => sum + m.geometry.getAttribute('position').count, 0);
-
   const SAMPLES = 6;
   const MAX_DIST = 6; // mm — tight contact-shadow range, not whole-model AO (also keeps BVH traversal cheap per ray)
   const STRENGTH = 0.6;
   const BIAS = 0.05; // mm lift off the surface so a ray doesn't immediately re-hit its own face
-  const YIELD_EVERY = 200; // vertices between UI-thread breathers, so the page never fully locks up
-  // A real build easily has 50k-100k+ total vertices, and sampling every one
-  // of them (as an earlier version of this did) took 40+ seconds and once
-  // crashed the tab outright — the cost scales with raw vertex count, not
-  // with how much of the surface is actually near a seam (which is normally
-  // a small fraction). Cap the total work with a fixed budget instead: stride
-  // through each mesh's vertices to hit roughly this many samples overall,
-  // proportioned so small accessory parts still get a minimum of coverage
-  // rather than being swamped by one large body mesh.
-  const TOTAL_VERTEX_BUDGET = 4000;
+  const YIELD_EVERY_TRIS = 500; // triangles between UI-thread breathers, so the page never fully locks up
 
   const ray = new THREE.Ray();
-  const worldPos = new THREE.Vector3();
-  const worldNormal = new THREE.Vector3();
+  const pA = new THREE.Vector3();
+  const pB = new THREE.Vector3();
+  const pC = new THREE.Vector3();
+  const centroid = new THREE.Vector3();
+  const faceNormal = new THREE.Vector3();
+  const edge1 = new THREE.Vector3();
+  const edge2 = new THREE.Vector3();
   const tangent = new THREE.Vector3();
   const bitangent = new THREE.Vector3();
   const sampleDir = new THREE.Vector3();
 
   for (let meshIndex = 0; meshIndex < meshes.length; meshIndex++) {
     const mesh = meshes[meshIndex];
+
+    // One AO sample per triangle, applied uniformly to all 3 of its
+    // vertices (flat shading) instead of one sample per vertex smoothly
+    // interpolated across faces. That distinction matters a lot here: this
+    // robot is hard-surface/mechanical geometry with flat faces and sharp
+    // edges, and per-vertex AO interpolates smoothly across a shared edge
+    // between a shadowed and a lit face — which reads as the face being
+    // subtly curved, i.e. the whole model looking inflated/bloated, not as
+    // a shadow. Flat-shading per triangle needs each triangle to own
+    // independent vertices, hence the conversion to non-indexed first (an
+    // indexed mesh shares vertices between adjacent triangles, which would
+    // force the same smooth interpolation right back).
+    if (mesh.geometry.index) {
+      mesh.geometry = mesh.geometry.toNonIndexed();
+    }
     const geom = mesh.geometry;
-    if (!geom.getAttribute('normal')) geom.computeVertexNormals();
     const posAttr = geom.getAttribute('position');
-    const normAttr = geom.getAttribute('normal');
-    const count = posAttr.count;
-    const colors = new Float32Array(count * 3).fill(1); // default: fully lit, no occluder nearby
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    const triCount = Math.floor(posAttr.count / 3);
+    const colors = new Float32Array(posAttr.count * 3).fill(1); // default: fully lit, no occluder nearby
 
-    const meshBudget = Math.max(50, Math.round((TOTAL_VERTEX_BUDGET * count) / totalVerts));
-    const stride = Math.max(1, Math.floor(count / meshBudget));
-
-    for (let i = 0; i < count; i += stride) {
-      if (i % (YIELD_EVERY * stride) === 0) {
+    for (let t = 0; t < triCount; t++) {
+      if (t % YIELD_EVERY_TRIS === 0) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
-      worldPos.fromBufferAttribute(posAttr, i).applyMatrix4(mesh.matrixWorld);
-      worldNormal.fromBufferAttribute(normAttr, i).applyMatrix3(normalMatrix);
+      const i0 = t * 3;
+      const i1 = i0 + 1;
+      const i2 = i0 + 2;
+      pA.fromBufferAttribute(posAttr, i0).applyMatrix4(mesh.matrixWorld);
+      pB.fromBufferAttribute(posAttr, i1).applyMatrix4(mesh.matrixWorld);
+      pC.fromBufferAttribute(posAttr, i2).applyMatrix4(mesh.matrixWorld);
 
-      // A degenerate/duplicate-vertex triangle can produce a zero-length
-      // normal. normalize() on a zero vector silently leaves it at (0,0,0)
-      // rather than throwing, and every ray built from it downstream carries
-      // NaN/zero components — which turned into a catastrophic BVH traversal
-      // (NaN comparisons are always false in JS, defeating the tree's
-      // branch-and-bound pruning) rather than a clean per-ray failure. This
-      // is what was actually behind the 40+ second hangs and outright page
-      // crashes seen while developing this, not raw vertex/ray count.
-      if (worldNormal.lengthSq() < 1e-10) continue;
-      worldNormal.normalize();
+      centroid.copy(pA).add(pB).add(pC).multiplyScalar(1 / 3);
+      edge1.subVectors(pB, pA);
+      edge2.subVectors(pC, pA);
+      faceNormal.crossVectors(edge1, edge2);
 
-      // Arbitrary tangent basis around the normal, for hemisphere sampling.
+      // Degenerate/zero-area triangle. A zero-length normal downstream would
+      // carry NaN/zero components into every ray — which turned into a
+      // catastrophic BVH traversal (NaN comparisons are always false in JS,
+      // defeating the tree's branch-and-bound pruning) rather than a clean
+      // per-ray failure, and was actually behind the 40+ second hangs and
+      // outright page crashes seen while developing this.
+      if (faceNormal.lengthSq() < 1e-10) continue;
+      faceNormal.normalize();
+
+      // Arbitrary tangent basis around the face normal, for hemisphere sampling.
       tangent.set(1, 0, 0);
-      if (Math.abs(worldNormal.dot(tangent)) > 0.9) tangent.set(0, 1, 0);
-      tangent.crossVectors(worldNormal, tangent).normalize();
-      bitangent.crossVectors(worldNormal, tangent);
+      if (Math.abs(faceNormal.dot(tangent)) > 0.9) tangent.set(0, 1, 0);
+      tangent.crossVectors(faceNormal, tangent).normalize();
+      bitangent.crossVectors(faceNormal, tangent);
 
-      ray.origin.copy(worldPos).addScaledVector(worldNormal, BIAS);
+      ray.origin.copy(centroid).addScaledVector(faceNormal, BIAS);
 
       let hits = 0;
       for (let s = 0; s < SAMPLES; s++) {
@@ -1474,24 +1484,18 @@ async function bakeContactShadows(exportRoot) {
         sampleDir.set(0, 0, 0)
           .addScaledVector(tangent, r * Math.cos(theta))
           .addScaledVector(bitangent, r * Math.sin(theta))
-          .addScaledVector(worldNormal, z)
+          .addScaledVector(faceNormal, z)
           .normalize();
 
         ray.direction.copy(sampleDir);
         if (combinedBvh.raycastFirst(ray, THREE.DoubleSide, 0, MAX_DIST)) hits++;
       }
 
-      // Fill this whole stride segment with the sampled value instead of
-      // just index i, so skipped-over vertices don't fall back to the
-      // default "fully lit" and turn this into a sparse dotted pattern —
-      // mesh vertex order is usually somewhat spatially coherent, so
-      // neighboring indices are a reasonable stand-in for their own sample.
       const ao = 1 - (hits / SAMPLES) * STRENGTH;
-      const segmentEnd = Math.min(i + stride, count);
-      for (let j = i; j < segmentEnd; j++) {
-        colors[j * 3] = ao;
-        colors[j * 3 + 1] = ao;
-        colors[j * 3 + 2] = ao;
+      for (const idx of [i0, i1, i2]) {
+        colors[idx * 3] = ao;
+        colors[idx * 3 + 1] = ao;
+        colors[idx * 3 + 2] = ao;
       }
     }
 
