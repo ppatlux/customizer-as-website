@@ -1355,18 +1355,30 @@ function ensureQrLibLoaded() {
   return qrLibLoadPromise;
 }
 
-// Casts hemisphere-sampled rays from every vertex against a combined BVH of
-// all visible parts and darkens vertex colors where nearby geometry blocks
-// them — a real, ray-traced contact shadow (hat-into-head, arm-into-body
-// seams, etc.) baked directly into the file. This is the only thing that
-// actually fixes "AR has no shadows": native AR viewers (Android Scene
-// Viewer, iOS Quick Look) render with real-world camera-estimated lighting
-// and ignore every in-page environment/shadow-intensity setting we can set
-// on <model-viewer> — those only ever affected the in-browser preview. What
-// they DO respect is vertex color data baked into the glTF itself, since
-// that's just per-vertex multiplication against the material, not a
-// lighting effect. Must run before exportRoot gets its mm→m export scale
-// (see exportVisiblePartsAsGlb) so distances below are plain millimeters.
+// Casts hemisphere-sampled rays from every triangle against a combined BVH of
+// all visible parts and darkens nearby geometry where it's blocked — a real,
+// ray-traced contact shadow (hat-into-head, arm-into-body seams, etc.) baked
+// directly into the file. This is the only thing that actually fixes "AR has
+// no shadows": native AR viewers (Android Scene Viewer, iOS Quick Look)
+// render with real-world camera-estimated lighting and ignore every in-page
+// environment/shadow-intensity setting we can set on <model-viewer> — those
+// only ever affected the in-browser preview. Must run before exportRoot gets
+// its mm→m export scale (see exportVisiblePartsAsGlb) so distances below are
+// plain millimeters.
+//
+// This bakes AO as flat per-bucket materials, NOT vertex colors, even though
+// vertex colors are simpler and were the first approach tried. Reason: our AR
+// exports never set `ios-src`, so when a user taps AR on iPhone, model-viewer
+// auto-converts the GLB to USDZ client-side with its own bundled exporter —
+// and that exporter writes vertex colors only as inert mesh-level
+// `primvars:displayColor` metadata, never wired into the material's actual
+// `inputs:diffuseColor` shader input. A flat, texture-less `material.color`
+// DOES get wired correctly on that same code path (traced directly in
+// model-viewer's bundled source). Since SAMPLES below already quantizes AO
+// into SAMPLES+1 discrete levels, each part's triangles are split into one
+// mesh per level it actually uses, each with its own flat-tinted material —
+// that's what survives the iOS USDZ conversion and shows up as real shading
+// on a real device, where vertex colors silently rendered as nothing.
 async function bakeContactShadows(exportRoot) {
   const { MeshBVH } = await import('three-mesh-bvh');
   const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
@@ -1419,24 +1431,28 @@ async function bakeContactShadows(exportRoot) {
   for (let meshIndex = 0; meshIndex < meshes.length; meshIndex++) {
     const mesh = meshes[meshIndex];
 
-    // One AO sample per triangle, applied uniformly to all 3 of its
-    // vertices (flat shading) instead of one sample per vertex smoothly
-    // interpolated across faces. That distinction matters a lot here: this
-    // robot is hard-surface/mechanical geometry with flat faces and sharp
-    // edges, and per-vertex AO interpolates smoothly across a shared edge
-    // between a shadowed and a lit face — which reads as the face being
-    // subtly curved, i.e. the whole model looking inflated/bloated, not as
-    // a shadow. Flat-shading per triangle needs each triangle to own
-    // independent vertices, hence the conversion to non-indexed first (an
-    // indexed mesh shares vertices between adjacent triangles, which would
-    // force the same smooth interpolation right back).
+    // Sampling stays per-triangle (flat shading, not per-vertex smoothly
+    // interpolated) for the same reason as before: this robot is
+    // hard-surface/mechanical geometry with flat faces and sharp edges, and
+    // smooth interpolation across a shared edge between a shadowed and a lit
+    // face reads as the face being subtly curved — the whole model looking
+    // inflated/bloated, not shadowed. Flat shading per triangle needs each
+    // triangle to own independent vertices, hence the conversion to
+    // non-indexed first (an indexed mesh shares vertices between adjacent
+    // triangles, which would force the same smooth interpolation right back).
     if (mesh.geometry.index) {
       mesh.geometry = mesh.geometry.toNonIndexed();
     }
     const geom = mesh.geometry;
     const posAttr = geom.getAttribute('position');
+    const normalAttr = geom.getAttribute('normal');
+    const uvAttr = geom.getAttribute('uv');
     const triCount = Math.floor(posAttr.count / 3);
-    const colors = new Float32Array(posAttr.count * 3).fill(1); // default: fully lit, no occluder nearby
+
+    // Bucket triangles by their exact hit count (0..SAMPLES) instead of
+    // writing a per-vertex color. Every triangle in the same bucket ends up
+    // sharing one flat material a moment from now.
+    const buckets = Array.from({ length: SAMPLES + 1 }, () => []);
 
     for (let t = 0; t < triCount; t++) {
       if (t % YIELD_EVERY_TRIS === 0) {
@@ -1460,8 +1476,12 @@ async function bakeContactShadows(exportRoot) {
       // catastrophic BVH traversal (NaN comparisons are always false in JS,
       // defeating the tree's branch-and-bound pruning) rather than a clean
       // per-ray failure, and was actually behind the 40+ second hangs and
-      // outright page crashes seen while developing this.
-      if (faceNormal.lengthSq() < 1e-10) continue;
+      // outright page crashes seen while developing this. Treat it as fully
+      // lit (bucket 0) rather than spending rays on a face with no normal.
+      if (faceNormal.lengthSq() < 1e-10) {
+        buckets[0].push(t);
+        continue;
+      }
       faceNormal.normalize();
 
       // Arbitrary tangent basis around the face normal, for hemisphere sampling.
@@ -1491,20 +1511,73 @@ async function bakeContactShadows(exportRoot) {
         if (combinedBvh.raycastFirst(ray, THREE.DoubleSide, 0, MAX_DIST)) hits++;
       }
 
-      const ao = 1 - (hits / SAMPLES) * STRENGTH;
-      for (const idx of [i0, i1, i2]) {
-        colors[idx * 3] = ao;
-        colors[idx * 3 + 1] = ao;
-        colors[idx * 3 + 2] = ao;
-      }
+      buckets[hits].push(t);
     }
 
-    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    materials.forEach((material) => {
-      material.vertexColors = true;
-      material.needsUpdate = true;
-    });
+    // Rebuild this part as one mesh per non-empty bucket, each a plain
+    // (local-space, untransformed) copy of that bucket's triangles from the
+    // original geometry, sharing the original mesh's transform. The material
+    // is a clone of the part's already-tinted material (see
+    // AR_TINT_OFFSETS/exportVisiblePartsAsGlb, which runs before this),
+    // darkened further by that bucket's AO factor — so part-level tint and
+    // per-triangle contact AO compose correctly.
+    const baseMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const parent = mesh.parent;
+    const bucketMeshes = [];
+
+    for (let hits = 0; hits <= SAMPLES; hits++) {
+      const tris = buckets[hits];
+      if (!tris.length) continue;
+
+      const bucketPositions = new Float32Array(tris.length * 9);
+      const bucketNormals = normalAttr ? new Float32Array(tris.length * 9) : null;
+      const bucketUvs = uvAttr ? new Float32Array(tris.length * 6) : null;
+
+      tris.forEach((t, bucketIdx) => {
+        const srcStart = t * 3;
+        for (let v = 0; v < 3; v++) {
+          const srcIdx = srcStart + v;
+          const dstIdx = bucketIdx * 3 + v;
+          bucketPositions[dstIdx * 3] = posAttr.getX(srcIdx);
+          bucketPositions[dstIdx * 3 + 1] = posAttr.getY(srcIdx);
+          bucketPositions[dstIdx * 3 + 2] = posAttr.getZ(srcIdx);
+          if (bucketNormals) {
+            bucketNormals[dstIdx * 3] = normalAttr.getX(srcIdx);
+            bucketNormals[dstIdx * 3 + 1] = normalAttr.getY(srcIdx);
+            bucketNormals[dstIdx * 3 + 2] = normalAttr.getZ(srcIdx);
+          }
+          if (bucketUvs) {
+            bucketUvs[dstIdx * 2] = uvAttr.getX(srcIdx);
+            bucketUvs[dstIdx * 2 + 1] = uvAttr.getY(srcIdx);
+          }
+        }
+      });
+
+      const bucketGeom = new THREE.BufferGeometry();
+      bucketGeom.setAttribute('position', new THREE.BufferAttribute(bucketPositions, 3));
+      if (bucketNormals) {
+        bucketGeom.setAttribute('normal', new THREE.BufferAttribute(bucketNormals, 3));
+      } else {
+        bucketGeom.computeVertexNormals();
+      }
+      if (bucketUvs) bucketGeom.setAttribute('uv', new THREE.BufferAttribute(bucketUvs, 2));
+
+      const ao = 1 - (hits / SAMPLES) * STRENGTH;
+      const bucketMaterial = baseMaterial.clone();
+      bucketMaterial.color?.multiplyScalar(ao);
+
+      const bucketMesh = new THREE.Mesh(bucketGeom, bucketMaterial);
+      bucketMesh.position.copy(mesh.position);
+      bucketMesh.quaternion.copy(mesh.quaternion);
+      bucketMesh.scale.copy(mesh.scale);
+      bucketMesh.name = `${mesh.name || 'part'}_ao${hits}`;
+      bucketMeshes.push(bucketMesh);
+    }
+
+    if (parent) {
+      bucketMeshes.forEach((bucketMesh) => parent.add(bucketMesh));
+      parent.remove(mesh);
+    }
   }
 }
 
