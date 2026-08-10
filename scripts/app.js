@@ -219,6 +219,7 @@ scene.add(ground);
 
 const currentIdx = {};
 const loadedMods = {};
+const loadGeneration = {};
 const modelCols = {};
 const partVis = {};
 const occludedParts = new Set(['middle', 'bumper', 'tail', 'bottom', 'wheels']);
@@ -1828,6 +1829,12 @@ async function openArModelFlow() {
     console.error(error);
     arDesc.textContent = 'Could not prepare the AR preview. Please try again.';
     arModelHost.innerHTML = '<div class="ar-model-loading">Something went wrong.</div>';
+    // Without this, a failed export leaves the customizer's own render loop
+    // paused forever (see the renderingPaused = true above) — every later
+    // color/variant change would still update the model's data but never
+    // actually redraw, looking exactly like "nothing happens" until a full
+    // page reload.
+    renderingPaused = false;
   }
 }
 
@@ -1946,6 +1953,17 @@ function loadModel(part) {
 
   skeleton.classList.remove('u-hidden');
 
+  // Tags this call as the latest request for `part`. Picking a color for a
+  // part that isn't loaded yet (enablePart -> loadModel, async) and then
+  // immediately switching its variant before that first load finishes fires
+  // a second loadModel() for the same part while the first is still in
+  // flight — without this guard, whichever network response happens to
+  // arrive LAST wins regardless of which was requested last, so the first
+  // (now-stale) response could overwrite the model the user actually asked
+  // for a moment later. Only the response matching the most recent call
+  // gets applied; earlier ones are silently discarded.
+  const myGeneration = (loadGeneration[part] = (loadGeneration[part] || 0) + 1);
+
   // Counts every in-flight loadModel() call so the first-paint splash can stay
   // up until the initial build has actually finished loading, not just until
   // the page's JS has started running.
@@ -1962,6 +1980,10 @@ function loadModel(part) {
     loader.load(
       urls[index],
       (gltf) => {
+        skeleton.classList.add('u-hidden');
+        settleInitialLoad();
+        if (loadGeneration[part] !== myGeneration) return; // superseded by a newer request for this part
+
         if (loadedMods[part]) scene.remove(loadedMods[part]);
         const model = gltf.scene;
         let yOffset = MODEL_Y_OFFSET;
@@ -1978,8 +2000,6 @@ function loadModel(part) {
         applyColor(part);
         updateVariantCounter(part);
         updateComboChip();
-        skeleton.classList.add('u-hidden');
-        settleInitialLoad();
       },
       undefined,
       (error) => {
@@ -1988,9 +2008,10 @@ function loadModel(part) {
           return;
         }
         console.error('Load error', error);
-        toast(`Failed to load ${part} variant.`, 'err', 2400);
         skeleton.classList.add('u-hidden');
         settleInitialLoad();
+        if (loadGeneration[part] !== myGeneration) return;
+        toast(`Failed to load ${part} variant.`, 'err', 2400);
       }
     );
   };
