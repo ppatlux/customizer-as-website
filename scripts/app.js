@@ -238,6 +238,7 @@ let appLoaderHidden = false;
 let mobileLayoutActive = false;
 let mobileSheetEl = null;
 let mobileSheetHandleEl = null;
+let renderingPaused = false;
 
 for (const part of Object.keys(modelSets)) {
   currentIdx[part] = 0;
@@ -1354,6 +1355,155 @@ function ensureQrLibLoaded() {
   return qrLibLoadPromise;
 }
 
+// Casts hemisphere-sampled rays from every vertex against a combined BVH of
+// all visible parts and darkens vertex colors where nearby geometry blocks
+// them — a real, ray-traced contact shadow (hat-into-head, arm-into-body
+// seams, etc.) baked directly into the file. This is the only thing that
+// actually fixes "AR has no shadows": native AR viewers (Android Scene
+// Viewer, iOS Quick Look) render with real-world camera-estimated lighting
+// and ignore every in-page environment/shadow-intensity setting we can set
+// on <model-viewer> — those only ever affected the in-browser preview. What
+// they DO respect is vertex color data baked into the glTF itself, since
+// that's just per-vertex multiplication against the material, not a
+// lighting effect. Must run before exportRoot gets its mm→m export scale
+// (see exportVisiblePartsAsGlb) so distances below are plain millimeters.
+async function bakeContactShadows(exportRoot) {
+  const { MeshBVH } = await import('three-mesh-bvh');
+  const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
+
+  exportRoot.updateMatrixWorld(true);
+
+  const meshes = [];
+  exportRoot.traverse((node) => { if (node.isMesh) meshes.push(node); });
+  if (!meshes.length) return;
+
+  const worldPositionGeoms = meshes
+    .map((mesh) => {
+      const positions = mesh.geometry.getAttribute('position');
+      if (!positions) return null;
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', positions.clone());
+      if (mesh.geometry.index) geom.setIndex(mesh.geometry.index.clone());
+      geom.applyMatrix4(mesh.matrixWorld);
+      return geom.index ? geom.toNonIndexed() : geom;
+    })
+    .filter(Boolean);
+  if (!worldPositionGeoms.length) return;
+
+  // A closestPointToPoint-based pre-filter (per-part BVHs, testing real
+  // geometry instead of loose bounding boxes) was tried here to skip
+  // surface vertices with nothing nearby, but it came back wrong — its
+  // minThreshold argument is only an internal search-pruning hint, not an
+  // exclusion filter, and in testing it silently produced zero occlusion
+  // across an entire mesh instead of just being conservative.
+  const combinedBvh = new MeshBVH(mergeGeometries(worldPositionGeoms, false));
+
+  const totalVerts = meshes.reduce((sum, m) => sum + m.geometry.getAttribute('position').count, 0);
+
+  const SAMPLES = 6;
+  const MAX_DIST = 6; // mm — tight contact-shadow range, not whole-model AO (also keeps BVH traversal cheap per ray)
+  const STRENGTH = 0.6;
+  const BIAS = 0.05; // mm lift off the surface so a ray doesn't immediately re-hit its own face
+  const YIELD_EVERY = 200; // vertices between UI-thread breathers, so the page never fully locks up
+  // A real build easily has 50k-100k+ total vertices, and sampling every one
+  // of them (as an earlier version of this did) took 40+ seconds and once
+  // crashed the tab outright — the cost scales with raw vertex count, not
+  // with how much of the surface is actually near a seam (which is normally
+  // a small fraction). Cap the total work with a fixed budget instead: stride
+  // through each mesh's vertices to hit roughly this many samples overall,
+  // proportioned so small accessory parts still get a minimum of coverage
+  // rather than being swamped by one large body mesh.
+  const TOTAL_VERTEX_BUDGET = 4000;
+
+  const ray = new THREE.Ray();
+  const worldPos = new THREE.Vector3();
+  const worldNormal = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+  const bitangent = new THREE.Vector3();
+  const sampleDir = new THREE.Vector3();
+
+  for (let meshIndex = 0; meshIndex < meshes.length; meshIndex++) {
+    const mesh = meshes[meshIndex];
+    const geom = mesh.geometry;
+    if (!geom.getAttribute('normal')) geom.computeVertexNormals();
+    const posAttr = geom.getAttribute('position');
+    const normAttr = geom.getAttribute('normal');
+    const count = posAttr.count;
+    const colors = new Float32Array(count * 3).fill(1); // default: fully lit, no occluder nearby
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+
+    const meshBudget = Math.max(50, Math.round((TOTAL_VERTEX_BUDGET * count) / totalVerts));
+    const stride = Math.max(1, Math.floor(count / meshBudget));
+
+    for (let i = 0; i < count; i += stride) {
+      if (i % (YIELD_EVERY * stride) === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      worldPos.fromBufferAttribute(posAttr, i).applyMatrix4(mesh.matrixWorld);
+      worldNormal.fromBufferAttribute(normAttr, i).applyMatrix3(normalMatrix);
+
+      // A degenerate/duplicate-vertex triangle can produce a zero-length
+      // normal. normalize() on a zero vector silently leaves it at (0,0,0)
+      // rather than throwing, and every ray built from it downstream carries
+      // NaN/zero components — which turned into a catastrophic BVH traversal
+      // (NaN comparisons are always false in JS, defeating the tree's
+      // branch-and-bound pruning) rather than a clean per-ray failure. This
+      // is what was actually behind the 40+ second hangs and outright page
+      // crashes seen while developing this, not raw vertex/ray count.
+      if (worldNormal.lengthSq() < 1e-10) continue;
+      worldNormal.normalize();
+
+      // Arbitrary tangent basis around the normal, for hemisphere sampling.
+      tangent.set(1, 0, 0);
+      if (Math.abs(worldNormal.dot(tangent)) > 0.9) tangent.set(0, 1, 0);
+      tangent.crossVectors(worldNormal, tangent).normalize();
+      bitangent.crossVectors(worldNormal, tangent);
+
+      ray.origin.copy(worldPos).addScaledVector(worldNormal, BIAS);
+
+      let hits = 0;
+      for (let s = 0; s < SAMPLES; s++) {
+        // Cosine-weighted stratified hemisphere sample.
+        const u1 = (s + 0.5) / SAMPLES;
+        const u2 = ((s * 7 + 3) % SAMPLES + 0.5) / SAMPLES;
+        const r = Math.sqrt(u1);
+        const theta = 2 * Math.PI * u2;
+        const z = Math.sqrt(Math.max(0, 1 - u1));
+
+        sampleDir.set(0, 0, 0)
+          .addScaledVector(tangent, r * Math.cos(theta))
+          .addScaledVector(bitangent, r * Math.sin(theta))
+          .addScaledVector(worldNormal, z)
+          .normalize();
+
+        ray.direction.copy(sampleDir);
+        if (combinedBvh.raycastFirst(ray, THREE.DoubleSide, 0, MAX_DIST)) hits++;
+      }
+
+      // Fill this whole stride segment with the sampled value instead of
+      // just index i, so skipped-over vertices don't fall back to the
+      // default "fully lit" and turn this into a sparse dotted pattern —
+      // mesh vertex order is usually somewhat spatially coherent, so
+      // neighboring indices are a reasonable stand-in for their own sample.
+      const ao = 1 - (hits / SAMPLES) * STRENGTH;
+      const segmentEnd = Math.min(i + stride, count);
+      for (let j = i; j < segmentEnd; j++) {
+        colors[j * 3] = ao;
+        colors[j * 3 + 1] = ao;
+        colors[j * 3 + 2] = ao;
+      }
+    }
+
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    materials.forEach((material) => {
+      material.vertexColors = true;
+      material.needsUpdate = true;
+    });
+  }
+}
+
 // Bakes only the currently visible parts (with their applied colors) into a single
 // binary glTF so a mobile AR viewer has one self-contained file to place, instead of
 // the app's per-part GLBs it normally juggles.
@@ -1363,13 +1513,7 @@ async function exportVisiblePartsAsGlb() {
 
   if (!visibleParts.length) throw new Error('No visible parts to export');
 
-  // The app's model space is millimeters (see MODEL_Y_OFFSET, and engrave.html's
-  // sliders which label these same raw units as "mm"), but glTF - and every AR
-  // viewer that consumes it - assumes 1 unit = 1 meter. Exporting the raw roots
-  // makes AR place a robot ~1000x too large. Wrap scaled clones so the exported
-  // file carries its real-world size instead.
   const exportRoot = new THREE.Group();
-  exportRoot.scale.setScalar(MM_TO_M);
 
   // Native AR viewers (Android Scene Viewer / iOS Quick Look) light the scene
   // with real-world camera-estimated lighting, not this page's in-browser
@@ -1401,6 +1545,20 @@ async function exportVisiblePartsAsGlb() {
     exportRoot.add(clone);
   });
 
+  try {
+    await bakeContactShadows(exportRoot);
+  } catch (error) {
+    console.error('Contact-shadow bake failed, exporting without it', error);
+  }
+
+  // The app's model space is millimeters (see MODEL_Y_OFFSET, and engrave.html's
+  // sliders which label these same raw units as "mm"), but glTF - and every AR
+  // viewer that consumes it - assumes 1 unit = 1 meter. Exporting the raw roots
+  // makes AR place a robot ~1000x too large. Applied last (after the contact-
+  // shadow bake above, which needs plain millimeter distances) so the exported
+  // file carries its real-world size.
+  exportRoot.scale.setScalar(MM_TO_M);
+
   const exporter = new GLTFExporter();
   const result = await new Promise((resolve, reject) => {
     exporter.parse(exportRoot, resolve, reject, { binary: true, onlyVisible: true });
@@ -1414,6 +1572,7 @@ let arBlobUrl = null;
 
 function closeArOverlay() {
   arOverlay.classList.remove('show');
+  renderingPaused = false;
   if (arModelViewerEl) {
     arModelViewerEl.remove();
     arModelViewerEl = null;
@@ -1468,6 +1627,13 @@ async function openArModelFlow() {
   arModelHost.innerHTML = '<div class="ar-model-loading">Preparing preview…</div>';
   arOverlay.classList.add('show');
   arClose.focus();
+
+  // The customizer's own 3D view is fully covered by this modal and can't be
+  // seen anyway — stop its continuous render loop so it isn't competing for
+  // CPU with the contact-shadow ray sampling below (exportVisiblePartsAsGlb),
+  // which is the difference between the export finishing in ~1s and it
+  // stalling badly (or crashing the tab under software/CPU rendering).
+  renderingPaused = true;
 
   try {
     const [blob] = await Promise.all([exportVisiblePartsAsGlb(), ensureModelViewerLoaded()]);
@@ -2011,6 +2177,7 @@ function startTour(force = false) {
 
 function animate() {
   requestAnimationFrame(animate);
+  if (renderingPaused) return;
   controls.update();
   renderer.render(scene, camera);
 }

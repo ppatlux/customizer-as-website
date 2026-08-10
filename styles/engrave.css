@@ -256,6 +256,7 @@ html.vt-fallback.vt-leaving body{
   border:1px solid var(--stroke);
   box-shadow:var(--shadow);
   width:280px;
+  min-width:0;
   max-height:calc(100vh - 140px);
   max-height:calc(100svh - 140px);
   overflow:auto;
@@ -267,6 +268,7 @@ html.vt-fallback.vt-leaving body{
   display:flex;
   flex-direction:column;
   gap:8px;
+  min-width:0;
   background:#FFFFFF;
   padding:10px;
   border-radius:12px;
@@ -433,6 +435,7 @@ html.vt-fallback.vt-leaving body{
   display:flex;
   flex-wrap:nowrap;
   gap:8px;
+  min-width:0;
   overflow-x:auto;
   overflow-y:hidden;
   scroll-snap-type:x proximity;
@@ -882,6 +885,7 @@ input[type="range"]{
     flex:1;
     min-height:0;
     overflow-y:auto;
+    overflow-x:hidden;
     padding:0 12px calc(12px + env(safe-area-inset-bottom, 0px));
     -webkit-overflow-scrolling:touch;
   }

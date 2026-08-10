@@ -306,6 +306,7 @@ html.vt-fallback.vt-leaving body{
   border:1px solid var(--stroke);
   box-shadow:var(--shadow);
   width:280px;
+  min-width:0;
   max-height:calc(100vh - 140px);
   max-height:calc(100svh - 140px);
   overflow:auto;
@@ -319,6 +320,7 @@ html.vt-fallback.vt-leaving body{
   position:relative;
   display:flex;
   flex-direction:column;
+  min-width:0;
   gap:8px;
   background:#FFFFFF;
   -webkit-backdrop-filter:blur(1px);
@@ -1206,6 +1208,7 @@ body.hp-lock-scroll{
     flex:1;
     min-height:0;
     overflow-y:auto;
+    overflow-x:hidden;
     padding:0 12px;
     -webkit-overflow-scrolling:touch;
   }
