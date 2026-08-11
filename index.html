@@ -168,7 +168,9 @@
               </button>
             </div>
           </div>
-          <div id="slicer-group" class="action-desktop-cluster" role="group" aria-label="Preferred slicer">
+          <!-- Hidden until hprobots.com is on PrusaSlicer's printables.com-only allowlist; OrcaSlicer's
+               direct link works fine and needs no picker, so there's nothing to choose in the meantime. -->
+          <div id="slicer-group" class="action-desktop-cluster" role="group" aria-label="Preferred slicer" hidden>
             <button id="slicer-toggle" class="btn btn--lg" title="Preferred slicer" aria-haspopup="menu" aria-expanded="false" aria-controls="slicer-menu">
               <span class="slicer-badge" id="slicer-badge-current" data-slicer="orca" aria-hidden="true">O</span>
               <span class="material-icons caret">arrow_drop_down</span>

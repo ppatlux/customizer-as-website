@@ -581,6 +581,7 @@ html.vt-fallback.vt-leaving body{
   box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);
   user-select:none;
 }
+#slicer-group[hidden]{ display:none; }
 #slicer-toggle{
   display:flex;
   align-items:center;

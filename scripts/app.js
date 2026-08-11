@@ -829,13 +829,6 @@ function updateSlicerUi() {
   slicerMenu.querySelectorAll('.slicer-menu-item').forEach((item) => {
     item.setAttribute('aria-checked', String(item.dataset.slicer === slicer));
   });
-
-  document.querySelectorAll('[data-role="print"]').forEach((btn) => {
-    const part = btn.getAttribute('data-part');
-    const partLabel = PART_META.find((entry) => entry.key === part)?.label || part;
-    btn.title = `Open in ${label}`;
-    btn.setAttribute('aria-label', `Open ${partLabel} in ${label}`);
-  });
 }
 
 function setupPaletteWiring() {
@@ -1007,15 +1000,22 @@ function setupGlobalClickHandler() {
       } catch {
         return;
       }
-      const url = getPreferredPublicAssetUrl(part, currentIdx[part], 'step');
-      if (!url) {
+      const urls = getAssetCandidates(part, currentIdx[part], 'step');
+      if (!urls.length) {
         toast(`No STEP file available for ${part}.`, 'warn', 1800);
         return;
       }
-      const slicer = getPreferredSlicer();
-      const protocol = slicer === 'prusa' ? 'prusaslicer' : 'orcaslicer';
+
+      // OrcaSlicer only, for now: its orcaslicer://open handler fetches the URL itself and
+      // has no partner-site allowlist, so this direct link works with zero local setup.
+      // PrusaSlicer's own prusaslicer://open handler only accepts download URLs from a
+      // short reviewed allowlist (printables.com, thingiverse.com, cults3d.com), so a link
+      // to a file hosted here is always rejected until hprobots.com gets added to it — the
+      // slicer picker (#slicer-group) is hidden until then; re-enable it and branch on
+      // getPreferredSlicer() again once that happens.
+      const url = new URL(urls[0], window.location.href).href;
       const link = document.createElement('a');
-      link.href = `${protocol}://open?file=${encodeURIComponent(new URL(url, window.location.href).href)}`;
+      link.href = `orcaslicer://open?file=${encodeURIComponent(url)}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1175,12 +1175,6 @@ function getAssetCandidates(part, idx, format = 'glb') {
     localSets[part]?.[idx],
     remoteSets[part]?.[idx]
   ]);
-}
-
-function getPreferredPublicAssetUrl(part, idx, format = 'glb') {
-  const remoteSets = format === 'step' ? remoteStepSets : format === '3mf' ? remoteMf3Sets : remoteModelSets;
-  const localSets = format === 'step' ? stepSets : format === '3mf' ? mf3Sets : localModelSets;
-  return remoteSets[part]?.[idx] || localSets[part]?.[idx] || null;
 }
 
 async function fetchFirstAvailable(urls) {

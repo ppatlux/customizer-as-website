@@ -18,11 +18,27 @@ The app now expects model files to be hosted locally under `assets/models/<part>
 
 For each `.glb` listed in `scripts/asset-manifest.js`, also place matching `.step` and `.3mf` files in the same folder if you want STEP and 3MF downloads to work. Each manifest entry has a `folder` field pointing at its subfolder.
 
+## Send to Slicer
+
+The per-part "Print" buttons in `index.html` open the part directly with a bare
+`orcaslicer://open?file=<url>` link — no local setup needed, same as the original WordPress
+version. OrcaSlicer only, for now: PrusaSlicer's own `prusaslicer://` handler only accepts
+download URLs from a short, manually reviewed allowlist (currently printables.com,
+thingiverse.com, cults3d.com) and rejects everything else, including files hosted here (see
+[PrusaSlicer#13752](https://github.com/prusa3d/PrusaSlicer/issues/13752), closed "not planned").
+The only real fix is asking Prusa to add `hprobots.com` to that allowlist after their security
+review — until that happens (or is confirmed a dead end), the slicer picker (`#slicer-group` in
+`index.html`) is hidden and the Print button always targets OrcaSlicer. To bring PrusaSlicer back
+here: un-hide `#slicer-group`, then in `scripts/app.js`'s `role === 'print'` handler branch on
+`getPreferredSlicer()` again (fall back to a plain STEP download when it's `'prusa'`).
+
 ## Send to Slicer (engraving tool)
 
-The "Send to OrcaSlicer" / "Send to PrusaSlicer" buttons on `engrave.html` need a **one-time**
-setup on each Windows machine that has the slicer installed (the engraved STL only exists
-in-browser, so something local has to hand it to the desktop app):
+The "Send to OrcaSlicer" / "Send to PrusaSlicer" buttons on `engrave.html` are a separate case: the
+engraved STL only exists in-browser, so it can't be hosted at a URL at all — neither slicer's
+direct-link protocol can point at it. Those buttons need a **one-time** setup on each Windows
+machine that has the slicer installed (something local has to hand the freshly-generated file to
+the desktop app):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/install-slicer-protocol.ps1
