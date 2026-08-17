@@ -472,35 +472,41 @@ function hideConsentPopup() {
 function setupInfo() {
   let tipTimeout = null;
 
-  infoBtn.addEventListener('mouseenter', () => {
-    clearTimeout(tipTimeout);
+  function showInfoTip() {
+    mountFloatingPopup(infoTip);
     infoTip.style.display = 'block';
+    positionFloatingPopup(infoTip, infoBtn.getBoundingClientRect(), 'left');
     infoBtn.setAttribute('aria-expanded', 'true');
-  });
-  infoBtn.addEventListener('mouseleave', () => {
-    tipTimeout = setTimeout(() => {
-      infoTip.style.display = 'none';
-      infoBtn.setAttribute('aria-expanded', 'false');
-    }, 180);
-  });
-  infoTip.addEventListener('mouseenter', () => clearTimeout(tipTimeout));
-  infoTip.addEventListener('mouseleave', () => {
+  }
+
+  function hideInfoTip() {
     infoTip.style.display = 'none';
     infoBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  infoBtn.addEventListener('mouseenter', () => {
+    clearTimeout(tipTimeout);
+    showInfoTip();
   });
+  infoBtn.addEventListener('mouseleave', () => {
+    tipTimeout = setTimeout(hideInfoTip, 180);
+  });
+  infoTip.addEventListener('mouseenter', () => clearTimeout(tipTimeout));
+  infoTip.addEventListener('mouseleave', hideInfoTip);
 
   // Touch devices have no hover, so tapping the info button toggles the tip directly.
   infoBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     clearTimeout(tipTimeout);
-    const isOpen = infoTip.style.display === 'block';
-    infoTip.style.display = isOpen ? 'none' : 'block';
-    infoBtn.setAttribute('aria-expanded', String(!isOpen));
+    if (infoTip.style.display === 'block') hideInfoTip();
+    else showInfoTip();
   });
   document.addEventListener('click', (event) => {
     if (event.target.closest('#info-container')) return;
-    infoTip.style.display = 'none';
-    infoBtn.setAttribute('aria-expanded', 'false');
+    // Reparented to the top-level host while open (see mountFloatingPopup),
+    // so it's no longer a descendant of #info-container — needs its own check.
+    if (event.target.closest('#info-tooltip')) return;
+    hideInfoTip();
   });
 
   document.getElementById('startTourLink')?.addEventListener('click', (event) => {
@@ -857,12 +863,17 @@ function setupMoreMenu() {
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('#more-group')) return;
+    // Reparented to the top-level host while open (see mountFloatingPopup),
+    // so it's no longer a descendant of #more-group — needs its own check.
+    if (event.target.closest('#more-menu')) return;
     closeMoreMenu();
   });
 }
 
 function openMoreMenu() {
+  mountFloatingPopup(moreMenu);
   moreMenu.classList.add('open');
+  positionFloatingPopup(moreMenu, moreToggle.getBoundingClientRect(), 'right');
   moreToggle.setAttribute('aria-expanded', 'true');
 }
 
@@ -3133,6 +3144,45 @@ function restorePalette(palette) {
   openPaletteOriginalParent = null;
 }
 
+// #info-tooltip and #more-menu are simple CSS-anchored popovers (position:absolute
+// relative to their trigger) that work fine on desktop, but on mobile their trigger
+// (#info-container) lives inside .mobile-sheet, which needs overflow:hidden for its
+// own rounded-corner/scroll containment — clipping the popover invisible regardless
+// of z-index. Reparenting to the top-level host and switching to fixed, JS-computed
+// coordinates escapes that clip entirely, same fix as mountPaletteToBody/positionPalette.
+function mountFloatingPopup(el) {
+  const host = document.fullscreenElement || container || document.body;
+  if (el.parentElement !== host) host.appendChild(el);
+}
+
+function positionFloatingPopup(el, anchorRect, align = 'left') {
+  const pad = 8;
+  el.style.position = 'fixed';
+  el.style.visibility = 'hidden';
+  el.style.left = '0px';
+  el.style.top = '0px';
+  // Both elements' stylesheet rules position them with `bottom` (and #more-menu
+  // also with `right`) instead of top/left. Leaving those active alongside our
+  // own top/left constrains BOTH edges on an element with no explicit height,
+  // so the browser computes height from the gap between them — collapsing it
+  // to a couple of px — instead of sizing to fit the content.
+  el.style.bottom = 'auto';
+  el.style.right = 'auto';
+  el.style.zIndex = '2147483647';
+
+  requestAnimationFrame(() => {
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const rawLeft = align === 'right' ? anchorRect.right - w : anchorRect.left;
+    const left = Math.max(8, Math.min(rawLeft, window.innerWidth - w - 8));
+    const aboveTop = anchorRect.top - h - pad;
+    const top = aboveTop < 8 ? Math.min(window.innerHeight - h - 8, anchorRect.bottom + pad) : aboveTop;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.visibility = 'visible';
+  });
+}
+
 function positionPalette(palette, anchorRect) {
   const pad = 8;
   palette.style.display = 'block';
@@ -3354,7 +3404,15 @@ randomizeBtn.addEventListener('click', () => {
   enforceBottomMotionExclusion();
   markCustomPreset();
   toast('Randomized!', 'ok', 900);
+
+  // Playful tumble on the dice icon — restart the animation even on rapid
+  // repeat clicks by removing the class first (a class already present
+  // doesn't retrigger its animation just by re-adding it).
+  randomizeBtn.classList.remove('is-rolling');
+  void randomizeBtn.offsetWidth; // force reflow so the removal actually takes effect first
+  randomizeBtn.classList.add('is-rolling');
 });
+randomizeBtn.addEventListener('animationend', () => randomizeBtn.classList.remove('is-rolling'));
 
 shareBtn.addEventListener('click', () => {
   copyShareLink();

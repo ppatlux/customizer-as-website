@@ -1,7 +1,19 @@
 :root{
-  --brand: #3D7FFD;
-  --brand-ink: #2A5FE0;
+  /* Sourced directly from hprobots.com's own design tokens (--hpro-*), so the
+     customizer reads as the same product, not a generic tool wearing a borrowed
+     accent — yellow is specifically hprobots' color for the "create"/3D-print
+     side of the product (blue is used for other parts of the site). --brand/
+     --brand-ink drive every existing button/focus-ring/active state already,
+     so retargeting just these two repaints the whole app. A few spots that use
+     --brand as small TEXT on a light background (not a filled button) are
+     overridden to --hpro-navy alongside this — solid yellow text reads fine on
+     a button, but fails contrast as body-sized text on white. */
+  --brand: #FFC83D;
+  --brand-ink: #F5B414;
   --brand-ghost: color-mix(in srgb, var(--brand) 12%, transparent);
+  --hpro-yellow: #FFC83D;
+  --hpro-mint: #8EE9C9;
+  --hpro-navy: #25284F;
   --canvas: #ECF4F9;
   --text: #000000;
   --muted: #515E80;
@@ -153,6 +165,21 @@ html.vt-fallback.vt-leaving body{
 .btn--ghost:hover{ background:var(--glass-hover); }
 .btn--ghost:active{ background:var(--glass-press); }
 
+/* A little tumble on the dice icon whenever Randomize actually rolls — pure
+   delight, no functional purpose. */
+#randomizeBtn.is-rolling .material-icons{
+  animation:dice-roll 550ms cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes dice-roll{
+  0%{ transform:rotate(0deg) scale(1); }
+  35%{ transform:rotate(200deg) scale(1.25); }
+  65%{ transform:rotate(330deg) scale(1.1); }
+  100%{ transform:rotate(360deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce){
+  #randomizeBtn.is-rolling .material-icons{ animation:none; }
+}
+
 #preset-menu{
   position:absolute;
   top:calc(var(--edge) + env(safe-area-inset-top, 0px));
@@ -161,7 +188,12 @@ html.vt-fallback.vt-leaving body{
   flex-direction:column;
   align-items:flex-start;
   gap:6px;
-  z-index:var(--z-toolbar);
+  /* Higher than #controls-toggle (--z-toolbar) on purpose: .preset-options'
+     own high z-index only ranks it among #preset-menu's OWN children — since
+     position:absolute + z-index makes #preset-menu its own stacking context,
+     the dropdown can't out-rank #controls-toggle (equal z-index, later in the
+     DOM) unless #preset-menu itself does. */
+  z-index:var(--z-floating);
 }
 
 .preset-toggle{
@@ -238,19 +270,35 @@ html.vt-fallback.vt-leaving body{
 .preset-option.active{
   background:var(--glass-hover);
   border:1px solid var(--brand);
-  color:var(--brand);
+  color:var(--hpro-navy);
 }
 .option-title{
+  display:flex;
+  align-items:center;
+  gap:7px;
   font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   letter-spacing:.05em;
   text-transform:uppercase;
 }
+/* A little color-coding per preset — small, but it makes the list scannable
+   at a glance instead of four visually-identical rows of text. */
+.option-title::before{
+  content:"";
+  width:8px;
+  height:8px;
+  flex-shrink:0;
+  border-radius:50%;
+}
+.preset-option[data-preset="starter"] .option-title::before{ background:var(--hpro-navy); }
+.preset-option[data-preset="invent"] .option-title::before{ background:var(--hpro-mint); }
+.preset-option[data-preset="sensor"] .option-title::before{ background:var(--brand); }
+.preset-option[data-preset="showtime"] .option-title::before{ background:#E9739A; }
 .option-desc{
   font:500 11px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   color:var(--muted);
 }
 .preset-option.active .option-desc{
-  color:var(--brand);
+  color:var(--hpro-navy);
 }
 
 #controls-toggle{
@@ -287,7 +335,7 @@ html.vt-fallback.vt-leaving body{
 }
 .toggle-btn.active{
   background:#FFFFFF;
-  color:var(--brand);
+  color:var(--hpro-navy);
   box-shadow:var(--shadow-xs);
 }
 
@@ -469,7 +517,7 @@ html.vt-fallback.vt-leaving body{
   border:1px solid var(--brand);
   border-radius:999px;
   background:var(--brand);
-  color:#fff;
+  color:var(--hpro-navy);
   font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   letter-spacing:.04em;
   text-transform:none;
@@ -688,13 +736,18 @@ html.vt-fallback.vt-leaving body{
   animation:fadePop var(--transition-fast) ease-out both;
 }
 #info-tooltip a{
-  color:var(--brand);
+  color:var(--hpro-navy);
+  font-weight:700;
   text-decoration:none;
 }
 #info-tooltip a:hover{
   text-decoration:underline;
 }
 
+/* Yellow is hprobots' color for the "create"/3D-print side of the product —
+   the export cluster is the most literal 3D-printing action in the whole
+   toolbar, so it gets the brand fill instead of the neutral glass buttons
+   everything else uses. */
 #download-group{
   display:flex;
   position:relative;
@@ -702,8 +755,8 @@ html.vt-fallback.vt-leaving body{
   height:var(--control-h);
   border-radius:12px;
   overflow:visible;
-  border:1px solid var(--stroke);
-  background:var(--glass-bg);
+  border:1px solid color-mix(in srgb, var(--brand) 55%, var(--stroke));
+  background:color-mix(in srgb, var(--brand) 22%, var(--glass-bg));
   -webkit-backdrop-filter:blur(var(--blur));
   backdrop-filter:blur(var(--blur));
   box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);
@@ -713,16 +766,17 @@ html.vt-fallback.vt-leaving body{
   border:none;
   outline:none;
   background:transparent;
+  color:var(--hpro-navy);
   cursor:pointer;
   transition:background var(--transition);
 }
 #download-primary{ flex:1; border-radius:11px 0 0 11px; }
 #download-toggle{
   width:40px;
-  border-left:1px solid var(--stroke);
+  border-left:1px solid color-mix(in srgb, var(--brand) 55%, var(--stroke));
   border-radius:0 11px 11px 0;
 }
-#download-group:hover :where(#download-primary,#download-toggle){ background:var(--glass-hover); }
+#download-group:hover :where(#download-primary,#download-toggle){ background:color-mix(in srgb, var(--brand) 16%, transparent); }
 #download-menu{
   display:none;
   position:absolute;
@@ -874,9 +928,9 @@ html.vt-fallback.vt-leaving body{
   padding:6px 10px;
   border-radius:999px;
   font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  background:var(--glass-bg);
-  border:1px solid var(--stroke);
-  color:var(--muted);
+  background:color-mix(in srgb, var(--hpro-yellow) 22%, var(--glass-bg));
+  border:1px solid color-mix(in srgb, var(--hpro-yellow) 55%, var(--stroke));
+  color:#8A5A00;
 }
 
 .toast-stack{
@@ -931,8 +985,8 @@ html.vt-fallback.vt-leaving body{
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:14px;
-  background:var(--canvas);
+  gap:16px;
+  background:var(--hpro-yellow);
   transition:opacity 380ms ease, visibility 380ms ease;
 }
 #app-loader.hide{
@@ -944,19 +998,25 @@ html.vt-fallback.vt-leaving body{
   width:52px;
   height:52px;
   border-radius:50%;
-  border:4px solid var(--stroke);
-  border-top-color:var(--brand);
+  border:4px solid rgba(37,40,79,0.18);
+  border-top-color:var(--hpro-navy);
   animation:app-loader-spin 900ms linear infinite;
 }
 #app-loader-mark{
-  font:800 15px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  letter-spacing:.04em;
-  color:var(--text);
+  display:flex;
+}
+#app-loader-logo{
+  height:28px;
+  width:auto;
+  display:block;
+  /* Source SVG is white-only (made for dark backgrounds) — recolor it solid
+     dark for legibility against the yellow background instead. */
+  filter:brightness(0) saturate(100%);
 }
 #app-loader-text{
   margin:0;
   font:600 13px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  color:var(--muted);
+  color:rgba(37,40,79,0.75);
 }
 @keyframes app-loader-spin{
   to{ transform:rotate(360deg); }
@@ -1108,16 +1168,24 @@ html.vt-fallback.vt-leaving body{
   color:var(--text);
 }
 .variant-grid-item.active .variant-name{
-  color:var(--brand-ink);
+  color:var(--hpro-navy);
 }
 .variant-check{
   position:absolute;
   top:3px;
   right:3px;
   font-size:16px !important;
-  color:var(--brand);
-  background:#fff;
+  color:var(--hpro-navy);
+  background:var(--brand);
   border-radius:50%;
+  animation:check-pop 320ms cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes check-pop{
+  from{ transform:scale(0); }
+  to{ transform:scale(1); }
+}
+@media (prefers-reduced-motion: reduce){
+  .variant-check{ animation:none; }
 }
 
 /* Touch-only portrait lock — pure CSS, shown purely by orientation so it can
@@ -1319,7 +1387,7 @@ html.vt-fallback.vt-leaving body{
 .rotate-btn.primary{
   background:var(--brand);
   border-color:var(--brand);
-  color:white;
+  color:var(--hpro-navy);
   box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 45%, transparent);
 }
 .rotate-btn.primary:hover{
@@ -1419,7 +1487,7 @@ body.hp-lock-scroll{
 .tour-btn.primary{
   background:var(--brand);
   border-color:var(--brand);
-  color:white;
+  color:var(--hpro-navy);
   box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 45%, transparent);
 }
 .tour-btn.primary:hover{
