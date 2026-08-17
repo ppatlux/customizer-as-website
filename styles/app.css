@@ -196,6 +196,19 @@ html.vt-fallback.vt-leaving body{
   z-index:var(--z-floating);
 }
 
+#brand-mark{
+  display:flex;
+  align-items:center;
+  padding:0 2px;
+  opacity:0.9;
+  user-select:none;
+  pointer-events:none;
+}
+#brand-logo{
+  height:40px;
+  width:auto;
+}
+
 .preset-toggle{
   display:inline-flex;
   align-items:center;
@@ -1006,12 +1019,9 @@ html.vt-fallback.vt-leaving body{
   display:flex;
 }
 #app-loader-logo{
-  height:28px;
+  height:32px;
   width:auto;
   display:block;
-  /* Source SVG is white-only (made for dark backgrounds) — recolor it solid
-     dark for legibility against the yellow background instead. */
-  filter:brightness(0) saturate(100%);
 }
 #app-loader-text{
   margin:0;

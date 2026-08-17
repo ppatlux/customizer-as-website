@@ -239,6 +239,8 @@ const loadedMods = {};
 const loadGeneration = {};
 const modelCols = {};
 const partVis = {};
+const activePops = new Map();
+const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const occludedParts = new Set(['middle', 'bumper', 'tail', 'bottom', 'wheels']);
 
 let activePresetKey = 'starter';
@@ -784,16 +786,19 @@ function setupMobileSheet() {
   container.addEventListener('pointerdown', (event) => {
     if (mobileSheetEl.dataset.state !== 'expanded') return;
     if (event.target.closest('#mobile-sheet')) return;
-    // A color palette is deliberately reparented OUT of #mobile-sheet into
-    // `container` while open (mountPaletteToBody), so it doesn't get clipped
-    // by the sheet's overflow/stacking context — but that means a tap on a
-    // swatch looks identical to a tap on the bare 3D viewer here. Without
-    // this check, touching a swatch collapses the sheet (mutating its height
-    // via CSS transition) on pointerdown, i.e. while the finger is still
-    // down — and mutating layout mid-touch is a common trigger for mobile
-    // browsers to cancel the gesture (touchcancel instead of touchend)
-    // instead of completing it, silently dropping the color pick.
-    if (event.target.closest('.color-palette')) return;
+    // A color palette (and other floating popups — variant grid, info tip,
+    // more menu) is deliberately reparented OUT of #mobile-sheet into
+    // `container`/`document.body` while open (mountPaletteToBody,
+    // mountVariantGridPanel, mountFloatingPopup), so it doesn't get clipped
+    // by the sheet's overflow/stacking context — but that means a tap inside
+    // one of these looks identical to a tap on the bare 3D viewer here.
+    // Without this check, tapping a swatch or a variant thumbnail collapses
+    // the sheet (mutating its height via CSS transition) on pointerdown,
+    // i.e. while the finger is still down — and mutating layout mid-touch is
+    // a common trigger for mobile browsers to cancel the gesture
+    // (touchcancel instead of touchend) instead of completing it, silently
+    // dropping the tap.
+    if (event.target.closest('.color-palette, .variant-grid-panel, #info-tooltip, #more-menu')) return;
     setMobileSheetState('peek');
   });
 
@@ -1382,7 +1387,7 @@ function setupVariantGrid() {
     const wasHidden = !partVis[part];
     if (wasHidden) enablePart(part, false);
     currentIdx[part] = idx;
-    loadModel(part);
+    loadModel(part, true);
     // Always enforced (not just when newly enabled) — picking from a combined
     // Arms/Bumper grid must win over whichever of the two was already showing.
     enforceArmsBumperExclusion(part);
@@ -1732,14 +1737,14 @@ function setupKeyboardNav() {
     if (event.key === 'ArrowLeft') {
       if (!partVis[part]) enablePart(part, false);
       currentIdx[part] = wrapIndex(part, currentIdx[part] - 1);
-      loadModel(part);
+      loadModel(part, true);
       enforceBottomMotionExclusion();
       markCustomPreset();
       event.preventDefault();
     } else if (event.key === 'ArrowRight') {
       if (!partVis[part]) enablePart(part, false);
       currentIdx[part] = wrapIndex(part, currentIdx[part] + 1);
-      loadModel(part);
+      loadModel(part, true);
       enforceBottomMotionExclusion();
       markCustomPreset();
       event.preventDefault();
@@ -1770,7 +1775,7 @@ function setupGlobalClickHandler() {
       const wasHidden = !partVis[part];
       if (wasHidden) enablePart(part, false);
       currentIdx[part] = wrapIndex(part, currentIdx[part] - 1);
-      loadModel(part);
+      loadModel(part, true);
       if (wasHidden) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
       // Collapse back to the model instead of leaving the sheet expanded —
@@ -1784,7 +1789,7 @@ function setupGlobalClickHandler() {
       const wasHidden = !partVis[part];
       if (wasHidden) enablePart(part, false);
       currentIdx[part] = wrapIndex(part, currentIdx[part] + 1);
-      loadModel(part);
+      loadModel(part, true);
       if (wasHidden) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
       if (mobileLayoutActive) setMobileSheetState('peek', part);
@@ -1816,7 +1821,7 @@ function setupGlobalClickHandler() {
         if (partVis[part] && !loadedMods[part].parent) scene.add(loadedMods[part]);
       } else if (partVis[part]) {
         // Model has genuinely never loaded at all (e.g. a load error earlier).
-        loadModel(part);
+        loadModel(part, true);
       }
 
       if (partVis[part]) enforceArmsBumperExclusion(part);
@@ -2873,7 +2878,38 @@ function hideAppLoader() {
   setTimeout(() => appLoader.remove(), 450);
 }
 
-function loadModel(part) {
+// Elastic overshoot easing — grows past 1.0 then settles back, reads as a
+// "pop" rather than a plain fade/grow-in.
+function popEase(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+function triggerPartPop(part, model) {
+  if (prefersReducedMotion) {
+    model.scale.setScalar(1);
+    return;
+  }
+  const startScale = 0.7;
+  model.scale.setScalar(startScale);
+  activePops.set(part, { model, start: performance.now(), duration: 220, startScale });
+}
+
+function updatePartPops(now) {
+  if (!activePops.size) return;
+  for (const [part, pop] of activePops) {
+    const t = Math.min(1, (now - pop.start) / pop.duration);
+    const scale = pop.startScale + (1 - pop.startScale) * popEase(t);
+    pop.model.scale.setScalar(scale);
+    if (t >= 1) {
+      pop.model.scale.setScalar(1);
+      activePops.delete(part);
+    }
+  }
+}
+
+function loadModel(part, animatePop = false) {
   if (part === 'spacer' && !partVis.spacer) return;
   const urls = getAssetCandidates(part, currentIdx[part], 'glb');
   if (!urls.length) {
@@ -2930,6 +2966,10 @@ function loadModel(part) {
         applyColor(part);
         updateVariantCounter(part);
         updateComboChip();
+        if (animatePop && partVis[part]) {
+          activePops.delete(part);
+          triggerPartPop(part, model);
+        }
       },
       undefined,
       (error) => {
@@ -2981,7 +3021,7 @@ function applyPreset(key, showToast = true) {
       if (loadedMods.bumper) loadedMods.bumper.visible = false;
     }
 
-    toLoad.forEach((part) => loadModel(part));
+    toLoad.forEach((part) => loadModel(part, true));
     enforceBottomMotionExclusion();
     updateAllCounters();
     updateComboChip();
@@ -3383,6 +3423,7 @@ function animate() {
   requestAnimationFrame(animate);
   if (renderingPaused) return;
   controls.update();
+  updatePartPops(performance.now());
   renderer.render(scene, camera);
 }
 
@@ -3399,7 +3440,7 @@ randomizeBtn.addEventListener('click', () => {
   for (const part of Object.keys(modelSets)) {
     if (!modelSets[part].length) continue;
     currentIdx[part] = Math.floor(Math.random() * modelSets[part].length);
-    loadModel(part);
+    loadModel(part, true);
   }
   enforceBottomMotionExclusion();
   markCustomPreset();
