@@ -59,12 +59,18 @@ const remoteStepSets = Object.fromEntries(
   Object.entries(remoteModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.step'))])
 );
 
-const mf3Sets = Object.fromEntries(
-  Object.entries(localModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.3mf'))])
+// No STL is hosted yet for most current variants (checked: same file-naming
+// scheme as .step/.glb, just not present). These candidate URLs exist so that
+// the moment matching .stl files DO get uploaded alongside the .step/.glb ones,
+// print/download start using them automatically — see firstExistingUrl(), which
+// probes before falling back to STEP (print) or a client-side STLExporter
+// export of the already-loaded model (download).
+const stlSets = Object.fromEntries(
+  Object.entries(localModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.stl'))])
 );
 
-const remoteMf3Sets = Object.fromEntries(
-  Object.entries(remoteModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.3mf'))])
+const remoteStlSets = Object.fromEntries(
+  Object.entries(remoteModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.stl'))])
 );
 
 const presets = {
@@ -129,13 +135,13 @@ const dlMenu = document.getElementById('download-menu');
 const dlPrimary = document.getElementById('download-primary');
 const dlToggle = document.getElementById('download-toggle');
 const dlGlbBtn = document.getElementById('downloadGlbBtn');
-const dl3mfBtn = document.getElementById('download3mfBtn');
+const dlStepBtn = document.getElementById('downloadStepBtn');
 const moreToggle = document.getElementById('more-toggle');
 const moreMenu = document.getElementById('more-menu');
 const moreFactoryResetBtn = document.getElementById('moreFactoryResetBtn');
-const moreDownloadStepBtn = document.getElementById('moreDownloadStepBtn');
+const moreDownloadStlBtn = document.getElementById('moreDownloadStlBtn');
 const moreDownloadGlbBtn = document.getElementById('moreDownloadGlbBtn');
-const moreDownload3mfBtn = document.getElementById('moreDownload3mfBtn');
+const moreDownloadStepBtn = document.getElementById('moreDownloadStepBtn');
 const slicerToggle = document.getElementById('slicer-toggle');
 const slicerMenu = document.getElementById('slicer-menu');
 const slicerBadgeCurrent = document.getElementById('slicer-badge-current');
@@ -311,7 +317,7 @@ function renderPartSection(part) {
         <button class="btn btn--sm btn--ghost" data-role="print" data-part="${part.key}" title="Print part" aria-label="Open ${part.label} in OrcaSlicer">
           <span class="material-icons">print</span>
         </button>
-        <button class="btn btn--sm btn--ghost" data-role="download-part" data-part="${part.key}" title="Download STEP" aria-label="Download ${part.label} STEP file">
+        <button class="btn btn--sm btn--ghost" data-role="download-part" data-part="${part.key}" title="Download STL" aria-label="Download ${part.label} STL file">
           <span class="material-icons">file_download</span>
         </button>
       </div>
@@ -737,7 +743,7 @@ function setupMobileSheet() {
 function setupDownloadMenu() {
   dlPrimary.addEventListener('click', (event) => {
     event.preventDefault();
-    downloadSelection('step');
+    downloadSelectionStl();
   });
 
   dlToggle.addEventListener('click', (event) => {
@@ -753,9 +759,9 @@ function setupDownloadMenu() {
     closeDlMenu();
   });
 
-  dl3mfBtn.addEventListener('click', (event) => {
+  dlStepBtn.addEventListener('click', (event) => {
     event.preventDefault();
-    downloadSelection('3mf');
+    downloadSelection('step');
     closeDlMenu();
   });
 
@@ -782,17 +788,17 @@ function setupMoreMenu() {
     closeMoreMenu();
     resetToFactory();
   });
-  moreDownloadStepBtn.addEventListener('click', () => {
+  moreDownloadStlBtn.addEventListener('click', () => {
     closeMoreMenu();
-    downloadSelection('step');
+    downloadSelectionStl();
   });
   moreDownloadGlbBtn.addEventListener('click', () => {
     closeMoreMenu();
     downloadSelection('glb');
   });
-  moreDownload3mfBtn.addEventListener('click', () => {
+  moreDownloadStepBtn.addEventListener('click', () => {
     closeMoreMenu();
-    downloadSelection('3mf');
+    downloadSelection('step');
   });
 
   document.addEventListener('click', (event) => {
@@ -1287,6 +1293,7 @@ function setupVariantGrid() {
     currentIdx[part] = idx;
     loadModel(part);
     if (wasHidden) enforceArmsBumperExclusion(part);
+    enforceBottomMotionExclusion();
     markCustomPreset();
     closeVariantGrid();
     if (mobileLayoutActive) setMobileSheetState('peek', part);
@@ -1304,12 +1311,14 @@ function setupKeyboardNav() {
       if (!partVis[part]) enablePart(part, false);
       currentIdx[part] = wrapIndex(part, currentIdx[part] - 1);
       loadModel(part);
+      enforceBottomMotionExclusion();
       markCustomPreset();
       event.preventDefault();
     } else if (event.key === 'ArrowRight') {
       if (!partVis[part]) enablePart(part, false);
       currentIdx[part] = wrapIndex(part, currentIdx[part] + 1);
       loadModel(part);
+      enforceBottomMotionExclusion();
       markCustomPreset();
       event.preventDefault();
     }
@@ -1341,6 +1350,7 @@ function setupGlobalClickHandler() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] - 1);
       loadModel(part);
       if (wasHidden) enforceArmsBumperExclusion(part);
+      enforceBottomMotionExclusion();
       // Collapse back to the model instead of leaving the sheet expanded —
       // the point of changing a variant is to immediately see the result.
       // Land peek on this same part so it's right there to keep adjusting.
@@ -1354,6 +1364,7 @@ function setupGlobalClickHandler() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] + 1);
       loadModel(part);
       if (wasHidden) enforceArmsBumperExclusion(part);
+      enforceBottomMotionExclusion();
       if (mobileLayoutActive) setMobileSheetState('peek', part);
       touched = true;
     }
@@ -1387,6 +1398,7 @@ function setupGlobalClickHandler() {
       }
 
       if (partVis[part]) enforceArmsBumperExclusion(part);
+      enforceBottomMotionExclusion();
       updateComboChip();
       touched = true;
     }
@@ -1410,10 +1422,19 @@ function setupGlobalClickHandler() {
       } catch {
         return;
       }
-      const urls = getAssetCandidates(part, currentIdx[part], 'step');
-      if (!urls.length) {
-        toast(`No STEP file available for ${part}.`, 'warn', 1800);
-        return;
+
+      // STL is preferred (see stlSets), but none is hosted yet for most
+      // variants — this probes for one and falls back to STEP so nothing
+      // breaks today, while automatically switching over the moment matching
+      // .stl files exist at the same path as the .step/.glb ones.
+      let url = await firstExistingUrl(getAssetCandidates(part, currentIdx[part], 'stl'));
+      if (!url) {
+        const stepUrls = getAssetCandidates(part, currentIdx[part], 'step');
+        if (!stepUrls.length) {
+          toast(`No STL or STEP file available for ${part}.`, 'warn', 1800);
+          return;
+        }
+        url = stepUrls[0];
       }
 
       // OrcaSlicer only, for now: its orcaslicer://open handler fetches the URL itself and
@@ -1423,9 +1444,9 @@ function setupGlobalClickHandler() {
       // to a file hosted here is always rejected until hprobots.com gets added to it — the
       // slicer picker (#slicer-group) is hidden until then; re-enable it and branch on
       // getPreferredSlicer() again once that happens.
-      const url = new URL(urls[0], window.location.href).href;
+      const fullUrl = new URL(url, window.location.href).href;
       const link = document.createElement('a');
-      link.href = `orcaslicer://open?file=${encodeURIComponent(url)}`;
+      link.href = `orcaslicer://open?file=${encodeURIComponent(fullUrl)}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1438,17 +1459,16 @@ function setupGlobalClickHandler() {
         return;
       }
 
-      const urls = getAssetCandidates(part, currentIdx[part], 'step');
-      if (!urls.length) {
-        toast(`No STEP file available for ${part}.`, 'warn', 1800);
-        return;
-      }
-
       try {
-        const { response } = await fetchFirstAvailable(urls);
-        const blob = await response.blob();
-        downloadBlob(blob, `${part}.step`);
-        toast(`${part} STEP downloaded.`, 'ok', 1600);
+        // Prefer a hosted STL if one exists at the expected path; otherwise export
+        // one on the fly from the model already loaded in the viewer — always
+        // available, no dependency on what's been uploaded remotely.
+        const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part], 'stl'));
+        const blob = hostedUrl
+          ? await (await fetch(hostedUrl)).blob()
+          : await exportPartAsStlBlob(part);
+        downloadBlob(blob, `${part}.stl`);
+        toast(`${part} STL downloaded.`, 'ok', 1600);
       } catch (error) {
         console.error(error);
         toast(`Failed to download ${part}.`, 'err', 2200);
@@ -1578,8 +1598,8 @@ function uniqueUrls(urls) {
 }
 
 function getAssetCandidates(part, idx, format = 'glb') {
-  const localSets = format === 'step' ? stepSets : format === '3mf' ? mf3Sets : localModelSets;
-  const remoteSets = format === 'step' ? remoteStepSets : format === '3mf' ? remoteMf3Sets : remoteModelSets;
+  const localSets = format === 'step' ? stepSets : format === 'stl' ? stlSets : localModelSets;
+  const remoteSets = format === 'step' ? remoteStepSets : format === 'stl' ? remoteStlSets : remoteModelSets;
 
   return uniqueUrls([
     localSets[part]?.[idx],
@@ -1604,6 +1624,34 @@ async function fetchFirstAvailable(urls) {
   }
 
   throw lastError || new Error('No asset URL available');
+}
+
+// Lightweight existence probe (HEAD, no body fetched) used to check for a
+// hosted file before falling back to something else — unlike
+// getAssetCandidates(), which only tells you a URL COULD be constructed by
+// pattern, not that anything actually lives there.
+async function firstExistingUrl(urls) {
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
+      if (response.ok) return url;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
+// Exports the currently-loaded, currently-colored model for a part straight
+// out of the live 3D scene — no hosted .stl file needed, so this always works
+// regardless of what's actually been uploaded for this variant.
+async function exportPartAsStlBlob(part) {
+  const model = loadedMods[part];
+  if (!model) throw new Error(`${part} is not loaded`);
+  const { STLExporter } = await import('three/addons/exporters/STLExporter.js');
+  const exporter = new STLExporter();
+  const result = exporter.parse(model, { binary: true });
+  return new Blob([result], { type: 'model/stl' });
 }
 
 function saveStateToLocal() {
@@ -1638,6 +1686,9 @@ function applySavedState(saved) {
       modelCols[part].set(saved.modelCols[part] || '#d9d9d9');
     }
   }
+
+  // Safety net for state saved/shared before this rule existed.
+  enforceBottomMotionExclusion();
 }
 
 function tryRestoreFromLocal() {
@@ -2346,6 +2397,28 @@ function enforceArmsBumperExclusion(partJustEnabled) {
   if (loadedMods[other]) loadedMods[other].visible = false;
 }
 
+function bottomIsF1Variant() {
+  const url = modelSets.bottom?.[currentIdx.bottom] || '';
+  return /bottom_f1/i.test(url);
+}
+
+// The F1 bottom's mount doesn't fit any Motion/wheel variant. Unlike
+// arms/bumper (either one can knock out the other, whichever was touched
+// last), this conflict is one-directional and variant-conditional: Bottom
+// always wins, Motion is the one that gets hidden — so call this after ANY
+// change that could touch bottom's variant/visibility OR wheels' visibility
+// (it's a cheap, idempotent check; harmless to call when nothing changed).
+function enforceBottomMotionExclusion() {
+  if (!partVis.bottom || !bottomIsF1Variant() || !partVis.wheels) return;
+
+  partVis.wheels = false;
+  const wheelsBtn = document.getElementById('wheels-visibility');
+  if (wheelsBtn) wheelsBtn.innerHTML = '<span class="material-icons">visibility_off</span>';
+  if (loadedMods.wheels) loadedMods.wheels.visible = false;
+  updateComboChip();
+  toast('Motion hidden — not compatible with the F1 bottom.', 'warn', 2200);
+}
+
 function enablePart(part, withToast = true) {
   if (partVis[part]) return;
   partVis[part] = true;
@@ -2486,6 +2559,7 @@ function applyPreset(key, showToast = true) {
     }
 
     toLoad.forEach((part) => loadModel(part));
+    enforceBottomMotionExclusion();
     updateAllCounters();
     updateComboChip();
     activePresetKey = key;
@@ -2538,7 +2612,7 @@ async function downloadSelection(format) {
     return;
   }
 
-  const sets = format === 'step' ? stepSets : format === 'glb' ? modelSets : format === '3mf' ? mf3Sets : null;
+  const sets = format === 'step' ? stepSets : format === 'glb' ? modelSets : null;
   if (!sets) return;
 
   const hasVisible = Object.keys(sets).some((part) => partVis[part] && sets[part]?.length);
@@ -2573,6 +2647,48 @@ async function downloadSelection(format) {
     const zipBlob = await zip.generateAsync({ type: 'blob' });
     downloadBlob(zipBlob, `models_selection_${format.toUpperCase()}.zip`);
     toast(`${format.toUpperCase()} zipped.`, 'ok', 1600);
+  } catch (error) {
+    console.error(error);
+    toast('Download failed. Please try again.', 'err', 2400);
+  }
+}
+
+// Same zip-of-visible-parts UX as downloadSelection(), but for STL: prefers a
+// hosted .stl for each part (see stlSets) and falls back to exporting straight
+// from the already-loaded, already-colored model when none is hosted — so this
+// always produces a full set even though most variants have no hosted STL yet.
+async function downloadSelectionStl() {
+  try {
+    await showConsentPopup();
+  } catch {
+    return;
+  }
+
+  const visibleParts = Object.keys(modelSets).filter((part) => partVis[part] && loadedMods[part]);
+  if (!visibleParts.length) {
+    toast('No visible parts to download.', 'warn', 1800);
+    return;
+  }
+
+  toast('Preparing STL...', 'ok', 1200);
+
+  try {
+    const zip = new JSZip().folder('models');
+    for (const part of visibleParts) {
+      try {
+        const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part], 'stl'));
+        const blob = hostedUrl
+          ? await (await fetch(hostedUrl)).blob()
+          : await exportPartAsStlBlob(part);
+        zip.file(`${part}.stl`, blob);
+      } catch (error) {
+        console.warn('STL export failed for', part, error);
+      }
+    }
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    downloadBlob(zipBlob, 'models_selection_STL.zip');
+    toast('STL zipped.', 'ok', 1600);
   } catch (error) {
     console.error(error);
     toast('Download failed. Please try again.', 'err', 2400);
@@ -2672,7 +2788,7 @@ function startTour(force = false) {
     { target: '#top-controls [data-role="next"]', title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
     { target: '#top-visibility', title: 'Visibility', body: 'Temporarily hide or show a part to see how it affects the build.' },
     { target: '#top-controls [data-role="print"]', title: 'Direct 3D Print', body: 'Open the current part directly in OrcaSlicer using the orcaslicer:// link.' },
-    { target: '#download-group', title: 'Export', body: 'Download STEP instantly, or open the menu for GLB and 3MF.' }
+    { target: '#download-group', title: 'Export', body: 'Download STL instantly, or open the menu for GLB and STEP.' }
   ];
 
   const tip = document.createElement('div');
@@ -2818,6 +2934,7 @@ randomizeBtn.addEventListener('click', () => {
     currentIdx[part] = Math.floor(Math.random() * modelSets[part].length);
     loadModel(part);
   }
+  enforceBottomMotionExclusion();
   markCustomPreset();
   toast('Randomized!', 'ok', 900);
 });
