@@ -203,6 +203,15 @@
       <div class="model-controls essential" id="panel-essential" role="tabpanel" aria-labelledby="show-essential"></div>
       <div class="model-controls advanced" id="panel-advanced" role="tabpanel" aria-labelledby="show-advanced" style="display:none"></div>
 
+      <!-- Desktop-only visual index into the parts list: a small reference build showing
+           every major part (including ones hidden by default, like Hat/Arms) at once.
+           Clicking a part opens that part's variant grid, same as clicking its row's name. -->
+      <div id="part-map" aria-label="Interactive part map — click a part of Otto to customize it">
+        <canvas id="part-map-canvas"></canvas>
+        <span id="part-map-label">Tap a part</span>
+        <div id="part-map-resize" title="Drag to resize (double-click to reset)" aria-hidden="true"></div>
+      </div>
+
       <!-- Mobile-only (pointer:coarse) bottom sheet. On touch devices app.js moves the
            real #info-container and both .model-controls panels in here (not copies) so
            every existing control keeps working unchanged; empty and unused on desktop. -->
@@ -215,6 +224,19 @@
       </div>
     </div>
   </main>
+
+  <!-- Touch-only (pointer:coarse) portrait lock. Pure CSS — @media (orientation:landscape)
+       shows it, no JS involved, so it can't fall out of sync with the actual rotation.
+       Sits outside <main> as the last element in the document so it always paints above
+       everything else (including the AR/consent overlays and the variant grid, which also
+       use the max z-index) regardless of what happens to be open when the device is turned. -->
+  <div id="rotate-overlay" role="alert" aria-live="assertive">
+    <div id="rotate-card">
+      <span class="material-icons" id="rotate-icon" aria-hidden="true">screen_rotation</span>
+      <h2>Rotate Your Device</h2>
+      <p>This customizer is designed for portrait mode. Please rotate your device to continue.</p>
+    </div>
+  </div>
 
   <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
   <script type="importmap">

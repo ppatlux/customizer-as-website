@@ -100,6 +100,13 @@ const presets = {
   }
 };
 
+// The #part-map mini viewport's reference build — every visually-distinct part
+// at once, so it doubles as a "here's everything you can customize" index even
+// for parts hidden by default (hat/arms). Reuses "sensor" since it's the only
+// preset with both hat and arms visible; swap the key for a different look.
+const PART_MAP_PRESET_KEY = 'sensor';
+const PART_MAP_PARTS = ['top', 'middle', 'face', 'bottom', 'wheels', 'hat', 'arms'];
+
 renderPanels();
 
 const container = document.getElementById('viewer-container');
@@ -252,6 +259,11 @@ let mobileSheetHandleEl = null;
 let renderingPaused = false;
 let openVariantGridPart = null;
 let thumbRenderer3D = null;
+// Set by setupPartMap() once it's running — lets adjustControlsWidth() (which
+// knows nothing about the part-map) notify it that the side panel's width may
+// have changed, so the map's minimum size can follow. Stays null on touch
+// devices, where the part-map never gets set up at all.
+let partMapWidthSync = null;
 const variantThumbCache = {};
 const variantThumbPromises = {};
 const pickerHSV = {};
@@ -356,6 +368,9 @@ function bootstrap() {
   setupColorPickerDrag();
   setupColorPickerHexInput();
   setupVariantGrid();
+  // Hidden by CSS on touch devices (see #part-map's pointer:coarse rule) — skip
+  // loading its extra GLBs and starting its render loop there entirely.
+  if (!isTouchLikeDevice()) setupPartMap();
   setupKeyboardNav();
   setupGlobalClickHandler();
   setupArPreview();
@@ -626,6 +641,45 @@ function showAdvancedPanel() {
   essBtn.setAttribute('aria-selected', 'false');
   reallyClosePalette();
   if (mobileLayoutActive) setMobileSheetState('expanded');
+}
+
+// #part-map is anchored to the same bottom-right corner the parts panel's
+// column occupies, and its resize handle can grow it well past its launch
+// size — call this whenever the map's size (or the viewport) changes so the
+// panel shrinks out of its way instead of being covered. Only ever clamps
+// TIGHTER than the panel's own CSS max-height (never forces it taller): each
+// call clears any previous override first and re-measures from scratch.
+function updatePanelClearanceForPartMap() {
+  const mapEl = document.getElementById('part-map');
+  if (!mapEl || getComputedStyle(mapEl).display === 'none') {
+    essPanel.style.maxHeight = '';
+    advPanel.style.maxHeight = '';
+    return;
+  }
+
+  essPanel.style.maxHeight = '';
+  advPanel.style.maxHeight = '';
+
+  const visiblePanel = essPanel.style.display !== 'none' ? essPanel : advPanel;
+  const panelRect = visiblePanel.getBoundingClientRect();
+  const mapTop = mapEl.getBoundingClientRect().top;
+  const gap = 12;
+
+  if (panelRect.bottom + gap > mapTop) {
+    const maxH = `${Math.max(180, mapTop - panelRect.top - gap)}px`;
+    essPanel.style.maxHeight = maxH;
+    advPanel.style.maxHeight = maxH;
+  }
+}
+
+// Picking a variant for a part that lives in the panel you're not currently
+// looking at (most commonly: picking Hat/Arms/Spacer/Bumper from the part-map
+// while still on the Essential tab) is confusing otherwise — the build changes
+// but the side list still shows unrelated rows. Jump to the right tab instead.
+function switchToPartPanel(part) {
+  const panel = PART_META.find((meta) => meta.key === part)?.panel;
+  if (panel === 'advanced' && !advBtn.classList.contains('active')) showAdvancedPanel();
+  else if (panel === 'essential' && !essBtn.classList.contains('active')) showEssentialPanel();
 }
 
 // focusPart: which part's row peek should land on. Omit for "top of list"
@@ -1212,37 +1266,62 @@ function positionVariantGrid(anchorRect) {
   variantGridPanel.style.zIndex = '2147483647';
 }
 
+// Arms and Bumper occupy the same slot and are mutually exclusive (see
+// enforceArmsBumperExclusion) — opening either one's picker shows both
+// categories together instead of just the one that was clicked, so you can
+// switch straight from an arm variant to a bumper variant (or back) in one
+// place instead of needing to know they live on separate rows.
+const EXCLUSIVE_VARIANT_GROUPS = {
+  arms: ['arms', 'bumper'],
+  bumper: ['arms', 'bumper']
+};
+
+let variantGridSession = 0;
+
 function openVariantGrid(part, anchorEl) {
-  const meta = PART_META.find((entry) => entry.key === part);
-  const list = modelSets[part] || [];
-  if (!meta || !list.length) return;
+  const groupParts = (EXCLUSIVE_VARIANT_GROUPS[part] || [part]).filter((p) => (modelSets[p] || []).length);
+  if (!groupParts.length) return;
 
   reallyClosePalette();
   openVariantGridPart = part;
-  variantGridTitle.textContent = meta.label;
-  variantGridBody.innerHTML = list.map((url, idx) => {
-    const name = prettyVariantLabel(part, url.split('/').pop());
-    const isActive = idx === currentIdx[part];
-    return `
-      <button type="button" class="variant-grid-item${isActive ? ' active' : ''}" data-idx="${idx}" aria-label="${name}">
-        <span class="variant-thumb" data-idx="${idx}"><span class="variant-thumb-spinner" aria-hidden="true"></span></span>
-        <span class="variant-name">${name}</span>
-        ${isActive ? '<span class="material-icons variant-check" aria-hidden="true">check_circle</span>' : ''}
-      </button>
-    `;
+  const mySession = ++variantGridSession;
+
+  const groupLabels = groupParts.map((p) => PART_META.find((entry) => entry.key === p)?.label || p);
+  variantGridTitle.textContent = groupLabels.join(' & ');
+
+  variantGridBody.innerHTML = groupParts.map((p) => {
+    const list = modelSets[p] || [];
+    const label = PART_META.find((entry) => entry.key === p)?.label || p;
+    const sectionLabel = groupParts.length > 1
+      ? `<div class="variant-grid-section-label">${label}</div>`
+      : '';
+    const items = list.map((url, idx) => {
+      const name = prettyVariantLabel(p, url.split('/').pop());
+      const isActive = partVis[p] && idx === currentIdx[p];
+      return `
+        <button type="button" class="variant-grid-item${isActive ? ' active' : ''}" data-part="${p}" data-idx="${idx}" aria-label="${name}">
+          <span class="variant-thumb" data-part="${p}" data-idx="${idx}"><span class="variant-thumb-spinner" aria-hidden="true"></span></span>
+          <span class="variant-name">${name}</span>
+          ${isActive ? '<span class="material-icons variant-check" aria-hidden="true">check_circle</span>' : ''}
+        </button>
+      `;
+    }).join('');
+    return sectionLabel + items;
   }).join('');
 
   mountVariantGridPanel();
   positionVariantGrid(anchorEl.getBoundingClientRect());
 
-  list.forEach((url, idx) => {
-    renderVariantThumbnail(url).then((dataUrl) => {
-      if (openVariantGridPart !== part) return; // grid closed or switched to another part
-      const slot = variantGridBody.querySelector(`.variant-thumb[data-idx="${idx}"]`);
-      if (!slot) return;
-      slot.innerHTML = dataUrl
-        ? `<img src="${dataUrl}" alt="">`
-        : '<span class="material-icons variant-thumb-fallback" aria-hidden="true">view_in_ar</span>';
+  groupParts.forEach((p) => {
+    (modelSets[p] || []).forEach((url, idx) => {
+      renderVariantThumbnail(url).then((dataUrl) => {
+        if (variantGridSession !== mySession) return; // grid closed or reopened for something else
+        const slot = variantGridBody.querySelector(`.variant-thumb[data-part="${p}"][data-idx="${idx}"]`);
+        if (!slot) return;
+        slot.innerHTML = dataUrl
+          ? `<img src="${dataUrl}" alt="">`
+          : '<span class="material-icons variant-thumb-fallback" aria-hidden="true">view_in_ar</span>';
+      });
     });
   });
 }
@@ -1263,6 +1342,7 @@ function setupVariantGrid() {
     if (!openVariantGridPart) return;
     if (event.target.closest('.variant-grid-panel')) return;
     if (event.target.closest('[data-role="variant-grid"]')) return;
+    if (event.target.closest('#part-map')) return;
     closeVariantGrid();
   });
 
@@ -1284,7 +1364,7 @@ function setupVariantGrid() {
     const item = event.target.closest('.variant-grid-item');
     if (!item) return;
 
-    const part = openVariantGridPart;
+    const part = item.dataset.part || openVariantGridPart;
     const idx = Number(item.dataset.idx);
     if (!part || Number.isNaN(idx)) return;
 
@@ -1292,12 +1372,343 @@ function setupVariantGrid() {
     if (wasHidden) enablePart(part, false);
     currentIdx[part] = idx;
     loadModel(part);
-    if (wasHidden) enforceArmsBumperExclusion(part);
+    // Always enforced (not just when newly enabled) — picking from a combined
+    // Arms/Bumper grid must win over whichever of the two was already showing.
+    enforceArmsBumperExclusion(part);
     enforceBottomMotionExclusion();
     markCustomPreset();
     closeVariantGrid();
+    switchToPartPanel(part);
     if (mobileLayoutActive) setMobileSheetState('peek', part);
   });
+}
+
+function tintModelFlatGray(model) {
+  model.traverse((node) => {
+    if (!node.isMesh) return;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    materials.forEach((material) => {
+      if (material?.color) material.color.set('#d9d9d9');
+    });
+  });
+}
+
+// Builds the #part-map mini viewport: its own scene/camera/renderer showing the
+// PART_MAP_PARTS reference build, slowly auto-rotating, with click/hover raycasting
+// against the real meshes (each tagged with userData.partMapKey during load) so
+// picking a part is pixel-accurate from any angle — then opens that part's variant
+// grid exactly like clicking its row's name would. Runs once at startup; the mini
+// scene is independent of the main viewer and of the user's actual part visibility.
+async function setupPartMap() {
+  const mapEl = document.getElementById('part-map');
+  const canvas = document.getElementById('part-map-canvas');
+  const mapLabel = document.getElementById('part-map-label');
+  if (!mapEl || !canvas) return;
+  const defaultMapLabelText = mapLabel?.textContent || 'Tap a part';
+
+  const size = 280; // matches the side panel's width (see .model-controls) for a clean edge-aligned look at minimum size
+  const pScene = new THREE.Scene();
+  const pCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
+  const pRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  pRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  pRenderer.setSize(size, size, false);
+  pRenderer.setClearColor(0x000000, 0);
+
+  pScene.add(new THREE.AmbientLight(0xffffff, 0.85));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  keyLight.position.set(100, 200, 150);
+  pScene.add(keyLight);
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+  fillLight.position.set(-120, -40, -80);
+  pScene.add(fillLight);
+
+  const root = new THREE.Group();
+  pScene.add(root);
+
+  const preset = presets[PART_MAP_PRESET_KEY];
+  await Promise.all(PART_MAP_PARTS.map(async (part) => {
+    const idx = preset?.parts?.[part] ?? 0;
+    const urls = getAssetCandidates(part, idx, 'glb');
+    if (!urls.length) return;
+
+    try {
+      const gltf = await loader.loadAsync(urls[0]);
+      const model = gltf.scene;
+      model.position.y = MODEL_Y_OFFSET;
+      tintModelFlatGray(model);
+      model.traverse((node) => {
+        if (!node.isMesh) return;
+        // Mesh.raycast() rejects using geometry.boundingSphere as a fast
+        // pre-check BEFORE testing real triangles — same stale-cache bug as
+        // the thumbnail renderer's Box3 issue, just hitting a different
+        // three.js code path this time. Force a fresh compute from the
+        // actual vertex data so that pre-check doesn't reject valid hits.
+        node.geometry.computeBoundingSphere();
+        node.geometry.computeBoundingBox();
+        node.userData.partMapKey = part;
+      });
+      root.add(model);
+    } catch (error) {
+      console.warn('Part map: failed to load', part, error);
+    }
+  }));
+
+  if (!root.children.length) return;
+
+  const box = new THREE.Box3().setFromObject(root, true);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  root.position.sub(sphere.center);
+
+  // Static top-down 3/4 view: exactly 45° elevation, 45° azimuth — no
+  // auto-rotation, just one fixed, deliberate angle.
+  const fovRad = (pCamera.fov * Math.PI) / 180;
+  const elevation = THREE.MathUtils.degToRad(45);
+  const azimuth = THREE.MathUtils.degToRad(45);
+  const direction = new THREE.Vector3(
+    Math.sin(azimuth) * Math.cos(elevation),
+    Math.sin(elevation),
+    Math.cos(azimuth) * Math.cos(elevation)
+  ).normalize();
+
+  // A bounding-SPHERE fit has to leave room for every possible viewing angle,
+  // which left the model tiny in a sea of margin (and every part's already-small
+  // clickable area smaller still). The camera angle here is fixed, so fit
+  // tightly to what THIS one direction actually needs: project every corner of
+  // the assembly's box onto the camera's own right/up axes and solve for the
+  // closest distance that still keeps all of them inside the frustum.
+  const tanHalfFov = Math.tan(fovRad / 2);
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  const camRight = new THREE.Vector3().crossVectors(worldUp, direction).normalize();
+  const camUp = new THREE.Vector3().crossVectors(direction, camRight).normalize();
+
+  const corners = [
+    [box.min.x, box.min.y, box.min.z], [box.min.x, box.min.y, box.max.z],
+    [box.min.x, box.max.y, box.min.z], [box.min.x, box.max.y, box.max.z],
+    [box.max.x, box.min.y, box.min.z], [box.max.x, box.min.y, box.max.z],
+    [box.max.x, box.max.y, box.min.z], [box.max.x, box.max.y, box.max.z]
+  ].map(([x, y, z]) => new THREE.Vector3(x, y, z).sub(sphere.center));
+
+  let dist = 0.001;
+  for (const corner of corners) {
+    const alongBack = corner.dot(direction);
+    const alongUp = Math.abs(corner.dot(camUp));
+    const alongRight = Math.abs(corner.dot(camRight));
+    dist = Math.max(dist, alongUp / tanHalfFov + alongBack, alongRight / tanHalfFov + alongBack);
+  }
+  dist *= 1.18;
+
+  pCamera.position.copy(direction).multiplyScalar(dist);
+  pCamera.near = Math.max(dist / 100, 0.01);
+  pCamera.far = dist * 10;
+  pCamera.lookAt(0, 0, 0);
+  pCamera.updateProjectionMatrix();
+
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  let hoveredMaterials = [];
+  let dirty = true;
+
+  function setHoverTint(materials, on) {
+    materials.forEach((material) => {
+      if (!material?.emissive) return;
+      material.emissive.setHex(on ? 0x3d7fff : 0x000000);
+    });
+  }
+
+  function castAt(ndcX, ndcY) {
+    pointerNdc.set(ndcX, ndcY);
+    raycaster.setFromCamera(pointerNdc, pCamera);
+    const hits = raycaster.intersectObjects(root.children, true);
+    return hits.find((h) => h.object.userData?.partMapKey) || null;
+  }
+
+  // Small/thin parts (face, hat) are easy to miss by a few pixels at this
+  // size, especially with the auto-rotation gone (users now have to line up
+  // the click themselves). Try the exact point, then successively wider rings
+  // of offset points, using the first ring that lands on something.
+  const HITBOX_RINGS = [
+    { radius: 8, points: 8 },
+    { radius: 16, points: 10 },
+    { radius: 24, points: 12 }
+  ];
+
+  function pickPartAt(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const toNdc = (x, y) => [((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1];
+
+    const [x0, y0] = toNdc(clientX, clientY);
+    let hit = castAt(x0, y0);
+    if (hit) return hit.object;
+
+    for (const { radius, points } of HITBOX_RINGS) {
+      for (let i = 0; i < points; i++) {
+        const angle = (i / points) * Math.PI * 2;
+        const [x, y] = toNdc(clientX + Math.cos(angle) * radius, clientY + Math.sin(angle) * radius);
+        hit = castAt(x, y);
+        if (hit) return hit.object;
+      }
+    }
+    return null;
+  }
+
+  function applyHover(clientX, clientY) {
+    const hitObj = pickPartAt(clientX, clientY);
+    if (hoveredMaterials.length) {
+      setHoverTint(hoveredMaterials, false);
+      hoveredMaterials = [];
+      dirty = true;
+    }
+    if (hitObj) {
+      const mats = Array.isArray(hitObj.material) ? hitObj.material : [hitObj.material];
+      setHoverTint(mats, true);
+      hoveredMaterials = mats;
+      canvas.style.cursor = 'pointer';
+      dirty = true;
+      if (mapLabel) {
+        const part = hitObj.userData.partMapKey;
+        mapLabel.textContent = PART_META.find((entry) => entry.key === part)?.label || defaultMapLabelText;
+      }
+    } else {
+      canvas.style.cursor = '';
+      if (mapLabel) mapLabel.textContent = defaultMapLabelText;
+    }
+  }
+
+  // Scene is static now (no auto-rotation), so there's no need to raycast on
+  // every raw pointermove — batch to at most once per rendered frame.
+  let pendingHoverEvent = null;
+  canvas.addEventListener('pointermove', (event) => {
+    pendingHoverEvent = event;
+  });
+
+  canvas.addEventListener('pointerleave', () => {
+    pendingHoverEvent = null;
+    if (hoveredMaterials.length) {
+      setHoverTint(hoveredMaterials, false);
+      hoveredMaterials = [];
+      dirty = true;
+    }
+    canvas.style.cursor = '';
+    if (mapLabel) mapLabel.textContent = defaultMapLabelText;
+  });
+
+  canvas.addEventListener('click', (event) => {
+    const hitObj = pickPartAt(event.clientX, event.clientY);
+    if (!hitObj) return;
+    const part = hitObj.userData.partMapKey;
+    if (openVariantGridPart === part) {
+      closeVariantGrid();
+    } else {
+      openVariantGrid(part, mapEl);
+    }
+  });
+
+  // Drag the top-left grip to resize — the box is anchored bottom-right (see
+  // #part-map's CSS), so growing it means dragging up/left. The floor tracks
+  // the side panel's own (dynamic — see adjustControlsWidth) rendered width,
+  // so the box lines up cleanly with it at minimum size instead of just
+  // approximating it with a fixed number. Persists across sessions once
+  // the user has actually grown it past that floor.
+  let MIN_MAP_SIZE = Math.round(essPanel.getBoundingClientRect().width || advPanel.getBoundingClientRect().width || size);
+  const MAX_MAP_SIZE = 480;
+  const MAP_SIZE_KEY = 'hp_robot_partmap_size';
+  let currentMapSize = MIN_MAP_SIZE;
+
+  function applyMapSize(next) {
+    currentMapSize = Math.round(Math.min(MAX_MAP_SIZE, Math.max(MIN_MAP_SIZE, next)));
+    mapEl.style.width = `${currentMapSize}px`;
+    mapEl.style.height = `${currentMapSize}px`;
+    pRenderer.setSize(currentMapSize, currentMapSize, false);
+    dirty = true;
+    updatePanelClearanceForPartMap();
+  }
+
+  // Re-reads the panel's current width and, if the box hasn't been manually
+  // grown past the floor, follows it — so resizing the browser (which can
+  // change the panel's width) keeps the two aligned instead of only matching
+  // once at startup.
+  function syncMinMapSizeToPanel() {
+    const panelWidth = Math.round(essPanel.getBoundingClientRect().width || advPanel.getBoundingClientRect().width || 0);
+    if (!panelWidth || panelWidth === MIN_MAP_SIZE) return;
+    const wasAtFloor = currentMapSize <= MIN_MAP_SIZE + 1;
+    MIN_MAP_SIZE = panelWidth;
+    if (wasAtFloor) applyMapSize(MIN_MAP_SIZE);
+    else updatePanelClearanceForPartMap();
+  }
+  partMapWidthSync = syncMinMapSizeToPanel;
+
+  let restoredSize = MIN_MAP_SIZE;
+  try {
+    const savedSize = Number(localStorage.getItem(MAP_SIZE_KEY));
+    if (savedSize) restoredSize = savedSize;
+  } catch {}
+  // Always runs, even at the default size — a short viewport can need the
+  // panel clamped even before anyone drags the resize handle.
+  applyMapSize(restoredSize);
+
+  // The map's size is fixed in px while the viewport isn't — a browser resize
+  // (or rotation) can change whether the panel has room, or how wide the
+  // panel itself is, even without the map's own size changing.
+  window.addEventListener('resize', () => {
+    syncMinMapSizeToPanel();
+    updatePanelClearanceForPartMap();
+  });
+
+  // Double-click-to-reset is handled here rather than via a separate
+  // 'dblclick' listener: preventDefault() on pointerdown (needed below, so
+  // dragging doesn't also fire a click on whatever's underneath) suppresses
+  // the browser's synthesized click/dblclick events for that same
+  // interaction entirely, so a real 'dblclick' listener would never fire.
+  const resizeHandle = document.getElementById('part-map-resize');
+  let lastResizePointerDown = 0;
+  resizeHandle?.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const now = performance.now();
+    const isDoubleClick = now - lastResizePointerDown < 350;
+    lastResizePointerDown = now;
+    if (isDoubleClick) {
+      applyMapSize(MIN_MAP_SIZE);
+      try { localStorage.setItem(MAP_SIZE_KEY, String(currentMapSize)); } catch {}
+      return;
+    }
+
+    resizeHandle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startSize = currentMapSize;
+
+    const onMove = (moveEvent) => {
+      const grownBy = Math.max(startX - moveEvent.clientX, startY - moveEvent.clientY);
+      applyMapSize(startSize + grownBy);
+    };
+    const onUp = () => {
+      resizeHandle.removeEventListener('pointermove', onMove);
+      resizeHandle.removeEventListener('pointerup', onUp);
+      resizeHandle.removeEventListener('pointercancel', onUp);
+      try { localStorage.setItem(MAP_SIZE_KEY, String(currentMapSize)); } catch {}
+    };
+    resizeHandle.addEventListener('pointermove', onMove);
+    resizeHandle.addEventListener('pointerup', onUp);
+    resizeHandle.addEventListener('pointercancel', onUp);
+  });
+
+  // Static scene: only re-render when something actually changes (a hover
+  // tint toggling) instead of looping forever.
+  function tick() {
+    requestAnimationFrame(tick);
+    if (document.hidden) return;
+    if (pendingHoverEvent) {
+      applyHover(pendingHoverEvent.clientX, pendingHoverEvent.clientY);
+      pendingHoverEvent = null;
+    }
+    if (dirty) {
+      pRenderer.render(pScene, pCamera);
+      dirty = false;
+    }
+  }
+  requestAnimationFrame(tick);
 }
 
 function setupKeyboardNav() {
@@ -1527,6 +1938,7 @@ function adjustControlsWidth() {
   [essPanel, advPanel].forEach((panel) => {
     panel.style.width = `${nextWidth}px`;
   });
+  partMapWidthSync?.();
 }
 
 function setPresetLabel(label) {
@@ -2757,6 +3169,7 @@ function reallyClosePalette() {
 }
 
 function shouldAutoStartTour() {
+  if (isTouchLikeDevice()) return false; // its step-by-step tooltip layout doesn't fit the mobile sheet well
   try {
     const state = JSON.parse(localStorage.getItem(TOUR_STATE_KEY) || '{}');
     if (state.never === true) return false;
@@ -2778,16 +3191,18 @@ function maybeAutostartTour() {
 
 function startTour(force = false) {
   if (tourRunning) return;
+  if (isTouchLikeDevice()) return; // never on mobile, even via the manual "Quick tour" link
   if (!force && !shouldAutoStartTour()) return;
   tourRunning = true;
 
   const steps = [
     { target: '#preset-toggle', title: 'Presets', body: 'Start from a ready-made configuration. Click to open and pick one.' },
     { target: '#controls-toggle', title: 'Panels', body: 'Switch between Essential parts and Advanced add-ons.' },
-    { target: '#top-pill', title: 'Colors', body: 'Click the color pill to pick a color for the Top.' },
+    { target: '#part-map', title: 'Quick Part Picker', body: 'Click any part on this mini model to jump straight to customizing it — including Hat and Arms, which start hidden in the list.' },
+    { target: '#top-pill', title: 'Colors', body: 'Click the color pill for quick presets, or drag in the full picker for any shade you want.' },
     { target: '#top-controls [data-role="next"]', title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
     { target: '#top-visibility', title: 'Visibility', body: 'Temporarily hide or show a part to see how it affects the build.' },
-    { target: '#top-controls [data-role="print"]', title: 'Direct 3D Print', body: 'Open the current part directly in OrcaSlicer using the orcaslicer:// link.' },
+    { target: '#top-controls [data-role="print"]', title: 'Direct 3D Print', body: 'Open the current part directly in your slicer using the orcaslicer:// link.' },
     { target: '#download-group', title: 'Export', body: 'Download STL instantly, or open the menu for GLB and STEP.' }
   ];
 
@@ -2854,7 +3269,9 @@ function startTour(force = false) {
   }
 
   function show() {
-    if (index >= 2 && index <= 5) showEssentialPanel();
+    // Colors/Variants/Visibility/Print steps all target #top-* controls, which
+    // only exist in the DOM (and are only reachable) while Essential is showing.
+    if (index >= 3 && index <= 6) showEssentialPanel();
     const step = steps[index];
     const target = document.querySelector(step.target);
     if (!target) {

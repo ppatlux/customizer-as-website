@@ -316,6 +316,81 @@ html.vt-fallback.vt-leaving body{
 .model-controls.essential{ display:flex; }
 .model-controls.advanced{ display:none; }
 
+#part-map{
+  position:absolute;
+  right:var(--edge);
+  bottom:calc(var(--edge) + env(safe-area-inset-bottom, 0px));
+  width:280px;
+  height:280px;
+  border-radius:var(--radius-lg);
+  background:var(--glass-bg);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  z-index:var(--z-toolbar);
+  cursor:pointer;
+  transition:box-shadow var(--transition), transform var(--transition);
+}
+#part-map:hover{
+  box-shadow:var(--shadow-lg);
+  transform:translateY(-1px);
+}
+#part-map-canvas{
+  display:block;
+  width:100%;
+  height:100%;
+  touch-action:none;
+}
+#part-map-label{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  padding:10px 0 6px;
+  text-align:center;
+  font:700 9px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--muted);
+  pointer-events:none;
+  background:linear-gradient(to top, var(--glass-bg), transparent);
+}
+/* #part-map is anchored bottom-right (right/bottom offsets), so the grip lives
+   at the opposite (top-left) corner — dragging it up-left grows the box while
+   the anchored corner stays put, which is the intuitive direction to drag. */
+#part-map-resize{
+  position:absolute;
+  top:0;
+  left:0;
+  width:24px;
+  height:24px;
+  cursor:nwse-resize;
+  touch-action:none;
+  z-index:2;
+}
+#part-map-resize::before{
+  content:"";
+  position:absolute;
+  top:7px;
+  left:7px;
+  width:10px;
+  height:10px;
+  border-top:2px solid var(--stroke-strong);
+  border-left:2px solid var(--stroke-strong);
+  border-radius:4px 0 0 0;
+  opacity:.55;
+  transition:opacity var(--transition), border-color var(--transition);
+}
+#part-map-resize:hover::before{
+  opacity:1;
+  border-color:var(--brand);
+}
+/* Mobile already has a lot competing for bottom-of-screen space (the sheet,
+   its actions) — this is a desktop-only navigation aid. */
+@media (pointer: coarse){
+  #part-map{ display:none; }
+}
+
 .model-section{
   position:relative;
   display:flex;
@@ -962,6 +1037,19 @@ html.vt-fallback.vt-leaving body{
   padding:2px;
   margin:0 -2px;
 }
+.variant-grid-section-label{
+  grid-column:1 / -1;
+  font:700 10px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+  margin-top:6px;
+  padding-bottom:4px;
+  border-bottom:1px solid var(--stroke);
+}
+.variant-grid-section-label:first-child{
+  margin-top:0;
+}
 .variant-grid-item{
   position:relative;
   display:flex;
@@ -1030,6 +1118,55 @@ html.vt-fallback.vt-leaving body{
   color:var(--brand);
   background:#fff;
   border-radius:50%;
+}
+
+/* Touch-only portrait lock — pure CSS, shown purely by orientation so it can
+   never fall out of sync with the device's actual rotation state. Fixed
+   (not absolute) since it lives outside #viewer-container, and z-index
+   matches the other full-screen overlays but wins ties by being last in the
+   DOM (see the HTML comment at its markup). */
+#rotate-overlay{
+  display:none;
+  position:fixed;
+  inset:0;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:var(--canvas);
+  z-index:var(--z-max);
+}
+@media (pointer: coarse) and (orientation: landscape){
+  #rotate-overlay{ display:flex; }
+}
+#rotate-card{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:14px;
+  max-width:320px;
+  text-align:center;
+}
+#rotate-icon{
+  font-size:56px !important;
+  color:var(--brand);
+  animation:rotate-hint 1.8s ease-in-out infinite;
+}
+@keyframes rotate-hint{
+  0%, 100%{ transform:rotate(0deg); }
+  50%{ transform:rotate(-90deg); }
+}
+#rotate-card h2{
+  margin:0;
+  font:700 18px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+#rotate-card p{
+  margin:0;
+  font:500 14px/1.5 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+}
+@media (prefers-reduced-motion: reduce){
+  #rotate-icon{ animation:none; }
 }
 
 #ar-card{
@@ -1352,6 +1489,12 @@ body.hp-lock-scroll{
   .color-picker-sv-thumb{ width:18px; height:18px; }
   .color-picker-hue{ height:20px; }
   .color-picker-hue-thumb{ width:22px; height:22px; }
+
+  /* The step-by-step tooltip tour is designed around desktop-sized anchored
+     popovers and doesn't adapt well to the mobile sheet's layout — app.js
+     also refuses to start it here (startTour/shouldAutoStartTour), this just
+     removes the now-dead entry point. */
+  #startTourLink{ display:none; }
 
   /* Sending to a desktop slicer app (OrcaSlicer/PrusaSlicer) is meaningless on a
      phone with no slicer installed — drop those controls instead of showing
