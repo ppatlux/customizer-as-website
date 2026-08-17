@@ -120,6 +120,10 @@ const arQrPanel = document.getElementById('ar-qr-panel');
 const arQrHolder = document.getElementById('ar-qr-holder');
 const arModelPanel = document.getElementById('ar-model-panel');
 const arModelHost = document.getElementById('ar-model-host');
+const variantGridPanel = document.getElementById('variant-grid-panel');
+const variantGridClose = document.getElementById('variant-grid-close');
+const variantGridTitle = document.getElementById('variant-grid-title');
+const variantGridBody = document.getElementById('variant-grid-body');
 const exitMaxBtn = document.getElementById('exit-maximize');
 const dlMenu = document.getElementById('download-menu');
 const dlPrimary = document.getElementById('download-primary');
@@ -240,6 +244,11 @@ let mobileLayoutActive = false;
 let mobileSheetEl = null;
 let mobileSheetHandleEl = null;
 let renderingPaused = false;
+let openVariantGridPart = null;
+let thumbRenderer3D = null;
+const variantThumbCache = {};
+const variantThumbPromises = {};
+const pickerHSV = {};
 
 for (const part of Object.keys(modelSets)) {
   currentIdx[part] = 0;
@@ -258,10 +267,27 @@ function renderPanels() {
 }
 
 function renderPartSection(part) {
-  const palette = COLOR_OPTIONS.map((color) => {
+  const swatches = COLOR_OPTIONS.map((color) => {
     const whiteClass = color === '#FFFFFF' ? ' white' : '';
     return `<div class="color-swatch${whiteClass}" data-role="swatch" data-part="${part.key}" data-color="${color}" title="${color}"></div>`;
   }).join('');
+
+  const palette = `
+    <div class="color-swatch-grid">${swatches}</div>
+    <div class="color-picker-advanced">
+      <div class="color-picker-sv" data-role="picker-sv" data-part="${part.key}">
+        <div class="color-picker-sv-thumb" data-role="picker-sv-thumb"></div>
+      </div>
+      <div class="color-picker-hue" data-role="picker-hue" data-part="${part.key}">
+        <div class="color-picker-hue-thumb" data-role="picker-hue-thumb"></div>
+      </div>
+      <div class="color-picker-hex-row">
+        <span class="color-picker-preview" data-role="picker-preview"></span>
+        <span class="color-picker-hash">#</span>
+        <input type="text" class="color-picker-hex" data-role="picker-hex" data-part="${part.key}" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Hex color for ${part.label}">
+      </div>
+    </div>
+  `;
 
   return `
     <div class="model-section" id="${part.key}-controls"${part.hidden ? ' style="display:none"' : ''}>
@@ -269,10 +295,10 @@ function renderPartSection(part) {
         <button class="btn btn--sm btn--ghost" data-role="prev" data-part="${part.key}" aria-label="Previous ${part.label}">
           <span class="material-icons">chevron_left</span>
         </button>
-        <span class="model-label">
+        <button type="button" class="model-label" data-role="variant-grid" data-part="${part.key}" aria-haspopup="grid" aria-label="Browse all ${part.label} variants">
           ${part.label}
           <span class="variant-counter" id="${part.key}-counter" aria-live="polite">-/ -</span>
-        </span>
+        </button>
         <button class="btn btn--sm btn--ghost" data-role="next" data-part="${part.key}" aria-label="Next ${part.label}">
           <span class="material-icons">chevron_right</span>
         </button>
@@ -321,6 +347,9 @@ function bootstrap() {
   setupMoreMenu();
   setupSlicerMenu();
   setupPaletteWiring();
+  setupColorPickerDrag();
+  setupColorPickerHexInput();
+  setupVariantGrid();
   setupKeyboardNav();
   setupGlobalClickHandler();
   setupArPreview();
@@ -847,9 +876,11 @@ function setupPaletteWiring() {
       }
 
       reallyClosePalette();
+      if (openVariantGridPart) closeVariantGrid();
       mountPaletteToBody(palette);
       positionPalette(palette, pill.getBoundingClientRect());
       openPalette = palette;
+      syncColorPickerUI(part);
     });
   });
 
@@ -862,16 +893,7 @@ function setupPaletteWiring() {
 
     const part = swatch.dataset.part;
     const hex = swatch.dataset.color;
-    if (!partVis[part]) enablePart(part, false);
-    modelCols[part].set(hex);
-    applyColor(part);
-
-    const pill = document.getElementById(`${part}-pill`);
-    if (pill) {
-      pill.style.backgroundColor = hex;
-      pill.style.border = hex.toLowerCase() === '#ffffff' ? '1px solid #000' : '1px solid var(--stroke)';
-    }
-
+    applyLiveColor(part, hex);
     markCustomPreset();
     reallyClosePalette();
     // Same as changing a variant — collapse back to the model with this part
@@ -890,6 +912,385 @@ function setupPaletteWiring() {
   });
 
   window.addEventListener('scroll', () => reallyClosePalette(), { passive: true, capture: true });
+}
+
+// Applies a color to the model, pill, and preview immediately (cheap — used both
+// for the final pick and for every intermediate tick while dragging the hue/SV
+// picker). Does NOT mark the preset as custom or persist to localStorage — that
+// only happens once, on drag release / swatch pick / committed hex entry, so a
+// fast drag doesn't hammer localStorage.setItem on every pointermove.
+function applyLiveColor(part, hex) {
+  if (!partVis[part]) enablePart(part, false);
+  modelCols[part].set(hex);
+  applyColor(part);
+
+  const pill = document.getElementById(`${part}-pill`);
+  if (pill) {
+    pill.style.backgroundColor = hex;
+    pill.style.border = hex.toLowerCase() === '#ffffff' ? '1px solid #000' : '1px solid var(--stroke)';
+  }
+}
+
+function hsvToHex(h, s, v) {
+  h = ((h % 360) + 360) % 360;
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+  let r, g, b;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function rgbToHsv(r, g, b) {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = max === 0 ? 0 : d / max;
+  return { h, s, v: max };
+}
+
+// Re-derives the picker's h/s/v from the part's current color — called whenever
+// the palette opens, so the picker always reflects reality even if the color was
+// last changed some other way (preset, randomize, share-link restore, a swatch).
+function syncColorPickerUI(part) {
+  const color = modelCols[part];
+  if (!color) return;
+  pickerHSV[part] = rgbToHsv(color.r, color.g, color.b);
+  renderColorPickerUI(part);
+}
+
+function renderColorPickerUI(part) {
+  const palette = document.getElementById(`${part}-palette`);
+  if (!palette) return;
+  const { h, s, v } = pickerHSV[part] || { h: 0, s: 0, v: 1 };
+  const hueHex = hsvToHex(h, 1, 1);
+
+  const sv = palette.querySelector('[data-role="picker-sv"]');
+  const svThumb = palette.querySelector('[data-role="picker-sv-thumb"]');
+  const hueThumb = palette.querySelector('[data-role="picker-hue-thumb"]');
+  const hexInput = palette.querySelector('[data-role="picker-hex"]');
+  const preview = palette.querySelector('[data-role="picker-preview"]');
+
+  if (sv) sv.style.setProperty('--picker-hue', hueHex);
+  if (svThumb) {
+    svThumb.style.left = `${s * 100}%`;
+    svThumb.style.top = `${(1 - v) * 100}%`;
+  }
+  if (hueThumb) {
+    hueThumb.style.left = `${(h / 360) * 100}%`;
+    hueThumb.style.background = hueHex;
+  }
+
+  const currentHex = hsvToHex(h, s, v).slice(1).toUpperCase();
+  // Never stomp the input while the user is actively typing in it.
+  if (hexInput && document.activeElement !== hexInput) hexInput.value = currentHex;
+  if (preview) preview.style.background = `#${currentHex}`;
+}
+
+function setupColorPickerDrag() {
+  document.addEventListener('pointerdown', (event) => {
+    const track = event.target.closest('[data-role="picker-sv"], [data-role="picker-hue"]');
+    if (!track) return;
+    const isSv = track.matches('[data-role="picker-sv"]');
+    const part = track.dataset.part;
+    if (!part) return;
+
+    event.preventDefault();
+    track.setPointerCapture(event.pointerId);
+    if (!partVis[part]) enablePart(part, false);
+    if (!pickerHSV[part]) pickerHSV[part] = rgbToHsv(modelCols[part].r, modelCols[part].g, modelCols[part].b);
+    const state = pickerHSV[part];
+
+    const update = (clientX, clientY) => {
+      const rect = track.getBoundingClientRect();
+      const x = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      if (isSv) {
+        const y = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+        state.s = x;
+        state.v = 1 - y;
+      } else {
+        state.h = x * 360;
+      }
+      renderColorPickerUI(part);
+      applyLiveColor(part, hsvToHex(state.h, state.s, state.v));
+    };
+
+    update(event.clientX, event.clientY);
+
+    const onMove = (moveEvent) => update(moveEvent.clientX, moveEvent.clientY);
+    const onUp = () => {
+      track.removeEventListener('pointermove', onMove);
+      track.removeEventListener('pointerup', onUp);
+      track.removeEventListener('pointercancel', onUp);
+      markCustomPreset();
+    };
+    track.addEventListener('pointermove', onMove);
+    track.addEventListener('pointerup', onUp);
+    track.addEventListener('pointercancel', onUp);
+  });
+}
+
+function setupColorPickerHexInput() {
+  document.addEventListener('input', (event) => {
+    const input = event.target.closest('[data-role="picker-hex"]');
+    if (!input) return;
+    const part = input.dataset.part;
+    const raw = input.value.trim().replace(/^#/, '');
+    if (!/^[0-9a-fA-F]{6}$/.test(raw)) return; // wait for a full, valid hex before applying
+
+    const hex = `#${raw}`;
+    applyLiveColor(part, hex);
+    pickerHSV[part] = rgbToHsv(modelCols[part].r, modelCols[part].g, modelCols[part].b);
+    renderColorPickerUI(part);
+    markCustomPreset();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    const input = event.target.closest('[data-role="picker-hex"]');
+    if (!input) return;
+    input.blur();
+  });
+}
+
+// Cleans up a filename like "TopUSmatrix.glb" or "Bumper_motor_ramp.glb" into a
+// human label ("US matrix", "Motor Ramp") by dropping the part-key/label prefix
+// and splitting camelCase/underscore/dash boundaries. File naming isn't fully
+// consistent across the asset set, so this is a best-effort heuristic, not a
+// guaranteed clean result — it's a secondary label under a real thumbnail.
+function prettyVariantLabel(part, filename) {
+  let name = filename.replace(/\.[^.]+$/, '');
+  const partLabel = PART_META.find((meta) => meta.key === part)?.label;
+  [part, partLabel].filter(Boolean).forEach((prefix) => {
+    name = name.replace(new RegExp(`^${prefix}[-_ ]?`, 'i'), '');
+  });
+  name = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!name) name = filename.replace(/\.[^.]+$/, '');
+  return name
+    .split(' ')
+    .map((word) => (word === word.toUpperCase() ? word : word.charAt(0).toUpperCase() + word.slice(1)))
+    .join(' ');
+}
+
+// Lazily creates a small offscreen scene/camera/renderer used only to snapshot
+// variant thumbnails — kept separate from the main scene/camera/renderer so it
+// never competes with or disturbs the live viewer.
+function getThumbRenderer() {
+  if (thumbRenderer3D) return thumbRenderer3D;
+
+  const size = 320;
+  const rScene = new THREE.Scene();
+  const rCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
+  const rRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  rRenderer.setSize(size, size);
+  rRenderer.setPixelRatio(1);
+  rRenderer.setClearColor(0x000000, 0);
+
+  rScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const key = new THREE.DirectionalLight(0xffffff, 1.3);
+  key.position.set(100, 200, 150);
+  rScene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.55);
+  fill.position.set(-120, -40, -80);
+  rScene.add(fill);
+
+  thumbRenderer3D = { scene: rScene, camera: rCamera, renderer: rRenderer };
+  return thumbRenderer3D;
+}
+
+function disposeThumbObject(object) {
+  object.traverse((node) => {
+    if (!node.isMesh) return;
+    node.geometry?.dispose();
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    materials.forEach((material) => {
+      if (!material) return;
+      Object.values(material).forEach((value) => {
+        if (value?.isTexture) value.dispose();
+      });
+      material.dispose();
+    });
+  });
+}
+
+// Renders one variant's GLB to a small PNG data URL for the picker grid, caching
+// by URL (both the finished image and the in-flight promise, so opening the same
+// part's grid twice — or fast repeated clicks — never re-renders or re-fetches).
+function renderVariantThumbnail(url) {
+  if (variantThumbCache[url]) return Promise.resolve(variantThumbCache[url]);
+  if (variantThumbPromises[url]) return variantThumbPromises[url];
+
+  const promise = loader.loadAsync(url).then((gltf) => {
+    const { scene: rScene, camera: rCamera, renderer: rRenderer } = getThumbRenderer();
+    const model = gltf.scene;
+
+    // precise=true forces a fresh bounding box from actual vertex positions.
+    // The default (imprecise) mode trusts each mesh's cached geometry.boundingBox,
+    // which for some of these assets doesn't match the real vertex data (axes
+    // swapped) — that stale cache is what was producing thumbnails aimed at the
+    // wrong point in space (cropped/off-center/tiny-in-a-corner renders).
+    const box = new THREE.Box3().setFromObject(model, true);
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    model.position.sub(sphere.center);
+
+    const radius = Math.max(sphere.radius, 0.001);
+    const fovRad = (rCamera.fov * Math.PI) / 180;
+    const dist = (radius / Math.sin(fovRad / 2)) * 1.35;
+    const direction = new THREE.Vector3(0.62, 0.56, 0.62).normalize();
+    rCamera.position.copy(direction.multiplyScalar(dist));
+    rCamera.near = Math.max(dist / 100, 0.01);
+    rCamera.far = dist * 10;
+    rCamera.lookAt(0, 0, 0);
+    rCamera.updateProjectionMatrix();
+
+    rScene.add(model);
+    rRenderer.render(rScene, rCamera);
+    const dataUrl = rRenderer.domElement.toDataURL('image/png');
+    rScene.remove(model);
+    disposeThumbObject(model);
+
+    variantThumbCache[url] = dataUrl;
+    delete variantThumbPromises[url];
+    return dataUrl;
+  }).catch((error) => {
+    console.error('Thumbnail render failed', url, error);
+    delete variantThumbPromises[url];
+    return null;
+  });
+
+  variantThumbPromises[url] = promise;
+  return promise;
+}
+
+function mountVariantGridPanel() {
+  const host = document.fullscreenElement || container || document.body;
+  if (variantGridPanel.parentElement !== host) host.appendChild(variantGridPanel);
+}
+
+// Same anchored-below/flip-above/clamp-to-viewport placement as positionPalette,
+// just sized for the bigger grid panel instead of the color swatches.
+function positionVariantGrid(anchorRect) {
+  const pad = 8;
+  variantGridPanel.style.display = 'flex';
+  variantGridPanel.classList.add('open');
+
+  const w = variantGridPanel.offsetWidth || 300;
+  const h = variantGridPanel.offsetHeight || 300;
+  const centerX = anchorRect.left + (anchorRect.width / 2);
+  const belowY = anchorRect.bottom + pad;
+  const aboveY = anchorRect.top - h - pad;
+  const openUp = (window.innerHeight - anchorRect.bottom) < (h + 16) && anchorRect.top > (h + 16);
+
+  variantGridPanel.style.position = 'fixed';
+  variantGridPanel.style.left = `${Math.max(8, Math.min(centerX - (w / 2), window.innerWidth - w - 8))}px`;
+  variantGridPanel.style.top = `${openUp ? Math.max(8, aboveY) : Math.min(belowY, window.innerHeight - h - 8)}px`;
+  variantGridPanel.style.zIndex = '2147483647';
+}
+
+function openVariantGrid(part, anchorEl) {
+  const meta = PART_META.find((entry) => entry.key === part);
+  const list = modelSets[part] || [];
+  if (!meta || !list.length) return;
+
+  reallyClosePalette();
+  openVariantGridPart = part;
+  variantGridTitle.textContent = meta.label;
+  variantGridBody.innerHTML = list.map((url, idx) => {
+    const name = prettyVariantLabel(part, url.split('/').pop());
+    const isActive = idx === currentIdx[part];
+    return `
+      <button type="button" class="variant-grid-item${isActive ? ' active' : ''}" data-idx="${idx}" aria-label="${name}">
+        <span class="variant-thumb" data-idx="${idx}"><span class="variant-thumb-spinner" aria-hidden="true"></span></span>
+        <span class="variant-name">${name}</span>
+        ${isActive ? '<span class="material-icons variant-check" aria-hidden="true">check_circle</span>' : ''}
+      </button>
+    `;
+  }).join('');
+
+  mountVariantGridPanel();
+  positionVariantGrid(anchorEl.getBoundingClientRect());
+
+  list.forEach((url, idx) => {
+    renderVariantThumbnail(url).then((dataUrl) => {
+      if (openVariantGridPart !== part) return; // grid closed or switched to another part
+      const slot = variantGridBody.querySelector(`.variant-thumb[data-idx="${idx}"]`);
+      if (!slot) return;
+      slot.innerHTML = dataUrl
+        ? `<img src="${dataUrl}" alt="">`
+        : '<span class="material-icons variant-thumb-fallback" aria-hidden="true">view_in_ar</span>';
+    });
+  });
+}
+
+function closeVariantGrid() {
+  variantGridPanel.classList.remove('open');
+  variantGridPanel.style.display = 'none';
+  variantGridPanel.style.position = '';
+  variantGridPanel.style.left = '';
+  variantGridPanel.style.top = '';
+  openVariantGridPart = null;
+}
+
+function setupVariantGrid() {
+  variantGridClose.addEventListener('click', closeVariantGrid);
+
+  document.addEventListener('click', (event) => {
+    if (!openVariantGridPart) return;
+    if (event.target.closest('.variant-grid-panel')) return;
+    if (event.target.closest('[data-role="variant-grid"]')) return;
+    closeVariantGrid();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && openVariantGridPart) closeVariantGrid();
+  });
+
+  // Capture-phase scroll listener sees scroll events from any scrollable
+  // descendant, not just the page — the grid body itself scrolls internally
+  // (13 variants doesn't fit the panel), so without this guard scrolling the
+  // grid closed it. Only close when something outside the panel scrolled.
+  window.addEventListener('scroll', (event) => {
+    if (!openVariantGridPart) return;
+    if (event.target instanceof Element && event.target.closest('.variant-grid-panel')) return;
+    closeVariantGrid();
+  }, { passive: true, capture: true });
+
+  variantGridBody.addEventListener('click', (event) => {
+    const item = event.target.closest('.variant-grid-item');
+    if (!item) return;
+
+    const part = openVariantGridPart;
+    const idx = Number(item.dataset.idx);
+    if (!part || Number.isNaN(idx)) return;
+
+    const wasHidden = !partVis[part];
+    if (wasHidden) enablePart(part, false);
+    currentIdx[part] = idx;
+    loadModel(part);
+    if (wasHidden) enforceArmsBumperExclusion(part);
+    markCustomPreset();
+    closeVariantGrid();
+    if (mobileLayoutActive) setMobileSheetState('peek', part);
+  });
 }
 
 function setupKeyboardNav() {
@@ -922,6 +1323,15 @@ function setupGlobalClickHandler() {
     const role = el.getAttribute('data-role');
     const part = el.getAttribute('data-part');
     if (!part) return;
+
+    if (role === 'variant-grid') {
+      if (openVariantGridPart === part) {
+        closeVariantGrid();
+      } else {
+        openVariantGrid(part, el);
+      }
+      return;
+    }
 
     let touched = false;
 
@@ -2259,7 +2669,7 @@ function startTour(force = false) {
     { target: '#preset-toggle', title: 'Presets', body: 'Start from a ready-made configuration. Click to open and pick one.' },
     { target: '#controls-toggle', title: 'Panels', body: 'Switch between Essential parts and Advanced add-ons.' },
     { target: '#top-pill', title: 'Colors', body: 'Click the color pill to pick a color for the Top.' },
-    { target: '#top-controls [data-role="next"]', title: 'Variants', body: 'Use the arrows to browse different designs of a part.' },
+    { target: '#top-controls [data-role="next"]', title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
     { target: '#top-visibility', title: 'Visibility', body: 'Temporarily hide or show a part to see how it affects the build.' },
     { target: '#top-controls [data-role="print"]', title: 'Direct 3D Print', body: 'Open the current part directly in OrcaSlicer using the orcaslicer:// link.' },
     { target: '#download-group', title: 'Export', body: 'Download STEP instantly, or open the menu for GLB and 3MF.' }
