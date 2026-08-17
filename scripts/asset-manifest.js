@@ -13,6 +13,7 @@ export const ASSET_MANIFEST = {
     { file: 'Hat_Prusa.glb', folder: 'hat', source: '' },
     { file: 'Hat_dome.glb', folder: 'hat', source: '' },
     { file: 'Hat_Magic.glb', folder: 'hat', source: '' },
+    { file: 'Hat_lego.glb', folder: 'hat', source: '' },
     { file: 'Hat_Santa.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Hat_Santa.glb' }
   ],
   arms: [
@@ -63,6 +64,7 @@ export const ASSET_MANIFEST = {
   bottom: [
     { file: 'Bottom-starter.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/08/Bottom-starter.glb' },
     { file: 'Bottom_Pikachu.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bottom_Pikachu.glb' },
+    { file: 'Bottom_F1.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_template.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bottom_template.glb' }
   ],
   wheels: [
@@ -72,7 +74,9 @@ export const ASSET_MANIFEST = {
     { file: 'wheelF1.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/10/wheelF1.glb' }
   ],
   spacer: [
-    { file: 'Middle_spacerA.glb', folder: 'spacer', source: 'https://hprobots.com/wp-content/uploads/2025/10/Middle_spacerA.glb' }
+    { file: 'Middle_spacerA.glb', folder: 'spacer', source: 'https://hprobots.com/wp-content/uploads/2025/10/Middle_spacerA.glb' },
+    { file: 'middle_spacer16mm.glb', folder: 'spacer', source: '' },
+    { file: 'middle_spacer_sensors_v2.glb', folder: 'spacer', source: '' }
   ],
   tail: []
 };
