@@ -70,7 +70,6 @@ export const ASSET_MANIFEST = {
   wheels: [
     { file: 'Wheels-starter.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-starter.glb' },
     { file: 'Wheels-Walk-and-Roll.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-Walk-and-Roll.glb' },
-    { file: 'Wheels-starter.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-starter.glb' },
     { file: 'wheelF1.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/10/wheelF1.glb' }
   ],
   spacer: [
