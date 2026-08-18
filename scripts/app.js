@@ -157,7 +157,6 @@ const slicerBadgeCurrent = document.getElementById('slicer-badge-current');
 const essBtn = document.getElementById('show-essential');
 const advBtn = document.getElementById('show-advanced');
 const essPanel = document.getElementById('panel-essential');
-const advPanel = document.getElementById('panel-advanced');
 const consentOverlay = document.getElementById('consent-overlay');
 const consentCheckbox = document.getElementById('consent-checkbox');
 const consentConfirm = document.getElementById('consent-confirm');
@@ -283,9 +282,7 @@ bootstrap();
 
 function renderPanels() {
   const essential = document.getElementById('panel-essential');
-  const advanced = document.getElementById('panel-advanced');
-  essential.innerHTML = PART_META.filter((part) => part.panel === 'essential').map(renderPartSection).join('');
-  advanced.innerHTML = PART_META.filter((part) => part.panel === 'advanced').map(renderPartSection).join('');
+  essential.innerHTML = PART_META.map(renderPartSection).join('');
 }
 
 function renderPartSection(part) {
@@ -312,7 +309,7 @@ function renderPartSection(part) {
   `;
 
   return `
-    <div class="model-section" id="${part.key}-controls"${part.hidden ? ' style="display:none"' : ''}>
+    <div class="model-section" id="${part.key}-controls" data-panel="${part.panel}"${part.hidden ? ' style="display:none"' : ''}>
       <div class="model-controls-row">
         <button class="btn btn--sm btn--ghost" data-role="prev" data-part="${part.key}" aria-label="Previous ${part.label}">
           <span class="material-icons">chevron_left</span>
@@ -632,8 +629,8 @@ function setupPanels() {
 }
 
 function showEssentialPanel() {
-  essPanel.style.display = 'flex';
-  advPanel.style.display = 'none';
+  essPanel.classList.add('hide-advanced');
+  essPanel.setAttribute('aria-labelledby', 'show-essential');
   essBtn.classList.add('active');
   advBtn.classList.remove('active');
   essBtn.setAttribute('aria-selected', 'true');
@@ -642,9 +639,13 @@ function showEssentialPanel() {
   if (mobileLayoutActive) setMobileSheetState('expanded');
 }
 
+// "Advanced" shows every part, essential ones included, in the same single
+// list — see the single #panel-essential container (renderPanels) and the
+// .hide-advanced modifier toggled here instead of swapping between two
+// separate panels.
 function showAdvancedPanel() {
-  essPanel.style.display = 'none';
-  advPanel.style.display = 'flex';
+  essPanel.classList.remove('hide-advanced');
+  essPanel.setAttribute('aria-labelledby', 'show-advanced');
   advBtn.classList.add('active');
   essBtn.classList.remove('active');
   advBtn.setAttribute('aria-selected', 'true');
@@ -653,43 +654,15 @@ function showAdvancedPanel() {
   if (mobileLayoutActive) setMobileSheetState('expanded');
 }
 
-// #part-map is anchored to the same bottom-right corner the parts panel's
-// column occupies, and its resize handle can grow it well past its launch
-// size — call this whenever the map's size (or the viewport) changes so the
-// panel shrinks out of its way instead of being covered. Only ever clamps
-// TIGHTER than the panel's own CSS max-height (never forces it taller): each
-// call clears any previous override first and re-measures from scratch.
-function updatePanelClearanceForPartMap() {
-  const mapEl = document.getElementById('part-map');
-  if (!mapEl || getComputedStyle(mapEl).display === 'none') {
-    essPanel.style.maxHeight = '';
-    advPanel.style.maxHeight = '';
-    return;
-  }
-
-  essPanel.style.maxHeight = '';
-  advPanel.style.maxHeight = '';
-
-  const visiblePanel = essPanel.style.display !== 'none' ? essPanel : advPanel;
-  const panelRect = visiblePanel.getBoundingClientRect();
-  const mapTop = mapEl.getBoundingClientRect().top;
-  const gap = 12;
-
-  if (panelRect.bottom + gap > mapTop) {
-    const maxH = `${Math.max(180, mapTop - panelRect.top - gap)}px`;
-    essPanel.style.maxHeight = maxH;
-    advPanel.style.maxHeight = maxH;
-  }
-}
-
-// Picking a variant for a part that lives in the panel you're not currently
-// looking at (most commonly: picking Hat/Arms/Spacer/Bumper from the part-map
-// while still on the Essential tab) is confusing otherwise — the build changes
-// but the side list still shows unrelated rows. Jump to the right tab instead.
+// Picking an advanced-only part (Hat/Arms/Spacer/Bumper) while still on the
+// Essential tab is confusing otherwise — the build changes but the essential-
+// only list never shows that row. Jump to Advanced, which shows every part
+// (see showAdvancedPanel), so it's visible either way. The reverse switch
+// isn't needed: Advanced already includes every essential part too, so
+// picking one while on Advanced has nothing to jump to.
 function switchToPartPanel(part) {
   const panel = PART_META.find((meta) => meta.key === part)?.panel;
   if (panel === 'advanced' && !advBtn.classList.contains('active')) showAdvancedPanel();
-  else if (panel === 'essential' && !essBtn.classList.contains('active')) showEssentialPanel();
 }
 
 // focusPart: which part's row peek should land on. Omit for "top of list"
@@ -734,10 +707,11 @@ function toggleMobileSheet() {
   setMobileSheetState(mobileSheetEl.dataset.state === 'expanded' ? 'peek' : 'expanded');
 }
 
-// Moves the real #info-container and both .model-controls panels into the
-// mobile bottom sheet instead of rendering separate copies — every existing
-// control (color pills, palettes, counters, the more/download menus...) keeps
-// working with zero duplicated logic, it just lives in a new DOM location.
+// Moves the real #info-container and the #panel-essential .model-controls
+// panel into the mobile bottom sheet instead of rendering separate copies —
+// every existing control (color pills, palettes, counters, the more/download
+// menus...) keeps working with zero duplicated logic, it just lives in a new
+// DOM location.
 function setupMobileSheet() {
   mobileSheetEl = document.getElementById('mobile-sheet');
   mobileSheetHandleEl = document.getElementById('mobile-sheet-handle');
@@ -749,7 +723,6 @@ function setupMobileSheet() {
 
   mobileLayoutActive = true;
   listHost.appendChild(essPanel);
-  listHost.appendChild(advPanel);
   actionsHost.appendChild(infoContainerEl);
 
   let dragStartY = null;
@@ -1437,7 +1410,7 @@ async function setupPartMap() {
   if (!mapEl || !canvas) return;
   const defaultMapLabelText = mapLabel?.textContent || 'Tap a part';
 
-  const size = 280; // matches the side panel's width (see .model-controls) for a clean edge-aligned look at minimum size
+  const size = 280; // starting size; kept in sync with the side panel's own width below (syncMinMapSizeToPanel)
   const pScene = new THREE.Scene();
   const pCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
   const pRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -1634,37 +1607,49 @@ async function setupPartMap() {
     }
   });
 
-  // Drag the top-left grip to resize — the box is anchored bottom-right (see
-  // #part-map's CSS), so growing it means dragging up/left. The floor tracks
+  // Drag the top-right grip to resize — the box is anchored bottom-left (see
+  // #part-map's CSS), so growing it means dragging up/right. The floor tracks
   // the side panel's own (dynamic — see adjustControlsWidth) rendered width,
-  // so the box lines up cleanly with it at minimum size instead of just
-  // approximating it with a fixed number. Persists across sessions once
-  // the user has actually grown it past that floor.
-  let MIN_MAP_SIZE = Math.round(essPanel.getBoundingClientRect().width || advPanel.getBoundingClientRect().width || size);
+  // just as a reasonable default starting size, not for any edge-alignment
+  // reason (the map and that panel don't share a screen corner). Persists
+  // across sessions once the user has actually grown it past that floor.
+  let MIN_MAP_SIZE = Math.round(essPanel.getBoundingClientRect().width || size);
   const MAX_MAP_SIZE = 480;
   const MAP_SIZE_KEY = 'hp_robot_partmap_size';
   let currentMapSize = MIN_MAP_SIZE;
 
+  // Growing up/right from the bottom-left anchor means #preset-menu (top-left)
+  // is the thing the box can grow into — cap available growth against its
+  // bottom edge instead of the fixed MAX_MAP_SIZE once the viewport is short
+  // enough that the two would otherwise overlap. mapEl's own bottom edge is
+  // fixed (anchored via `bottom`, not `top`), so it stays put as height grows
+  // and is safe to read regardless of the box's current size.
+  function getMaxMapSize() {
+    const presetEl = document.getElementById('preset-menu');
+    if (!presetEl) return MAX_MAP_SIZE;
+    const gap = 12;
+    const available = mapEl.getBoundingClientRect().bottom - presetEl.getBoundingClientRect().bottom - gap;
+    return Math.min(MAX_MAP_SIZE, available);
+  }
+
   function applyMapSize(next) {
-    currentMapSize = Math.round(Math.min(MAX_MAP_SIZE, Math.max(MIN_MAP_SIZE, next)));
+    currentMapSize = Math.round(Math.max(MIN_MAP_SIZE, Math.min(getMaxMapSize(), next)));
     mapEl.style.width = `${currentMapSize}px`;
     mapEl.style.height = `${currentMapSize}px`;
     pRenderer.setSize(currentMapSize, currentMapSize, false);
     dirty = true;
-    updatePanelClearanceForPartMap();
   }
 
   // Re-reads the panel's current width and, if the box hasn't been manually
   // grown past the floor, follows it — so resizing the browser (which can
-  // change the panel's width) keeps the two aligned instead of only matching
-  // once at startup.
+  // change the panel's width) keeps the floor current instead of only
+  // matching once at startup.
   function syncMinMapSizeToPanel() {
-    const panelWidth = Math.round(essPanel.getBoundingClientRect().width || advPanel.getBoundingClientRect().width || 0);
+    const panelWidth = Math.round(essPanel.getBoundingClientRect().width || 0);
     if (!panelWidth || panelWidth === MIN_MAP_SIZE) return;
     const wasAtFloor = currentMapSize <= MIN_MAP_SIZE + 1;
     MIN_MAP_SIZE = panelWidth;
     if (wasAtFloor) applyMapSize(MIN_MAP_SIZE);
-    else updatePanelClearanceForPartMap();
   }
   partMapWidthSync = syncMinMapSizeToPanel;
 
@@ -1674,15 +1659,16 @@ async function setupPartMap() {
     if (savedSize) restoredSize = savedSize;
   } catch {}
   // Always runs, even at the default size — a short viewport can need the
-  // panel clamped even before anyone drags the resize handle.
+  // box clamped even before anyone drags the resize handle.
   applyMapSize(restoredSize);
 
   // The map's size is fixed in px while the viewport isn't — a browser resize
-  // (or rotation) can change whether the panel has room, or how wide the
-  // panel itself is, even without the map's own size changing.
+  // (or rotation) can change whether the panel has room, or how much vertical
+  // space is left before #preset-menu, even without the map's own size
+  // changing.
   window.addEventListener('resize', () => {
     syncMinMapSizeToPanel();
-    updatePanelClearanceForPartMap();
+    applyMapSize(currentMapSize);
   });
 
   // Double-click-to-reset is handled here rather than via a separate
@@ -1711,7 +1697,7 @@ async function setupPartMap() {
     const startSize = currentMapSize;
 
     const onMove = (moveEvent) => {
-      const grownBy = Math.max(startX - moveEvent.clientX, startY - moveEvent.clientY);
+      const grownBy = Math.max(moveEvent.clientX - startX, startY - moveEvent.clientY);
       applyMapSize(startSize + grownBy);
     };
     const onUp = () => {
@@ -1966,9 +1952,7 @@ function adjustControlsWidth() {
   if (!toggle) return;
   const width = toggle.getBoundingClientRect().width;
   const nextWidth = Math.min(Math.max(260, width), (container.clientWidth || window.innerWidth) - 24);
-  [essPanel, advPanel].forEach((panel) => {
-    panel.style.width = `${nextWidth}px`;
-  });
+  essPanel.style.width = `${nextWidth}px`;
   partMapWidthSync?.();
 }
 

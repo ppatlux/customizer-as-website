@@ -385,12 +385,19 @@ html.vt-fallback.vt-leaving body{
   animation:fadeSlide var(--transition) ease-out both;
 }
 .model-controls.essential{ display:flex; }
-.model-controls.advanced{ display:none; }
+
+/* Advanced shows every part in the same single scrollable list, essential
+   ones included (see showAdvancedPanel) — .hide-advanced just hides the
+   advanced-only rows within it for the Essential-only view instead of the
+   old two-separate-panels split. */
+#panel-essential.hide-advanced .model-section[data-panel="advanced"]{
+  display:none;
+}
 
 #part-map{
   position:absolute;
-  right:var(--edge);
-  bottom:calc(var(--edge) + env(safe-area-inset-bottom, 0px));
+  left:var(--edge);
+  bottom:calc(var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px));
   width:280px;
   height:280px;
   border-radius:var(--radius-lg);
@@ -426,16 +433,16 @@ html.vt-fallback.vt-leaving body{
   pointer-events:none;
   background:linear-gradient(to top, var(--glass-bg), transparent);
 }
-/* #part-map is anchored bottom-right (right/bottom offsets), so the grip lives
-   at the opposite (top-left) corner — dragging it up-left grows the box while
+/* #part-map is anchored bottom-left (left/bottom offsets), so the grip lives at
+   the opposite (top-right) corner — dragging it up-right grows the box while
    the anchored corner stays put, which is the intuitive direction to drag. */
 #part-map-resize{
   position:absolute;
   top:0;
-  left:0;
+  right:0;
   width:24px;
   height:24px;
-  cursor:nwse-resize;
+  cursor:nesw-resize;
   touch-action:none;
   z-index:2;
 }
@@ -443,12 +450,12 @@ html.vt-fallback.vt-leaving body{
   content:"";
   position:absolute;
   top:7px;
-  left:7px;
+  right:7px;
   width:10px;
   height:10px;
   border-top:2px solid var(--stroke-strong);
-  border-left:2px solid var(--stroke-strong);
-  border-radius:4px 0 0 0;
+  border-right:2px solid var(--stroke-strong);
+  border-radius:0 4px 0 0;
   opacity:.55;
   transition:opacity var(--transition), border-color var(--transition);
 }
@@ -1613,14 +1620,24 @@ body.hp-lock-scroll{
     position:absolute;
     left:0;
     right:0;
-    bottom:0;
+    /* Floats clear of the true bottom edge instead of sitting flush against
+       it — flush left its content (and the handle above it) crowded right up
+       against the screen edge / the device's home-indicator gesture area,
+       with no breathing room. The flat 24px always applies (on top of the
+       safe-area inset where one exists), instead of just matching whichever
+       of the two is bigger, so the gap reads as clearly intentional on every
+       device instead of vanishing back to ~10px on ones with no inset. */
+    bottom:calc(24px + env(safe-area-inset-bottom, 0px));
     z-index:var(--z-sheet);
-    height:104px;
+    /* Peek height (the collapsed default below — [data-state="expanded"]
+       overrides it). Needs to fit one full .model-section row (~103px:
+       two 40px control rows + padding + gap) under the 24px handle, or
+       whichever part setMobileSheetState() just scrolled to the top after
+       an interaction gets its bottom row of buttons clipped. */
+    height:140px;
     background:var(--glass-strong);
     border:1px solid var(--stroke);
-    border-bottom:none;
-    border-top-left-radius:var(--radius-xl);
-    border-top-right-radius:var(--radius-xl);
+    border-radius:var(--radius-xl);
     box-shadow:0 -10px 30px rgba(0,0,0,0.14);
     overflow:hidden;
     transition:height var(--transition);
@@ -1677,7 +1694,10 @@ body.hp-lock-scroll{
   .mobile-sheet-actions{
     flex:none;
     display:none;
-    padding:6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+    /* No extra env(safe-area-inset-bottom) padding here — #mobile-sheet's own
+       `bottom` offset above already clears that, so adding it again here
+       would double-count it and pad the actions row more than intended. */
+    padding:6px 12px;
     border-top:1px solid var(--stroke);
   }
   .mobile-sheet[data-state="expanded"] .mobile-sheet-actions{
