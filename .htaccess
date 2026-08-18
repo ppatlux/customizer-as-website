@@ -1,0 +1,13 @@
+# Clickjacking protection: stop this app from being loaded inside an <iframe>
+# on another site. Without this, an attacker could frame the page (invisibly
+# or disguised) and trick a click into landing on the consent "Continue"
+# button or a download/print action instead of whatever the attacker shows on
+# top ("clickjacking"). X-Frame-Options is the older/more compatible header;
+# frame-ancestors is its modern CSP replacement - both are set for coverage
+# across browsers. 'self' still allows framing pages of this app by each
+# other (e.g. engrave.html inside index.html, if that's ever done) and by any
+# other page on this same origin.
+<IfModule mod_headers.c>
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Content-Security-Policy "frame-ancestors 'self'"
+</IfModule>

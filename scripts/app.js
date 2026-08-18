@@ -24,7 +24,9 @@ const TOUR_VERSION = 'standalone-v1';
 const TOUR_STATE_KEY = 'hp_robot_tour_state';
 const ADVANCED_DEFAULTS = new Set(['hat', 'arms', 'bumper', 'tail']);
 const MODEL_VIEWER_SRC = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
+const MODEL_VIEWER_INTEGRITY = 'sha384-Ftcjj/GNLxPvzNDftO/oryXB9aGxsGZY9JGqsXG0uUKgQDl9RfDgsx9NJ/4IVNPe';
 const QRCODE_LIB_SRC = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+const QRCODE_LIB_INTEGRITY = 'sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU';
 const MM_TO_M = 0.001;
 // Small per-part lightness offsets always applied to the AR export (see
 // exportVisiblePartsAsGlb) so adjacent parts never end up looking flat and
@@ -2250,6 +2252,8 @@ function ensureModelViewerLoaded() {
       const script = document.createElement('script');
       script.type = 'module';
       script.src = MODEL_VIEWER_SRC;
+      script.integrity = MODEL_VIEWER_INTEGRITY;
+      script.crossOrigin = 'anonymous';
       script.onload = () => resolve();
       script.onerror = () => reject(new Error('Failed to load the AR viewer library'));
       document.head.appendChild(script);
@@ -2265,6 +2269,8 @@ function ensureQrLibLoaded() {
     qrLibLoadPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = QRCODE_LIB_SRC;
+      script.integrity = QRCODE_LIB_INTEGRITY;
+      script.crossOrigin = 'anonymous';
       script.onload = () => resolve();
       script.onerror = () => reject(new Error('Failed to load the QR code library'));
       document.head.appendChild(script);

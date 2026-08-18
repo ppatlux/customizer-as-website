@@ -351,86 +351,6 @@ html.vt-fallback.vt-leaving body{
   flex:1;
 }
 
-.slicer-send-group{
-  position:relative;
-  display:flex;
-  gap:0;
-}
-
-.slicer-send-btn{
-  flex:1;
-  border-top-right-radius:0;
-  border-bottom-right-radius:0;
-}
-
-.slicer-caret-btn{
-  width:34px;
-  flex:none;
-  padding:0;
-  border-top-left-radius:0;
-  border-bottom-left-radius:0;
-  border-left:1px solid color-mix(in srgb, var(--stroke) 60%, transparent);
-}
-
-.slicer-caret-btn .material-icons{
-  font-size:18px;
-}
-
-.slicer-badge{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:18px;
-  height:18px;
-  border-radius:50%;
-  font:800 10px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  color:#fff;
-  flex-shrink:0;
-}
-
-.slicer-badge[data-slicer="orca"]{ background:#0F9E9E; }
-.slicer-badge[data-slicer="prusa"]{ background:#FF6A13; }
-
-.slicer-menu{
-  position:absolute;
-  bottom:calc(100% + 8px);
-  right:0;
-  min-width:180px;
-  background:#FFFFFF;
-  border:1px solid var(--stroke);
-  border-radius:12px;
-  box-shadow:var(--shadow-lg, 0 12px 28px rgba(0,0,0,0.18));
-  padding:6px;
-  z-index:20;
-}
-
-.slicer-menu[hidden]{
-  display:none;
-}
-
-.slicer-menu-item{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  width:100%;
-  padding:8px 10px;
-  border:none;
-  background:transparent;
-  border-radius:8px;
-  cursor:pointer;
-  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  color:var(--text);
-  text-align:left;
-}
-
-.slicer-menu-item:hover{
-  background:color-mix(in srgb, var(--brand) 10%, transparent);
-}
-
-.slicer-menu-item[aria-selected="true"]{
-  background:color-mix(in srgb, var(--brand) 14%, transparent);
-}
-
 .engrave-shape-grid{
   display:flex;
   flex-wrap:nowrap;
@@ -683,6 +603,79 @@ input[type="range"]{
   z-index:var(--z-toolbar);
 }
 
+#consent-overlay{
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:color-mix(in srgb, #000 24%, transparent);
+  -webkit-backdrop-filter:blur(2px) saturate(130%);
+  backdrop-filter:blur(2px) saturate(130%);
+  z-index:var(--z-max);
+  pointer-events:auto;
+}
+#consent-overlay.show{
+  display:flex;
+}
+#consent-card{
+  width:min(600px, 92vw);
+  border-radius:16px;
+  border:1px solid var(--stroke-strong);
+  background:var(--glass-bg);
+  box-shadow:var(--shadow-lg);
+  padding:calc(18px + env(safe-area-inset-top, 0px)) 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  text-align:left;
+  display:flex;
+  flex-direction:column;
+  max-height:85vh;
+}
+#consent-title{
+  margin:0 0 12px 0;
+  font:700 16px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  text-align:center;
+  color:var(--text);
+}
+#consent-text{
+  flex:1;
+  overflow-y:auto;
+  font-size:13px;
+  line-height:1.5;
+  color:var(--text);
+  background:rgba(255,255,255,0.5);
+  padding:12px;
+  border-radius:8px;
+  border:1px solid var(--stroke);
+  margin-bottom:12px;
+}
+#consent-checkbox-container{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:16px;
+  font-size:14px;
+  color:var(--text);
+  cursor:pointer;
+  user-select:none;
+  padding:4px 0;
+}
+#consent-checkbox{
+  width:18px;
+  height:18px;
+  accent-color:var(--brand);
+  cursor:pointer;
+}
+.consent-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:flex-end;
+}
+@media (prefers-reduced-motion: reduce){
+  #consent-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+}
+
 .engrave-progress-overlay{
   position:absolute;
   inset:0;
@@ -760,12 +753,6 @@ input[type="range"]{
 /* Touch devices: enlarge slider thumbs, step buttons, and small icon buttons
    past the mouse-tuned defaults so a fingertip can hit them reliably. */
 @media (pointer: coarse){
-  /* Sending to a desktop slicer app is meaningless on a phone with no slicer
-     installed — drop it and let "Download STL" stand alone as the primary action. */
-  #slicerSendGroup{
-    display:none;
-  }
-
   input[type="range"]{
     height:32px;
   }
@@ -813,9 +800,6 @@ input[type="range"]{
   .top-engrave-btn,
   .engrave-layer-btn{
     min-height:44px;
-  }
-  .slicer-caret-btn{
-    width:44px;
   }
 
   /* Hide the small "Base part / Logo cutter" legend on touch — a nice-to-have

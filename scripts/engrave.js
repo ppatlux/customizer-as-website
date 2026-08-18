@@ -7,7 +7,6 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import { ASSET_MANIFEST } from './asset-manifest.js';
-import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer } from './slicer-preference.js';
 
 const SUPPORTED_PART = 'top';
 const DEFAULT_MODEL_FILE = 'Toplights_NOlogo.glb';
@@ -15,7 +14,6 @@ const MODEL_Y_OFFSET = 30;
 const SVG_SURFACE_LIFT = 0.05;
 const DEFAULT_Z_OFFSET = 12.6;
 const MIN_SHAPE_AREA = 0.05;
-const SLICER_PROTOCOL = 'hprobotslicer';
 const CUSTOMIZER_STATE_KEY = 'hp_robot_customizer_state';
 const DEFAULT_PART_COLOR = '#d9d9d9';
 const SHAPE_LIBRARY_MANIFEST_URL = './assets/engrave-shapes/manifest.json';
@@ -67,15 +65,16 @@ const depthValue = document.getElementById('depthValue');
 const previewCutBtn = document.getElementById('previewCutBtn');
 const backToEditBtn = document.getElementById('backToEditBtn');
 const downloadStlBtn = document.getElementById('downloadStlBtn');
-const sendToSlicerBtn = document.getElementById('sendToSlicerBtn');
-const sendToSlicerLabel = document.getElementById('sendToSlicerLabel');
-const slicerBadge = document.getElementById('slicerBadge');
-const slicerMenuToggle = document.getElementById('slicerMenuToggle');
-const slicerMenu = document.getElementById('slicerMenu');
 const statusMessage = document.getElementById('statusMessage');
 const partBadge = document.getElementById('partBadge');
 const panelEssential = document.getElementById('panel-essential');
 const infoContainerEl = document.getElementById('info-container');
+const consentOverlay = document.getElementById('consent-overlay');
+const consentCheckbox = document.getElementById('consent-checkbox');
+const consentConfirm = document.getElementById('consent-confirm');
+const consentCancel = document.getElementById('consent-cancel');
+let consentResolve = null;
+let consentReject = null;
 
 const loader = new GLTFLoader();
 loader.setCrossOrigin('anonymous');
@@ -193,11 +192,17 @@ loadSupportedModel();
 animate();
 
 function setupUi() {
-  partEntry = ASSET_MANIFEST[requestedPart]?.find((entry) => entry.file === requestedFile) || { file: requestedFile, source: null };
+  // Only ever resolve to a known manifest entry (which carries a trusted `folder`) - never
+  // build a fetch path from the raw `file`/`part` query params. Those come straight from the
+  // URL, and a manifest miss used to fall back to `./assets/models/${requestedFile}` verbatim,
+  // letting a crafted link (e.g. containing `../`) make this page fetch an arbitrary same-origin
+  // URL with the visitor's cookies.
+  partEntry = ASSET_MANIFEST[requestedPart]?.find((entry) => entry.file === requestedFile)
+    || ASSET_MANIFEST[SUPPORTED_PART].find((entry) => entry.file === DEFAULT_MODEL_FILE);
   const supportsEngraving = requestedPart === SUPPORTED_PART;
 
   if (supportsEngraving) {
-    partBadge.textContent = requestedFile.replace(/\.glb$/i, '');
+    partBadge.textContent = partEntry.file.replace(/\.glb$/i, '');
   } else {
     partBadge.textContent = 'Top part required';
     setStatus('warn', 'This tool currently supports only the top part.');
@@ -239,17 +244,61 @@ function setupUi() {
   previewCutBtn.addEventListener('click', handlePreviewCut);
   backToEditBtn.addEventListener('click', backToEdit);
   downloadStlBtn.addEventListener('click', handleDownloadStl);
-  sendToSlicerBtn.addEventListener('click', handleSendToSlicer);
-  setupSlicerMenu();
+  setupConsentPopup();
   renderSvgLayerList();
   updateSvgSummary();
   updateActionButtonsState();
   if (isCoarsePointer()) setupMobileSheet();
 }
 
+function setupConsentPopup() {
+  if (consentCheckbox && consentConfirm) {
+    consentCheckbox.addEventListener('change', (event) => {
+      consentConfirm.disabled = !event.target.checked;
+    });
+  }
+
+  consentConfirm?.addEventListener('click', () => {
+    const resolve = consentResolve;
+    hideConsentPopup();
+    if (resolve) resolve();
+  });
+
+  consentCancel?.addEventListener('click', () => {
+    const reject = consentReject;
+    hideConsentPopup();
+    if (reject) reject(new Error('User cancelled'));
+  });
+
+  consentOverlay?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const reject = consentReject;
+      hideConsentPopup();
+      if (reject) reject(new Error('User cancelled'));
+    }
+  });
+}
+
+function showConsentPopup() {
+  return new Promise((resolve, reject) => {
+    consentResolve = resolve;
+    consentReject = reject;
+    if (consentCheckbox) consentCheckbox.checked = false;
+    if (consentConfirm) consentConfirm.disabled = true;
+    consentOverlay.classList.add('show');
+    consentOverlay.focus();
+  });
+}
+
+function hideConsentPopup() {
+  consentOverlay.classList.remove('show');
+  consentResolve = null;
+  consentReject = null;
+}
+
 // Moves the real #panel-essential and #info-container into the mobile bottom
 // sheet instead of rendering copies — every existing control (shape grid,
-// sliders, layer list, download/send-to-slicer...) keeps working with zero
+// sliders, layer list, download...) keeps working with zero
 // duplicated logic, it just lives in a new DOM location. Mirrors index.html's
 // setupMobileSheet(), simplified: engrave has one panel, not essential/
 // advanced, so there's no separate "actions" host or per-part focus target.
@@ -309,60 +358,6 @@ function setupMobileSheet() {
   setState('peek');
 }
 
-function setupSlicerMenu() {
-  updateSlicerButtonUi();
-
-  slicerMenuToggle.addEventListener('click', (event) => {
-    event.stopPropagation();
-    const isOpen = !slicerMenu.hidden;
-    if (isOpen) {
-      closeSlicerMenu();
-    } else {
-      openSlicerMenu();
-    }
-  });
-
-  slicerMenu.querySelectorAll('.slicer-menu-item').forEach((item) => {
-    item.addEventListener('click', () => {
-      setPreferredSlicer(item.dataset.slicer);
-      updateSlicerButtonUi();
-      closeSlicerMenu();
-    });
-  });
-
-  document.addEventListener('click', (event) => {
-    if (event.target.closest('#slicerSendGroup')) return;
-    closeSlicerMenu();
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeSlicerMenu();
-  });
-}
-
-function openSlicerMenu() {
-  slicerMenu.hidden = false;
-  slicerMenuToggle.setAttribute('aria-expanded', 'true');
-}
-
-function closeSlicerMenu() {
-  slicerMenu.hidden = true;
-  slicerMenuToggle.setAttribute('aria-expanded', 'false');
-}
-
-function updateSlicerButtonUi() {
-  const slicer = getPreferredSlicer();
-  const label = SLICER_LABELS[slicer];
-  slicerBadge.textContent = slicer === 'prusa' ? 'P' : 'O';
-  slicerBadge.dataset.slicer = slicer;
-  sendToSlicerLabel.textContent = `Send to ${label}`;
-  sendToSlicerBtn.setAttribute('aria-label', `Send to ${label}`);
-
-  slicerMenu.querySelectorAll('.slicer-menu-item').forEach((item) => {
-    item.setAttribute('aria-selected', String(item.dataset.slicer === slicer));
-  });
-}
-
 function setupResize() {
   const resize = () => {
     const width = viewer.clientWidth || window.innerWidth;
@@ -388,7 +383,6 @@ function disableEditorActions(disabled) {
   depthRange.disabled = disabled;
   previewCutBtn.disabled = disabled;
   downloadStlBtn.disabled = disabled;
-  sendToSlicerBtn.disabled = disabled;
   shapeLibraryGrid.querySelectorAll('.engrave-shape-btn').forEach((button) => {
     button.disabled = disabled;
   });
@@ -1072,7 +1066,6 @@ function canExportStl() {
 function updateActionButtonsState() {
   const disabled = !canExportStl();
   downloadStlBtn.disabled = disabled;
-  sendToSlicerBtn.disabled = disabled;
 }
 
 function backToEdit() {
@@ -1097,6 +1090,12 @@ function backToEdit() {
 async function handleDownloadStl() {
   if (!canExportStl()) return;
 
+  try {
+    await showConsentPopup();
+  } catch {
+    return;
+  }
+
   const viewState = captureViewState();
   try {
     isProcessing = true;
@@ -1116,54 +1115,6 @@ async function handleDownloadStl() {
   } catch (error) {
     console.error(error);
     setStatus('err', 'Failed to export STL. Try a smaller or simpler SVG.');
-  } finally {
-    isProcessing = false;
-    hideProgress();
-    restoreViewState(viewState);
-    updateActionButtonsState();
-  }
-}
-
-async function handleSendToSlicer() {
-  if (!canExportStl()) return;
-
-  const slicer = getPreferredSlicer();
-  const slicerLabel = SLICER_LABELS[slicer];
-  const viewState = captureViewState();
-  try {
-    isProcessing = true;
-    updateActionButtonsState();
-    await updateProgress(`Preparing ${slicerLabel} import...`, `Generating the engraved STL.`);
-    setStatus('ok', `Preparing the engraved STL for ${slicerLabel}...`);
-    const mesh = await buildEngravedMesh(async ({ title, detail }) => {
-      await updateProgress(title, detail);
-    });
-    await updateProgress('Packaging STL...', 'Cleaning the engraved mesh and converting it into an STL file.');
-    const exportMesh = createExportMesh(mesh);
-    const stlData = exporter.parse(exportMesh, { binary: true });
-    // Unique per send so the local protocol handler (which looks the file up by name in the
-    // Downloads folder) never picks up a stale file left over from an earlier send.
-    const filename = getEngravedFilename().replace(/\.stl$/i, `_${Date.now()}.stl`);
-    const blob = new Blob([stlData], { type: 'model/stl' });
-
-    await updateProgress(`Opening ${slicerLabel}...`, `Saving the STL and handing it to ${slicerLabel}.`);
-    downloadBlob(blob, filename);
-
-    // The download write and the protocol handler's own lookup both race the browser's disk
-    // I/O; the handler retries for a few seconds on its side, but give it a head start here too.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const protocolUrl = `${SLICER_PROTOCOL}://open?file=${encodeURIComponent(filename)}&slicer=${encodeURIComponent(slicer)}`;
-    const link = document.createElement('a');
-    link.href = protocolUrl;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setStatus('ok', `Sent ${filename} to ${slicerLabel}. First time here? Your browser asked to open "HP Robot Slicer Bridge" — allow it (and check "always allow") so future sends are instant.`);
-  } catch (error) {
-    console.error(error);
-    setStatus('err', String(error?.message || error) || `Failed to send the STL to ${slicerLabel}.`);
   } finally {
     isProcessing = false;
     hideProgress();
@@ -1380,7 +1331,7 @@ function getEngravedFilename() {
   const svgBase = svgLayers.length === 1
     ? (svgLayers[0].filename || 'logo').replace(/\.svg$/i, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '')
     : `multi-logo-${svgLayers.length}`;
-  const partBase = requestedFile.replace(/\.glb$/i, '');
+  const partBase = partEntry.file.replace(/\.glb$/i, '');
   return `${partBase}_${svgBase || 'engraved'}.stl`;
 }
 

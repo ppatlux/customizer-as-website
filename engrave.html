@@ -18,6 +18,27 @@
 <body>
   <main class="engrave-shell">
     <div id="viewer-container">
+      <div id="consent-overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title" tabindex="-1">
+        <div id="consent-card">
+          <h2 id="consent-title">Terms &amp; Conditions</h2>
+          <div id="consent-text">
+            <p>The file you are going to download is for personal and educational use only. Copyright MORAVIA Consulting s.r.o., Brno, CZ.</p>
+            <p>Any other use is prohibited without permission. By downloading, you accept these terms and conditions.</p>
+            <p>By downloading 3D files, manuals, textbooks, lessons, software, or any other material from the HP Robots ecosystem you confirm they are intended for personal or educational use only.</p>
+            <p>Any other use is prohibited without the permission of MORAVIA Consulting spol. s r.o. Any violation may result in claims for damages.</p>
+            <p>In case of any questions please contact info@moravia-consulting.com.</p>
+          </div>
+          <label id="consent-checkbox-container">
+            <input type="checkbox" id="consent-checkbox">
+            <span>I accept the terms and conditions</span>
+          </label>
+          <div class="consent-actions">
+            <button id="consent-cancel" class="top-engrave-btn top-engrave-btn--secondary" type="button">Cancel</button>
+            <button id="consent-confirm" class="top-engrave-btn" type="button" disabled>Continue</button>
+          </div>
+        </div>
+      </div>
+
       <div id="preset-menu" class="engrave-header-card" role="group" aria-label="Engraving header">
         <button id="backCustomizerBtn" class="preset-toggle" type="button" aria-label="Back to customizer">
           <span class="material-icons">arrow_back</span>
@@ -178,25 +199,6 @@
             <span class="material-icons">download</span>
             <span>Download STL</span>
           </button>
-          <div id="slicerSendGroup" class="slicer-send-group">
-            <button id="sendToSlicerBtn" class="top-engrave-btn top-engrave-btn--secondary slicer-send-btn" type="button" title="One-time setup required: run tools/install-slicer-protocol.ps1 once on this computer.">
-              <span class="slicer-badge" id="slicerBadge" data-slicer="orca" aria-hidden="true">O</span>
-              <span id="sendToSlicerLabel">Send to OrcaSlicer</span>
-            </button>
-            <button id="slicerMenuToggle" class="top-engrave-btn top-engrave-btn--secondary slicer-caret-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="slicerMenu" aria-label="Choose slicer">
-              <span class="material-icons">arrow_drop_down</span>
-            </button>
-            <div id="slicerMenu" class="slicer-menu" role="listbox" aria-label="Slicer options" hidden>
-              <button type="button" class="slicer-menu-item" data-slicer="orca" role="option" aria-selected="true">
-                <span class="slicer-badge" data-slicer="orca" aria-hidden="true">O</span>
-                <span>OrcaSlicer</span>
-              </button>
-              <button type="button" class="slicer-menu-item" data-slicer="prusa" role="option" aria-selected="false">
-                <span class="slicer-badge" data-slicer="prusa" aria-hidden="true">P</span>
-                <span>PrusaSlicer</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -223,6 +225,17 @@
       "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/",
       "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.9/build/index.module.js",
       "three-bvh-csg": "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.18/build/index.module.js"
+    },
+    "integrity": {
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js": "sha384-LJXWwbN59doWCYk3H8sqfu+HCDzM24TGLJAVGMJ/xaGxE+Cuz6fm71lj4UT98Mf4",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/controls/OrbitControls.js": "sha384-/tEDPYER5v0QO0LFWngHYaAW2bBF/PvZG/uWTlF9NRG6dZYKl4KFlmh1qvM0CWif",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/controls/TransformControls.js": "sha384-tf5X95jI+qA/AKpjZaL+OkEppTJjTg0PZOFpQBi+wHDHs5N+TljuD/fDCuEApJ13",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/loaders/GLTFLoader.js": "sha384-rXJhXot3b4g36jj6PY0MTYCWms0s0srcu3Ga+pAOKfH0cWSEK/j+rcL27N9T1v/y",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/loaders/SVGLoader.js": "sha384-cbI3sQOD+UIU5KlZLlgvj0WzyKHBomtflJXmy8IIqMch4L/UA56YNhLL+X2v26I0",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/exporters/STLExporter.js": "sha384-2AGAYQO/0JL51k5a6Hg16NGk0hNSP7JGZRJW7X3ItHygcRI0DG+D/ZHFJSR76VLI",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/utils/BufferGeometryUtils.js": "sha384-Qy9m6qi71cTFsL476nB1aK+wPxxPgU6H6pn/++8gOgy4/vTtkDuFBfPo22hBhx36",
+      "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.9/build/index.module.js": "sha384-GzTo7BK/yWPpRue/l//ZUa+Pnl5lvZaKMw9DrpawLvLRJ8RL2Az3WEClx1ckktO/",
+      "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.18/build/index.module.js": "sha384-10G7u0qG2S6cpYoylsWwL6M0lsj4DxIvsh/MNSX3IRH73M0sei6YbHhmG+Uxv8Qq"
     }
   }
   </script>
