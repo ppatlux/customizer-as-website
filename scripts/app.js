@@ -109,6 +109,22 @@ const presets = {
 const PART_MAP_PRESET_KEY = 'sensor';
 const PART_MAP_PARTS = ['top', 'middle', 'face', 'bottom', 'wheels', 'hat', 'arms'];
 
+// Per-part tint for the reference build, pulled from the customizer's own
+// COLOR_OPTIONS ('#549EF7' blue, '#00D072' green, '#E6E6E6' silver) so the
+// map's colors always match what's actually pickable.
+const PART_MAP_TINTS = {
+  hat: '#00D072',
+  top: '#E6E6E6',
+  middle: '#549EF7',
+  face: '#549EF7',
+  bottom: '#E6E6E6',
+  wheels: '#549EF7',
+  arms: '#549EF7'
+};
+// Blended toward the neutral base gray so the map reads as one cohesive
+// object with a hint of color rather than a full-saturation preview.
+const PART_MAP_TINT_STRENGTH = 0.35;
+
 renderPanels();
 
 const container = document.getElementById('viewer-container');
@@ -381,20 +397,33 @@ function bootstrap() {
   const restoredFromShareLink = tryRestoreFromUrl();
   if (!restoredFromShareLink) tryRestoreFromLocal();
 
-  for (const part of Object.keys(modelSets)) {
-    if (part === 'spacer' && !partVis.spacer) continue;
-    loadModel(part);
-  }
-
-  if (!restoredFromLocal) {
-    applyPreset('starter', false);
-  } else {
+  if (restoredFromLocal) {
+    // applySavedState() (called by the two restore attempts above) only sets
+    // currentIdx/partVis/modelCols — it doesn't load anything itself, so the
+    // restored indices still need an explicit load pass here.
+    for (const part of Object.keys(modelSets)) {
+      if (part === 'spacer' && !partVis.spacer) continue;
+      loadModel(part);
+    }
     setPresetLabel('Custom mix');
     syncPresetButtons('');
     updateAllCounters();
     updateComboChip();
     saveStateToLocal();
     if (restoredFromShareLink) toast('Loaded shared build', 'ok', 1800);
+  } else {
+    // No saved/shared state: applyPreset() already loads every part it
+    // touches, so this is the only load pass a fresh visit needs. (A prior
+    // version also ran the loop above unconditionally first, which meant
+    // every part's model was fetched twice on first paint — once here at
+    // its default index, once more milliseconds later from applyPreset,
+    // since loadedMods was still empty when applyPreset's own "already
+    // loaded?" check ran. Harmless on a fast connection, but on a slow or
+    // flaky one it doubled the odds that one of a part's two identical
+    // in-flight requests failed — and since only the later-dispatched
+    // request's response is kept, that could discard the copy that
+    // actually succeeded and leave the part missing.)
+    applyPreset('starter', false);
   }
 
   initPillsAndButtons();
@@ -1387,12 +1416,13 @@ function setupVariantGrid() {
   });
 }
 
-function tintModelFlatGray(model) {
+function tintModelFlatGray(model, hex = '#d9d9d9') {
+  const color = new THREE.Color('#d9d9d9').lerp(new THREE.Color(hex), PART_MAP_TINT_STRENGTH);
   model.traverse((node) => {
     if (!node.isMesh) return;
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     materials.forEach((material) => {
-      if (material?.color) material.color.set('#d9d9d9');
+      if (material?.color) material.color.copy(color);
     });
   });
 }
@@ -1439,7 +1469,7 @@ async function setupPartMap() {
       const gltf = await loader.loadAsync(urls[0]);
       const model = gltf.scene;
       model.position.y = MODEL_Y_OFFSET;
-      tintModelFlatGray(model);
+      tintModelFlatGray(model, PART_MAP_TINTS[part]);
       model.traverse((node) => {
         if (!node.isMesh) return;
         // Mesh.raycast() rejects using geometry.boundingSphere as a fast
