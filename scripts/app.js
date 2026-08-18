@@ -1039,13 +1039,26 @@ function rgbToHsv(r, g, b) {
   return { h, s, v: max };
 }
 
+// THREE.Color's own .r/.g/.b are in linear working space (color management
+// converts sRGB hex -> linear on .set()), not the sRGB values rgbToHsv/hsvToHex
+// work in — reading them directly silently reinterprets the color, drifting it
+// every time the picker re-syncs (e.g. on reopen). getHexString() already does
+// the correct linear -> sRGB conversion, so route through that instead.
+function colorToHsv(color) {
+  const hex = color.getHexString();
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  return rgbToHsv(r, g, b);
+}
+
 // Re-derives the picker's h/s/v from the part's current color — called whenever
 // the palette opens, so the picker always reflects reality even if the color was
 // last changed some other way (preset, randomize, share-link restore, a swatch).
 function syncColorPickerUI(part) {
   const color = modelCols[part];
   if (!color) return;
-  pickerHSV[part] = rgbToHsv(color.r, color.g, color.b);
+  pickerHSV[part] = colorToHsv(color);
   renderColorPickerUI(part);
 }
 
@@ -1088,7 +1101,7 @@ function setupColorPickerDrag() {
     event.preventDefault();
     track.setPointerCapture(event.pointerId);
     if (!partVis[part]) enablePart(part, false);
-    if (!pickerHSV[part]) pickerHSV[part] = rgbToHsv(modelCols[part].r, modelCols[part].g, modelCols[part].b);
+    if (!pickerHSV[part]) pickerHSV[part] = colorToHsv(modelCols[part]);
     const state = pickerHSV[part];
 
     const update = (clientX, clientY) => {
@@ -1130,7 +1143,7 @@ function setupColorPickerHexInput() {
 
     const hex = `#${raw}`;
     applyLiveColor(part, hex);
-    pickerHSV[part] = rgbToHsv(modelCols[part].r, modelCols[part].g, modelCols[part].b);
+    pickerHSV[part] = colorToHsv(modelCols[part]);
     renderColorPickerUI(part);
     markCustomPreset();
   });
