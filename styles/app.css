@@ -464,8 +464,14 @@ html.vt-fallback.vt-leaving body{
   border-color:var(--brand);
 }
 /* Mobile already has a lot competing for bottom-of-screen space (the sheet,
-   its actions) — this is a desktop-only navigation aid. */
-@media (pointer: coarse){
+   its actions) — this is a desktop-only navigation aid.
+   pointer:coarse alone isn't "is this a phone" — touchscreen 2-in-1 laptops
+   (HP Omnibook X Flip, Surface, Spectre x360...) report a coarse primary
+   pointer purely because a touch digitizer is present, even when driven by
+   keyboard+trackpad at full laptop width. The max-width caps this to
+   viewports actually phone-sized (see the 1024px "landscape-phone" and
+   480px "portrait-phone" buckets used elsewhere in this file). */
+@media (pointer: coarse) and (max-width: 1024px){
   #part-map{ display:none; }
 }
 
@@ -1230,7 +1236,7 @@ html.vt-fallback.vt-leaving body{
   background:var(--canvas);
   z-index:var(--z-max);
 }
-@media (pointer: coarse) and (orientation: landscape){
+@media (pointer: coarse) and (orientation: landscape) and (max-width: 1024px){
   #rotate-overlay{ display:flex; }
 }
 #rotate-card{
@@ -1570,7 +1576,10 @@ body.hp-lock-scroll{
   100%{ background-position:200% 0; }
 }
 
-@media (pointer: coarse){
+/* max-width guards this whole phone layout against touchscreen 2-in-1
+   laptops matching pointer:coarse at full desktop width — see the #part-map
+   rule above for the full explanation. */
+@media (pointer: coarse) and (max-width: 1024px){
   :root{ --control-h: 48px; }
   .btn--sm{ width:40px; height:40px; }
   .toggle-btn{ padding:0 18px; }

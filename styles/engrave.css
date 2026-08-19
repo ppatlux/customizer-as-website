@@ -751,8 +751,12 @@ input[type="range"]{
 .mobile-sheet{ display:none; }
 
 /* Touch devices: enlarge slider thumbs, step buttons, and small icon buttons
-   past the mouse-tuned defaults so a fingertip can hit them reliably. */
-@media (pointer: coarse){
+   past the mouse-tuned defaults so a fingertip can hit them reliably.
+   max-width guards against touchscreen 2-in-1 laptops (HP Omnibook X Flip,
+   Surface, Spectre x360...), which report pointer:coarse at full desktop
+   width just because a touch digitizer is present — see app.css's #part-map
+   rule for the full explanation. */
+@media (pointer: coarse) and (max-width: 1024px){
   input[type="range"]{
     height:32px;
   }

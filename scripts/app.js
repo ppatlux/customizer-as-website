@@ -2254,8 +2254,13 @@ async function copyShareLink() {
   }
 }
 
+// max-width caps this to phone-sized viewports — pointer:coarse alone also
+// matches touchscreen 2-in-1 laptops (HP Omnibook X Flip, Surface, Spectre
+// x360...) at full desktop width, since their coarse primary pointer just
+// reflects a touch digitizer being present, not actual device size or usage.
+// Kept in sync with the (pointer: coarse) and (max-width: 1024px) queries in app.css.
 function isTouchLikeDevice() {
-  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+  try { return window.matchMedia('(pointer: coarse) and (max-width: 1024px)').matches; } catch { return false; }
 }
 
 let modelViewerLoadPromise = null;

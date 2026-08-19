@@ -113,7 +113,7 @@ controls.target.set(0, MODEL_Y_OFFSET, 0);
 const transformControls = new TransformControls(camera, renderer.domElement);
 // Bigger gizmo handles on touch devices, since a fingertip is far less
 // precise than a mouse pointer at hitting the thin default handles.
-transformControls.setSize(window.matchMedia('(pointer: coarse)').matches ? 1.3 : 0.8);
+transformControls.setSize(isCoarsePointer() ? 1.3 : 0.8);
 transformControls.visible = false;
 transformControls.addEventListener('dragging-changed', (event) => {
   controls.enabled = !event.value;
@@ -854,8 +854,12 @@ function setTransformVisible(visible) {
   if (transformHelper) transformHelper.visible = actualVisible;
 }
 
+// Kept in sync with the (pointer: coarse) and (max-width: 1024px) queries in
+// engrave.css — max-width excludes touchscreen 2-in-1 laptops (HP Omnibook X
+// Flip, Surface, Spectre x360...), which report pointer:coarse at full
+// desktop width just because a touch digitizer is present.
 function isCoarsePointer() {
-  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+  try { return window.matchMedia('(pointer: coarse) and (max-width: 1024px)').matches; } catch { return false; }
 }
 
 function setGizmoUserVisible(visible) {

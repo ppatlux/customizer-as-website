@@ -232,8 +232,12 @@
     </div>
   </main>
 
-  <!-- Touch-only (pointer:coarse) portrait lock. Pure CSS — @media (orientation:landscape)
-       shows it, no JS involved, so it can't fall out of sync with the actual rotation.
+  <!-- Phone-only portrait lock. Pure CSS — @media (pointer:coarse) and (max-width:1024px)
+       and (orientation:landscape) shows it, no JS involved, so it can't fall out of sync
+       with the actual rotation. The max-width guard matters: pointer:coarse alone also
+       matches touchscreen 2-in-1 laptops (HP Omnibook X Flip, Surface, Spectre x360...)
+       at full desktop width, since their coarse primary pointer just reflects the presence
+       of a touch digitizer, not actual device size or usage.
        Sits outside <main> as the last element in the document so it always paints above
        everything else (including the AR/consent overlays and the variant grid, which also
        use the max z-index) regardless of what happens to be open when the device is turned. -->
