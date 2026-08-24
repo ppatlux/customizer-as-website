@@ -7,14 +7,14 @@ import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer } from './slicer-
 const COLOR_OPTIONS = ['#231F20', '#549EF7', '#00D072', '#FFBD3B', '#A89EFA', '#CE4A4A', '#E6E6E6', '#FFFFFF'];
 const PART_META = [
   { key: 'top', label: 'Top', panel: 'essential' },
-  { key: 'middle', label: 'Middle', panel: 'essential' },
+  { key: 'hat', label: 'Hat', panel: 'essential' },
+  { key: 'middle', label: 'Middle', panel: 'advanced' },
   { key: 'face', label: 'Face', panel: 'essential' },
-  { key: 'bottom', label: 'Bottom', panel: 'essential' },
-  { key: 'wheels', label: 'Motion', panel: 'essential' },
-  { key: 'hat', label: 'Hat', panel: 'advanced' },
-  { key: 'arms', label: 'Arms', panel: 'advanced' },
   { key: 'spacer', label: 'Spacer', panel: 'advanced' },
-  { key: 'bumper', label: 'Bumper', panel: 'advanced' },
+  { key: 'arms', label: 'Arms', panel: 'advanced' },
+  { key: 'bumper', label: 'Bumper', panel: 'essential' },
+  { key: 'bottom', label: 'Bottom', panel: 'essential' },
+  { key: 'wheels', label: 'Motion', panel: 'advanced' },
   { key: 'tail', label: 'Tail', panel: 'advanced', hidden: true }
 ];
 
@@ -77,27 +77,27 @@ const remoteStlSets = Object.fromEntries(
 
 const presets = {
   starter: {
-    label: 'Starter Kit',
-    description: 'Essentials, advanced hidden',
+    label: 'Basic',
+    description: 'from Starter kit',
     parts: { top: 0, middle: 0, face: 0, bottom: 0, wheels: 0, hat: 0, arms: 1, bumper: 0, tail: 0, spacer: 0 },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: false }
   },
   invent: {
-    label: 'Walk and Roll',
-    description: 'Invent expansion kit',
-    parts: { top: 0, middle: 0, face: 0, bottom: 0, wheels: 1, hat: 0, arms: 1, bumper: 0, tail: 0, spacer: 0 },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: false }
-  },
-  sensor: {
-    label: 'Sensor Scout',
-    description: 'Dual sensors with RGB face',
-    parts: { top: 2, middle: 0, face: 1, bottom: 0, wheels: 1, hat: 1, arms: 0, bumper: 0, tail: 0, spacer: 0 },
+    label: 'Walk & Roll',
+    description: 'from Invent expansion',
+    parts: { top: 13, middle: 7, face: 4, bottom: 0, wheels: 1, hat: 6, arms: 0, bumper: 0, tail: 0, spacer: 0 },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: true, bumper: false, tail: false, spacer: false }
   },
+  sensor: {
+    label: 'Formula 1',
+    description: 'Vroom vroooom',
+    parts: { top: 12, middle: 6, face: 9, bottom: 11, wheels: 1, hat: 4, arms: 0, bumper: 0, tail: 0, spacer: 0 },
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
+  },
   showtime: {
-    label: 'Showtime Parade',
-    description: 'MP3 top, matrix face and hat',
-    parts: { top: 1, middle: 0, face: 2, bottom: 0, wheels: 1, hat: 2, arms: 1, bumper: 0, tail: 0, spacer: 0 },
+    label: 'Duck',
+    description: 'Quack!',
+    parts: { top: 1, middle: 1, face: 6, bottom: 2, wheels: 0, hat: 11, arms: 1, bumper: 0, tail: 0, spacer: 0 },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: true, bumper: false, tail: false, spacer: false }
   }
 };
@@ -106,7 +106,7 @@ const presets = {
 // at once, so it doubles as a "here's everything you can customize" index even
 // for parts hidden by default (hat/arms). Reuses "sensor" since it's the only
 // preset with both hat and arms visible; swap the key for a different look.
-const PART_MAP_PRESET_KEY = 'sensor';
+const PART_MAP_PRESET_KEY = 'Walk & Roll';
 const PART_MAP_PARTS = ['top', 'middle', 'face', 'bottom', 'wheels', 'hat', 'arms'];
 
 // Per-part tint for the reference build, pulled from the customizer's own
