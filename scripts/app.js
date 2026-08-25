@@ -260,6 +260,12 @@ const activePops = new Map();
 const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const occludedParts = new Set(['middle', 'bumper', 'tail', 'bottom', 'wheels']);
 
+// Populated by loadCompatibilityMap() from assets/compatibility.json (built by
+// tools/compat-checker.html). Stays null until that fetch resolves — every
+// reader below treats null as "no rules yet" and fails open rather than
+// blocking anything, since the file may not exist for a fresh checkout.
+let compatibilityMap = null;
+
 let activePresetKey = 'starter';
 let isApplyingPreset = false;
 let restoredFromLocal = false;
@@ -367,6 +373,8 @@ function bootstrap() {
   if (location.protocol === 'file:') {
     toast('Use a local web server for the best results. Some browsers block local file loading.', 'warn', 5000);
   }
+
+  loadCompatibilityMap();
 
   // Safety net: never leave a user staring at the splash forever if a model
   // request hangs (flaky connection, blocked CDN, etc.) instead of erroring.
@@ -1409,6 +1417,7 @@ function setupVariantGrid() {
     // Arms/Bumper grid must win over whichever of the two was already showing.
     enforceArmsBumperExclusion(part);
     enforceBottomMotionExclusion();
+    enforceGeometryCompatibility(part);
     markCustomPreset();
     closeVariantGrid();
     switchToPartPanel(part);
@@ -1770,6 +1779,7 @@ function setupKeyboardNav() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] - 1);
       loadModel(part, true);
       enforceBottomMotionExclusion();
+      enforceGeometryCompatibility(part);
       markCustomPreset();
       event.preventDefault();
     } else if (event.key === 'ArrowRight') {
@@ -1777,6 +1787,7 @@ function setupKeyboardNav() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] + 1);
       loadModel(part, true);
       enforceBottomMotionExclusion();
+      enforceGeometryCompatibility(part);
       markCustomPreset();
       event.preventDefault();
     }
@@ -1809,6 +1820,7 @@ function setupGlobalClickHandler() {
       loadModel(part, true);
       if (wasHidden) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
+      enforceGeometryCompatibility(part);
       // Collapse back to the model instead of leaving the sheet expanded —
       // the point of changing a variant is to immediately see the result.
       // Land peek on this same part so it's right there to keep adjusting.
@@ -1823,6 +1835,7 @@ function setupGlobalClickHandler() {
       loadModel(part, true);
       if (wasHidden) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
+      enforceGeometryCompatibility(part);
       if (mobileLayoutActive) setMobileSheetState('peek', part);
       touched = true;
     }
@@ -1857,6 +1870,7 @@ function setupGlobalClickHandler() {
 
       if (partVis[part]) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
+      enforceGeometryCompatibility(part);
       updateComboChip();
       touched = true;
     }
@@ -2146,6 +2160,7 @@ function applySavedState(saved) {
 
   // Safety net for state saved/shared before this rule existed.
   enforceBottomMotionExclusion();
+  enforceGeometryCompatibilityAll();
 }
 
 function tryRestoreFromLocal() {
@@ -2863,6 +2878,81 @@ function enforceArmsBumperExclusion(partJustEnabled) {
   if (loadedMods[other]) loadedMods[other].visible = false;
 }
 
+// The `part|file` identity for whatever variant of `part` is currently
+// selected, in the same "manifest key + filename" shape tools/compat-checker.js
+// uses as its pair keys — the two never need to agree on anything more than
+// that shared string format.
+function partFileKey(part) {
+  const url = modelSets[part]?.[currentIdx[part] ?? 0];
+  if (!url) return null;
+  return `${part}|${url.split('/').pop()}`;
+}
+
+// Loads assets/compatibility.json (written by tools/compat-checker.html) into
+// a bidirectional adjacency map of `part|file` -> Set of incompatible
+// `part|file` keys, keeping only entries a human has actually confirmed
+// ("incompatible" — auto-flagged-but-undecided pairs are not enforced). Fails
+// open on any error: the file may not exist yet for a fresh checkout, and a
+// missing compatibility map should never block a combination.
+async function loadCompatibilityMap() {
+  const map = new Map();
+  try {
+    const res = await fetch('./assets/compatibility.json', { cache: 'no-store' });
+    if (res.ok) {
+      const json = await res.json();
+      Object.values(json.pairs || {}).forEach((entry) => {
+        if (entry.status !== 'incompatible') return;
+        const a = `${entry.partA}|${entry.fileA}`;
+        const b = `${entry.partB}|${entry.fileB}`;
+        if (!map.has(a)) map.set(a, new Set());
+        if (!map.has(b)) map.set(b, new Set());
+        map.get(a).add(b);
+        map.get(b).add(a);
+      });
+    }
+  } catch {
+    // No compatibility data available — leave the map empty.
+  }
+  compatibilityMap = map;
+}
+
+// Generic counterpart to enforceArmsBumperExclusion/enforceBottomMotionExclusion
+// above: those two are hand-authored structural rules and stay untouched, this
+// one enforces whatever pairwise conflicts tools/compat-checker.html has found
+// by actually measuring geometry overlap. Call after any change to `part`'s
+// variant or visibility — checks its current file against every other
+// currently-visible part's current file and hides the other on a match, same
+// "whichever was touched last wins" pattern as enforceArmsBumperExclusion.
+function enforceGeometryCompatibility(part) {
+  if (!compatibilityMap) return;
+  const changedKey = partFileKey(part);
+  const incompatibleWith = changedKey && compatibilityMap.get(changedKey);
+  if (!incompatibleWith || !incompatibleWith.size) return;
+
+  for (const other of Object.keys(modelSets)) {
+    if (other === part || !partVis[other]) continue;
+    const otherKey = partFileKey(other);
+    if (!otherKey || !incompatibleWith.has(otherKey)) continue;
+
+    partVis[other] = false;
+    const otherBtn = document.getElementById(`${other}-visibility`);
+    if (otherBtn) otherBtn.innerHTML = '<span class="material-icons">visibility_off</span>';
+    if (loadedMods[other]) loadedMods[other].visible = false;
+    toast(`${getPartDisplayName(other)} hidden — not compatible with the selected ${getPartDisplayName(part)}.`, 'warn', 2200);
+  }
+}
+
+// Bulk variant of the above for call sites that change several parts at once
+// (restoring saved/shared state, applying a preset, randomizing) where there's
+// no single "part that just changed" — sweeps every currently-visible part in
+// a fixed order instead.
+function enforceGeometryCompatibilityAll() {
+  if (!compatibilityMap) return;
+  for (const part of Object.keys(modelSets)) {
+    if (partVis[part]) enforceGeometryCompatibility(part);
+  }
+}
+
 function bottomIsF1Variant() {
   const url = modelSets.bottom?.[currentIdx.bottom] || '';
   return /bottom_f1/i.test(url);
@@ -3061,6 +3151,7 @@ function applyPreset(key, showToast = true) {
 
     toLoad.forEach((part) => loadModel(part, true));
     enforceBottomMotionExclusion();
+    enforceGeometryCompatibilityAll();
     updateAllCounters();
     updateComboChip();
     activePresetKey = key;
@@ -3481,6 +3572,7 @@ randomizeBtn.addEventListener('click', () => {
     loadModel(part, true);
   }
   enforceBottomMotionExclusion();
+  enforceGeometryCompatibilityAll();
   markCustomPreset();
   toast('Randomized!', 'ok', 900);
 

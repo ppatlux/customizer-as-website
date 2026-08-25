@@ -1,0 +1,101 @@
+:root {
+  color-scheme: dark;
+  --bg: #14171c;
+  --panel: #1c2028;
+  --panel-alt: #232833;
+  --border: #333a47;
+  --text: #e6e9ef;
+  --text-dim: #9aa3b2;
+  --accent: #4da3ff;
+  --ok: #35c46a;
+  --bad: #e5534b;
+  --warn: #e0a934;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.ok { border-color: var(--ok); color: var(--ok); }
+button.bad { border-color: var(--bad); color: var(--bad); }
+
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+#topbar h1 { font-size: 15px; margin: 0; white-space: nowrap; }
+#stats { display: flex; gap: 10px; font-size: 12px; color: var(--text-dim); flex-wrap: wrap; }
+#stats b { color: var(--text); }
+#topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+#threshold-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+#thresholdInput { width: 56px; background: var(--panel-alt); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px; }
+#saveStatus { font-size: 12px; color: var(--text-dim); }
+
+#progressWrap { display: flex; align-items: center; gap: 10px; padding: 6px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+#progressBar { flex: 1; height: 6px; border-radius: 3px; background: var(--panel-alt); overflow: hidden; }
+#progressFill { height: 100%; width: 0%; background: var(--accent); transition: width 0.15s linear; }
+#progressLabel { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+
+#layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  height: calc(100% - 52px);
+}
+
+#listPane { display: flex; flex-direction: column; border-right: 1px solid var(--border); min-height: 0; }
+#tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tab { flex: 1; border: none; border-radius: 0; background: var(--panel); color: var(--text-dim); border-bottom: 2px solid transparent; padding: 10px 6px; font-size: 12px; }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); background: var(--panel-alt); }
+
+#pairList { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+#pairList li {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+#pairList li:hover { background: var(--panel-alt); }
+#pairList li.selected { background: var(--panel-alt); border-left: 3px solid var(--accent); }
+#pairList li .names { font-size: 13px; }
+#pairList li .meta { font-size: 11px; color: var(--text-dim); display: flex; gap: 8px; }
+#pairList li .pct { font-weight: 600; }
+#pairList .empty { padding: 24px 14px; color: var(--text-dim); text-align: center; cursor: default; }
+
+.badge { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; }
+.badge.flagged { background: rgba(224,169,52,0.18); color: var(--warn); }
+.badge.auto_pass { background: rgba(154,163,178,0.15); color: var(--text-dim); }
+.badge.compatible { background: rgba(53,196,106,0.18); color: var(--ok); }
+.badge.incompatible { background: rgba(229,83,75,0.18); color: var(--bad); }
+
+#viewerPane { display: flex; flex-direction: column; min-height: 0; }
+#viewerHost { flex: 1; min-height: 0; position: relative; }
+#viewerHost canvas { display: block; width: 100%; height: 100%; }
+#pairInfo { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-dim); }
+#pairInfo b { color: var(--text); }
+#decideActions { display: flex; gap: 10px; padding: 0 16px 14px; }
+
+.u-hidden { display: none !important; }

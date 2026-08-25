@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Part Compatibility Checker</title>
+  <meta name="description" content="Offline geometry-overlap screening tool for HP Robot Customizer parts">
+  <link rel="stylesheet" href="./compat-checker.css">
+  <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"
+    integrity="sha384-yA2h8FH0n05oFfnN0jT8J2B7OWemrtBIs3Qrc59zOTdZqvwBJMp+YJLsYdCa03Cx" crossorigin="anonymous"></script>
+  <script type="importmap">
+    {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/",
+      "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.9/build/index.module.js"
+    },
+    "integrity": {
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js": "sha384-LJXWwbN59doWCYk3H8sqfu+HCDzM24TGLJAVGMJ/xaGxE+Cuz6fm71lj4UT98Mf4",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/controls/OrbitControls.js": "sha384-/tEDPYER5v0QO0LFWngHYaAW2bBF/PvZG/uWTlF9NRG6dZYKl4KFlmh1qvM0CWif",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/loaders/GLTFLoader.js": "sha384-rXJhXot3b4g36jj6PY0MTYCWms0s0srcu3Ga+pAOKfH0cWSEK/j+rcL27N9T1v/y",
+      "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/utils/BufferGeometryUtils.js": "sha384-Qy9m6qi71cTFsL476nB1aK+wPxxPgU6H6pn/++8gOgy4/vTtkDuFBfPo22hBhx36",
+      "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.9/build/index.module.js": "sha384-GzTo7BK/yWPpRue/l//ZUa+Pnl5lvZaKMw9DrpawLvLRJ8RL2Az3WEClx1ckktO/"
+    }
+    }
+  </script>
+</head>
+<body>
+  <header id="topbar">
+    <h1>Part Compatibility Checker</h1>
+    <div id="stats" aria-live="polite"></div>
+    <div id="topbar-actions">
+      <label id="threshold-label">
+        Flag threshold
+        <input type="number" id="thresholdInput" min="1" max="100" step="1" value="20">%
+      </label>
+      <button id="scanNewBtn" type="button">Scan new pairs</button>
+      <button id="rescanAutoBtn" type="button">Rescan auto results</button>
+      <button id="connectBtn" type="button">Connect save file&hellip;</button>
+      <button id="downloadBtn" type="button">Download JSON</button>
+      <span id="saveStatus"></span>
+    </div>
+  </header>
+
+  <div id="progressWrap" class="u-hidden">
+    <div id="progressBar"><div id="progressFill"></div></div>
+    <span id="progressLabel"></span>
+  </div>
+
+  <main id="layout">
+    <section id="listPane">
+      <div id="tabs">
+        <button type="button" class="tab active" data-filter="flagged">Needs review</button>
+        <button type="button" class="tab" data-filter="new">New</button>
+        <button type="button" class="tab" data-filter="decided">Decided</button>
+        <button type="button" class="tab" data-filter="auto_pass">Auto-passed</button>
+      </div>
+      <ul id="pairList"></ul>
+    </section>
+
+    <section id="viewerPane">
+      <div id="viewerHost"></div>
+      <div id="pairInfo">
+        <p id="pairInfoText">Select a pair from the list to inspect it.</p>
+      </div>
+      <div id="decideActions" class="u-hidden">
+        <button type="button" id="markCompatibleBtn" class="ok">Mark compatible</button>
+        <button type="button" id="markIncompatibleBtn" class="bad">Mark incompatible</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./compat-checker.js"></script>
+</body>
+</html>

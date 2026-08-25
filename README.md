@@ -35,6 +35,24 @@ here: un-hide `#slicer-group`, then in `scripts/app.js`'s `role === 'print'` han
 The engraving tool (`engrave.html`) only offers a plain "Download STL" button — no local setup,
 no custom protocol, no helper scripts. Send the downloaded file to your slicer manually.
 
+## Part Compatibility Checker
+
+`tools/compat-checker.html` screens every cross-category pair of parts in
+`scripts/asset-manifest.js` for geometric overlap (bounding-box prefilter, then a
+BVH-accelerated voxel-sampled volume-overlap estimate via `three-mesh-bvh`) and lets you
+visually confirm or reject the ones it flags. Decisions are written to
+`assets/compatibility.json`, which `scripts/app.js` reads at startup
+(`loadCompatibilityMap`/`enforceGeometryCompatibility`) to auto-hide incompatible
+combinations in the live app — the same way the existing hand-coded Arms/Bumper and
+F1-bottom/Motion rules already do, which stay untouched.
+
+Open it through the same local server as the main app (see Local Run below), e.g.
+`http://localhost:8000/tools/compat-checker.html`. "Scan new pairs" only analyzes pairs
+introduced since the last run (new files added to the manifest show up automatically),
+"Rescan auto results" re-runs the geometry check on everything not yet manually decided.
+Use "Connect save file…" (Chromium browsers) to autosave decisions straight to
+`assets/compatibility.json`, or "Download JSON" as a fallback to save it by hand.
+
 ## Local Run
 
 Use a static file server instead of opening `index.html` directly.
