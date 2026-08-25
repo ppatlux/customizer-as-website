@@ -165,6 +165,34 @@ html.vt-fallback.vt-leaving body{
 .btn--ghost:hover{ background:var(--glass-hover); }
 .btn--ghost:active{ background:var(--glass-press); }
 
+/* Small inline warning glyph next to a part's name (in .model-label) when it
+   has an active compatibility conflict — see refreshConflictBadges in
+   app.js. Deliberately not a full btn--sm circle like its neighbors: it used
+   to live in .pill-container and pushed that row onto two lines whenever it
+   appeared. For the structural (hidden-part) case only, clicking it previews
+   the clash as a translucent red overlay in the viewport; for a geometry
+   clash between two still-visible parts it's purely a status glyph, since
+   that highlight already shows automatically on the parts themselves. */
+.conflict-indicator{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-left:4px;
+  vertical-align:-3px;
+  color:var(--err);
+  cursor:pointer;
+  animation:conflict-badge-in 180ms ease-out both;
+}
+.conflict-indicator .material-icons{ font-size:15px; }
+.conflict-indicator.is-previewing{ filter:drop-shadow(0 0 3px var(--err)); }
+@keyframes conflict-badge-in{
+  from{ transform:scale(0.6); opacity:0; }
+  to{ transform:scale(1); opacity:1; }
+}
+@media (prefers-reduced-motion: reduce){
+  .conflict-indicator{ animation:none; }
+}
+
 /* A little tumble on the dice icon whenever Randomize actually rolls — pure
    delight, no functional purpose. */
 #randomizeBtn.is-rolling .material-icons{

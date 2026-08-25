@@ -266,6 +266,14 @@ const occludedParts = new Set(['middle', 'bumper', 'tail', 'bottom', 'wheels']);
 // blocking anything, since the file may not exist for a fresh checkout.
 let compatibilityMap = null;
 
+// part -> translucent red preview clone currently sitting in the scene (see
+// toggleConflictGhost/refreshConflictBadges below). Declared up here rather
+// than next to those functions because bootstrap() — called near the top of
+// this module — synchronously reaches code that reads it (via the initial
+// restore/preset pass calling refreshConflictBadges): a `const` declared
+// further down would still be in its temporal dead zone at that point.
+const activeGhosts = {};
+
 let activePresetKey = 'starter';
 let isApplyingPreset = false;
 let restoredFromLocal = false;
@@ -338,6 +346,9 @@ function renderPartSection(part) {
         </button>
         <button type="button" class="model-label" data-role="variant-grid" data-part="${part.key}" aria-haspopup="grid" aria-label="Browse all ${part.label} variants">
           ${part.label}
+          <span class="conflict-indicator u-hidden" id="${part.key}-conflict" data-role="conflict-badge" data-part="${part.key}" aria-label="${part.label} conflict">
+            <span class="material-icons">warning</span>
+          </span>
           <span class="variant-counter" id="${part.key}-counter" aria-live="polite">-/ -</span>
         </button>
         <button class="btn btn--sm btn--ghost" data-role="next" data-part="${part.key}" aria-label="Next ${part.label}">
@@ -1417,7 +1428,8 @@ function setupVariantGrid() {
     // Arms/Bumper grid must win over whichever of the two was already showing.
     enforceArmsBumperExclusion(part);
     enforceBottomMotionExclusion();
-    enforceGeometryCompatibility(part);
+    enforceHatRequiresTopHats();
+    refreshConflictBadges();
     markCustomPreset();
     closeVariantGrid();
     switchToPartPanel(part);
@@ -1779,7 +1791,8 @@ function setupKeyboardNav() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] - 1);
       loadModel(part, true);
       enforceBottomMotionExclusion();
-      enforceGeometryCompatibility(part);
+      enforceHatRequiresTopHats();
+      refreshConflictBadges();
       markCustomPreset();
       event.preventDefault();
     } else if (event.key === 'ArrowRight') {
@@ -1787,7 +1800,8 @@ function setupKeyboardNav() {
       currentIdx[part] = wrapIndex(part, currentIdx[part] + 1);
       loadModel(part, true);
       enforceBottomMotionExclusion();
-      enforceGeometryCompatibility(part);
+      enforceHatRequiresTopHats();
+      refreshConflictBadges();
       markCustomPreset();
       event.preventDefault();
     }
@@ -1811,6 +1825,16 @@ function setupGlobalClickHandler() {
       return;
     }
 
+    if (role === 'conflict-badge') {
+      const conflict = findConflictFor(part);
+      // Only the hidden (structural-rule) case is click-driven — there's
+      // nothing on screen to reveal, so a click summons a ghost stand-in.
+      // A geometry conflict is already solid-highlighted automatically by
+      // refreshConflictBadges the instant it exists; nothing to toggle here.
+      if (conflict && conflict.hidden) toggleConflictGhost(part);
+      return;
+    }
+
     let touched = false;
 
     if (role === 'prev') {
@@ -1820,7 +1844,8 @@ function setupGlobalClickHandler() {
       loadModel(part, true);
       if (wasHidden) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
-      enforceGeometryCompatibility(part);
+      enforceHatRequiresTopHats();
+      refreshConflictBadges();
       // Collapse back to the model instead of leaving the sheet expanded —
       // the point of changing a variant is to immediately see the result.
       // Land peek on this same part so it's right there to keep adjusting.
@@ -1835,7 +1860,8 @@ function setupGlobalClickHandler() {
       loadModel(part, true);
       if (wasHidden) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
-      enforceGeometryCompatibility(part);
+      enforceHatRequiresTopHats();
+      refreshConflictBadges();
       if (mobileLayoutActive) setMobileSheetState('peek', part);
       touched = true;
     }
@@ -1870,7 +1896,8 @@ function setupGlobalClickHandler() {
 
       if (partVis[part]) enforceArmsBumperExclusion(part);
       enforceBottomMotionExclusion();
-      enforceGeometryCompatibility(part);
+      enforceHatRequiresTopHats();
+      refreshConflictBadges();
       updateComboChip();
       touched = true;
     }
@@ -2160,7 +2187,8 @@ function applySavedState(saved) {
 
   // Safety net for state saved/shared before this rule existed.
   enforceBottomMotionExclusion();
-  enforceGeometryCompatibilityAll();
+  enforceHatRequiresTopHats();
+  refreshConflictBadges();
 }
 
 function tryRestoreFromLocal() {
@@ -2878,6 +2906,27 @@ function enforceArmsBumperExclusion(partJustEnabled) {
   if (loadedMods[other]) loadedMods[other].visible = false;
 }
 
+// Every Hat variant was designed against Top_Hats.glb's mount specifically —
+// no other Top fits underneath a hat — so unlike the exclusions above, this
+// isn't "hide whichever loses": Top must always be coerced to Top_Hats
+// rather than hidden, and it always wins regardless of which of Hat/Top was
+// touched last. Only steers Top when Top itself is already visible — never
+// force-shows a part the user turned off. Cheap and idempotent like
+// enforceBottomMotionExclusion, so it's called unconditionally after any
+// change that could touch Hat's visibility or Top's variant/visibility.
+const HAT_REQUIRED_TOP_FILE = 'Top_Hats.glb';
+
+function enforceHatRequiresTopHats() {
+  if (!partVis.hat || !partVis.top) return;
+  const requiredIdx = modelSets.top.findIndex((url) => url.endsWith(`/${HAT_REQUIRED_TOP_FILE}`));
+  if (requiredIdx === -1 || currentIdx.top === requiredIdx) return;
+
+  currentIdx.top = requiredIdx;
+  loadModel('top', true);
+  updateVariantCounter('top');
+  toast('Top switched to "Hats" — the only top compatible with a hat.', 'warn', 2400);
+}
+
 // The `part|file` identity for whatever variant of `part` is currently
 // selected, in the same "manifest key + filename" shape tools/compat-checker.js
 // uses as its pair keys — the two never need to agree on anything more than
@@ -2914,42 +2963,148 @@ async function loadCompatibilityMap() {
     // No compatibility data available — leave the map empty.
   }
   compatibilityMap = map;
+  refreshConflictBadges();
 }
 
-// Generic counterpart to enforceArmsBumperExclusion/enforceBottomMotionExclusion
-// above: those two are hand-authored structural rules and stay untouched, this
-// one enforces whatever pairwise conflicts tools/compat-checker.html has found
-// by actually measuring geometry overlap. Call after any change to `part`'s
-// variant or visibility — checks its current file against every other
-// currently-visible part's current file and hides the other on a match, same
-// "whichever was touched last wins" pattern as enforceArmsBumperExclusion.
-function enforceGeometryCompatibility(part) {
-  if (!compatibilityMap) return;
-  const changedKey = partFileKey(part);
-  const incompatibleWith = changedKey && compatibilityMap.get(changedKey);
-  if (!incompatibleWith || !incompatibleWith.size) return;
-
-  for (const other of Object.keys(modelSets)) {
-    if (other === part || !partVis[other]) continue;
-    const otherKey = partFileKey(other);
-    if (!otherKey || !incompatibleWith.has(otherKey)) continue;
-
-    partVis[other] = false;
-    const otherBtn = document.getElementById(`${other}-visibility`);
-    if (otherBtn) otherBtn.innerHTML = '<span class="material-icons">visibility_off</span>';
-    if (loadedMods[other]) loadedMods[other].visible = false;
-    toast(`${getPartDisplayName(other)} hidden — not compatible with the selected ${getPartDisplayName(part)}.`, 'warn', 2200);
+// Answers "does `part` currently conflict with some other part?" across
+// every rule source. Two different shapes on purpose:
+//  - The structural rules (arms/bumper, F1-bottom/wheels) are the ones that
+//    still auto-hide (see enforceArmsBumperExclusion/enforceBottomMotionExclusion
+//    above/below) — a mount-point fact, not a soft overlap, so only the part
+//    that lost and is now hidden gets a { hidden: true } conflict to explain why.
+//  - The geometry-driven compatibilityMap rules (tools/compat-checker.html)
+//    used to auto-hide the same way but that turned out user-hostile —
+//    picking one part silently vanishing another, with no direct action
+//    taken against it. Those never change visibility at all now: both parts
+//    stay exactly as configured, flagged with a { hidden: false } conflict on
+//    BOTH sides (the map is symmetric) so the badge reads as "these two
+//    clash" rather than "you did something wrong."
+// Purely a lookup for the conflict badge UI; never changes visibility itself.
+// Uses currentIdx (not the loaded model) so it still answers correctly for a
+// part that's been hidden all along and never had loadModel touch it since.
+function findConflictFor(part) {
+  if (!partVis[part]) {
+    if (part === 'arms' || part === 'bumper') {
+      const other = getOtherConflictingPart(part);
+      if (other && partVis[other]) return { otherPart: other, hidden: true };
+    }
+    if (part === 'wheels' && partVis.bottom && bottomIsF1Variant()) {
+      return { otherPart: 'bottom', hidden: true };
+    }
   }
+  if (compatibilityMap) {
+    const key = partFileKey(part);
+    const incompatibleWith = key && compatibilityMap.get(key);
+    if (incompatibleWith) {
+      for (const other of Object.keys(modelSets)) {
+        if (other === part || !partVis[other]) continue;
+        const otherKey = partFileKey(other);
+        if (otherKey && incompatibleWith.has(otherKey)) return { otherPart: other, hidden: false };
+      }
+    }
+  }
+  return null;
 }
 
-// Bulk variant of the above for call sites that change several parts at once
-// (restoring saved/shared state, applying a preset, randomizing) where there's
-// no single "part that just changed" — sweeps every currently-visible part in
-// a fixed order instead.
-function enforceGeometryCompatibilityAll() {
-  if (!compatibilityMap) return;
+function removeConflictGhost(part) {
+  const ghost = activeGhosts[part];
+  if (!ghost) return;
+  scene.remove(ghost);
+  delete activeGhosts[part];
+  const btn = document.getElementById(`${part}-conflict`);
+  if (btn) btn.classList.remove('is-previewing');
+}
+
+// Clones the part's already-loaded model (bootstrap() preloads every part,
+// visible or not — see loadModel) into a translucent red glowing x-ray
+// overlay at its real in-scene position, standing in for a part that's
+// actually hidden (the structural rules above/below) so there's something to
+// see at all. Toggle on/off by clicking the badge again. Only used for that
+// hidden case — a geometry conflict uses setConflictHighlight below instead,
+// since both parts are already visible and get their highlight shown automatically.
+function toggleConflictGhost(part) {
+  if (activeGhosts[part]) {
+    removeConflictGhost(part);
+    return;
+  }
+  const source = loadedMods[part];
+  if (!source) return;
+
+  const ghost = source.clone(true);
+  ghost.traverse((node) => {
+    if (!node.isMesh) return;
+    node.material = new THREE.MeshBasicMaterial({
+      color: 0xf6231e, // var(--err)
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    node.castShadow = false;
+    node.receiveShadow = false;
+  });
+  ghost.visible = true;
+  scene.add(ghost);
+  activeGhosts[part] = ghost;
+
+  const btn = document.getElementById(`${part}-conflict`);
+  if (btn) btn.classList.add('is-previewing');
+}
+
+// Swaps (or restores) `part`'s own real mesh materials for a translucent
+// red one — a direct edit, not a duplicate clone layered on top. A clone
+// only shows up wherever it happens to poke past the real, opaque mesh's
+// silhouette (a thin rim), because the opaque surface in front hides the
+// translucent one behind it everywhere else; editing the real material is
+// the only way the part itself actually reads as "red and see-through".
+function setConflictHighlight(part, highlighted) {
+  const obj = loadedMods[part];
+  if (!obj) return;
+  obj.traverse((node) => {
+    if (!node.isMesh) return;
+    if (highlighted) {
+      if (!node.userData.preConflictMaterial) node.userData.preConflictMaterial = node.material;
+      node.material = new THREE.MeshBasicMaterial({
+        color: 0xe2554c, // softer than --err (0xf6231e)
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+    } else if (node.userData.preConflictMaterial) {
+      node.material = node.userData.preConflictMaterial;
+      delete node.userData.preConflictMaterial;
+    }
+  });
+}
+
+// Shows/hides each part's conflict badge, keeps the automatic red/transparent
+// clash highlight in sync, and retires any hidden-part ghost preview that no
+// longer applies. Cheap and idempotent like the enforce* functions above, so
+// it's called unconditionally everywhere a part's visibility or variant
+// could have changed.
+function refreshConflictBadges() {
   for (const part of Object.keys(modelSets)) {
-    if (partVis[part]) enforceGeometryCompatibility(part);
+    const btn = document.getElementById(`${part}-conflict`);
+    const conflict = findConflictFor(part);
+    const isVisibleClash = !!conflict && !conflict.hidden;
+
+    setConflictHighlight(part, isVisibleClash);
+    if (!conflict && activeGhosts[part]) removeConflictGhost(part);
+
+    if (!btn) continue;
+    btn.classList.toggle('u-hidden', !conflict);
+    if (conflict) {
+      const label = getPartDisplayName(conflict.otherPart);
+      const partLabel = getPartDisplayName(part);
+      if (conflict.hidden) {
+        btn.title = `Hidden — not compatible with the selected ${label}. Click to preview.`;
+        btn.setAttribute('aria-label', `${partLabel} is hidden — not compatible with ${label}. Click to preview.`);
+      } else {
+        btn.title = `Not compatible with the selected ${label}.`;
+        btn.setAttribute('aria-label', `${partLabel} is not compatible with ${label}.`);
+      }
+    }
   }
 }
 
@@ -3151,7 +3306,8 @@ function applyPreset(key, showToast = true) {
 
     toLoad.forEach((part) => loadModel(part, true));
     enforceBottomMotionExclusion();
-    enforceGeometryCompatibilityAll();
+    enforceHatRequiresTopHats();
+    refreshConflictBadges();
     updateAllCounters();
     updateComboChip();
     activePresetKey = key;
@@ -3572,7 +3728,8 @@ randomizeBtn.addEventListener('click', () => {
     loadModel(part, true);
   }
   enforceBottomMotionExclusion();
-  enforceGeometryCompatibilityAll();
+  enforceHatRequiresTopHats();
+  refreshConflictBadges();
   markCustomPreset();
   toast('Randomized!', 'ok', 900);
 

@@ -41,11 +41,30 @@ function pairKey(a, b) {
   return ka < kb ? `${ka}<->${kb}` : `${kb}<->${ka}`;
 }
 
+// Category pairs whose compatibility is already fully determined by hand-coded
+// rules in scripts/app.js (enforceArmsBumperExclusion — arms/bumper share a
+// mount point, always mutually exclusive; enforceHatRequiresTopHats — any
+// hat forces Top to Top_Hats.glb, no other Top is ever compatible with a
+// hat) — geometry-scanning or manually reviewing these would just be noise,
+// so they never enter the pair list at all.
+const CATEGORY_PAIRS_HANDLED_ELSEWHERE = new Set(['arms|bumper', 'hat|top']);
+
+function categoryPairKey(partA, partB) {
+  return partA < partB ? `${partA}|${partB}` : `${partB}|${partA}`;
+}
+
+let skippedCategoryPairCount = 0;
+
 function buildAllPairs(files) {
   const pairs = [];
+  skippedCategoryPairCount = 0;
   for (let i = 0; i < files.length; i++) {
     for (let j = i + 1; j < files.length; j++) {
       if (files[i].part === files[j].part) continue;
+      if (CATEGORY_PAIRS_HANDLED_ELSEWHERE.has(categoryPairKey(files[i].part, files[j].part))) {
+        skippedCategoryPairCount++;
+        continue;
+      }
       pairs.push([files[i], files[j]]);
     }
   }
@@ -400,6 +419,7 @@ function renderStats(groups) {
     <span><b>${groups.flagged.length}</b> needs review</span>
     <span><b>${groups.autoPass.length}</b> auto-passed</span>
     <span><b>${groups.decided.length}</b> decided</span>
+    <span title="arms↔bumper and hat↔top — already handled by hand-coded rules in scripts/app.js"><b>${skippedCategoryPairCount}</b> skipped (handled in app.js)</span>
   `;
 }
 
