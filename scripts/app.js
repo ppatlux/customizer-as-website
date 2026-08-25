@@ -2992,7 +2992,11 @@ function findConflictFor(part) {
       return { otherPart: 'bottom', hidden: true };
     }
   }
-  if (compatibilityMap) {
+  // A geometry clash only exists once both sides are actually on screen
+  // together — a part that's manually turned off isn't clashing with
+  // anything regardless of what variant it's parked on, so this branch
+  // requires `part` itself to be visible too, not just the other side.
+  if (compatibilityMap && partVis[part]) {
     const key = partFileKey(part);
     const incompatibleWith = key && compatibilityMap.get(key);
     if (incompatibleWith) {
