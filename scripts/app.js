@@ -85,19 +85,19 @@ const presets = {
   invent: {
     label: 'Walk & Roll',
     description: 'from Invent expansion',
-    parts: { top: 13, middle: 7, face: 4, bottom: 0, wheels: 1, hat: 6, arms: 0, bumper: 0, tail: 0, spacer: 0 },
+    parts: { top: 14, middle: 7, face: 4, bottom: 0, wheels: 1, hat: 6, arms: 0, bumper: 0, tail: 0, spacer: 0 },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: true, bumper: false, tail: false, spacer: false }
   },
   sensor: {
     label: 'Formula 1',
     description: 'Vroom vroooom',
-    parts: { top: 12, middle: 6, face: 9, bottom: 11, wheels: 1, hat: 4, arms: 0, bumper: 0, tail: 0, spacer: 0 },
+    parts: { top: 13, middle: 6, face: 9, bottom: 11, wheels: 1, hat: 4, arms: 0, bumper: 0, tail: 0, spacer: 0 },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
   },
   showtime: {
     label: 'Duck',
     description: 'Quack!',
-    parts: { top: 1, middle: 1, face: 6, bottom: 2, wheels: 0, hat: 11, arms: 1, bumper: 0, tail: 0, spacer: 0 },
+    parts: { top: 2, middle: 1, face: 6, bottom: 2, wheels: 0, hat: 11, arms: 1, bumper: 0, tail: 0, spacer: 0 },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: true, bumper: false, tail: false, spacer: false }
   }
 };

@@ -32,6 +32,7 @@ export const ASSET_MANIFEST = {
   ],
   top: [
     { file: 'Top-HP-logo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-HP-logo.glb' },
+    { file: 'Top_Hats.glb', folder: 'top', source: '' },
     { file: 'Top_Duck.glb', folder: 'top', source: '' },
     { file: 'Top-MP3.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-MP3.glb' },
     { file: 'Top-sensor-single.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-sensor-single.glb' },
@@ -43,7 +44,10 @@ export const ASSET_MANIFEST = {
     { file: 'Top_matrixbuttons.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/Topmatrixbuttons.glb' },
     { file: 'Top_lightspoke.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/Toplightspoke.glb' },
     { file: 'Top_lightsdiffuser.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/Toplightsdiffuser.glb' },
-    { file: 'Top_lights_NOlogo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/Toplights_NOlogo.glb' }
+    { file: 'Top_lights_NOlogo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/Toplights_NOlogo.glb' },
+    { file: 'Top_Race.glb', folder: 'top', source: '' },
+    { file: 'Top_Motor.glb', folder: 'top', source: '' },
+    { file: 'Top_MP3sensor.glb', folder: 'top', source: '' }
   ],
   middle: [
     { file: 'Middle-starter.glb', folder: 'middle', source: 'https://hprobots.com/wp-content/uploads/2025/08/Middle-starter.glb' },
