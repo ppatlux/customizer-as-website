@@ -789,6 +789,53 @@ html.vt-fallback.vt-leaving body{
 .color-sidebar-toggle-btn[aria-expanded="true"] .caret{
   transform:rotate(180deg);
 }
+/* #visibilityModeBtn reuses this same pill but toggles on/off rather than
+   expanding -- same gold-fill-while-on treatment as .global-paint-toggle-btn
+   above, so "this mode is currently active" reads consistently app-wide. */
+.color-sidebar-toggle-btn.active{
+  background:var(--brand);
+  border-color:var(--brand);
+  color:var(--hpro-navy);
+  box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
+}
+
+/* Small keyboard-shortcut badge shown right in a button's own label (not
+   just its title tooltip) -- #globalPaintBtn's P and #visibilityModeBtn's V
+   -- so the shortcut is discoverable without hovering first. Color-coded to
+   match each mode's own screen-edge vignette (yellow for paint, blue for
+   hide/show) so the badge itself hints at which mode you'd be entering. */
+.shortcut-kbd{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:16px;
+  padding:1px 5px;
+  border-radius:5px;
+  font:inherit;
+  font-weight:700;
+  font-size:10px;
+  line-height:1.4;
+}
+.shortcut-kbd--blue{
+  border:1px solid #8ab4e8;
+  background:#eaf2fc;
+  color:#2f6fd6;
+}
+.shortcut-kbd--yellow{
+  border:1px solid var(--brand-ink);
+  background:color-mix(in srgb, var(--brand) 25%, white);
+  color:#7a5b00;
+}
+/* Both host buttons swap to a solid brand-yellow fill while active (see
+   .color-sidebar-toggle-btn.active above and .global-paint-toggle-btn.active
+   below) -- the yellow badge would disappear into that background, so it
+   flips to an outline treatment instead of staying filled. */
+.global-paint-toggle-btn.active .shortcut-kbd--yellow,
+.color-sidebar-toggle-btn.active .shortcut-kbd--yellow{
+  background:transparent;
+  border-color:var(--hpro-navy);
+  color:var(--hpro-navy);
+}
 
 /* One always-visible dock on the right replacing the old pair of independent
    collapsible panels (see setupRightDockTabs) — exactly one of its two pages
@@ -1432,6 +1479,13 @@ html.vt-fallback.vt-leaving body{
   flex-direction:column;
   gap:8px;
   pointer-events:none;
+  transition:top var(--transition-fast);
+}
+/* Clears #visibility-edit-banner (same top-center spot) while its mode is
+   active, so a toast fired mid-mode (e.g. an enforce* rule's warning) stacks
+   below the persistent banner instead of overlapping it. */
+.toast-stack.has-visibility-banner{
+  top:calc(58px + env(safe-area-inset-top, 0px));
 }
 .toast{
   min-width:240px;
@@ -1452,6 +1506,93 @@ html.vt-fallback.vt-leaving body{
 .toast.ok{ border-left:3px solid var(--ok); }
 .toast.warn{ border-left:3px solid var(--warn); }
 .toast.err{ border-left:3px solid var(--err); }
+
+/* Persistent hint for the V-key visibility-edit mode (setupVisibilityEditMode
+   in app.js) -- unlike .toast above, this stays up the whole time the mode is
+   active rather than auto-dismissing, since "press V to exit" needs to still
+   be readable a minute in, not just for the first couple of seconds. */
+#visibility-edit-banner{
+  position:absolute;
+  top:calc(12px + env(safe-area-inset-top, 0px));
+  left:50%;
+  transform:translateX(-50%);
+  z-index:var(--z-toasts);
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:10px 14px;
+  background:var(--glass-strong);
+  border:1px solid var(--stroke-strong);
+  border-radius:999px;
+  box-shadow:var(--shadow);
+  color:var(--text);
+  font-size:13px;
+  white-space:nowrap;
+  pointer-events:none;
+}
+#visibility-edit-banner kbd{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:18px;
+  padding:2px 6px;
+  border:1px solid #8ab4e8;
+  border-radius:5px;
+  background:#eaf2fc;
+  color:#2f6fd6;
+  font:inherit;
+  font-weight:700;
+  font-size:12px;
+}
+
+/* Screen-edge glow for the V-key visibility-edit mode -- the Tinkercad-style
+   cue that you're in this mode, independent of the banner's text. #viewer-
+   container holds the whole app (canvas, toolbar, both docks -- see
+   index.html), so an inset glow here frames the entire window the way
+   Tinkercad's does, not just the 3D canvas. Layered inset shadows (rather
+   than one) is what gives it a soft gradient falloff instead of a single
+   hard-edged ring; opacity (not display) is what's toggled so the
+   transition below can fade it in/out instead of popping. */
+#visibility-edit-vignette{
+  position:absolute;
+  inset:0;
+  z-index:var(--z-toasts);
+  pointer-events:none;
+  opacity:0;
+  transition:opacity 260ms ease;
+  /* Every layer needs a nonzero blur -- a "0 0 0 Npx" spread-only layer (no
+     blur) is a perfectly crisp ring by definition, which is exactly the hard
+     edge this was meant to avoid. Blur radii here overlap generously with
+     each other so the sum reads as one continuous falloff, not concentric
+     rings. */
+  box-shadow:
+    inset 0 0 50px 0 rgba(70, 140, 255, 0.5),
+    inset 0 0 100px 10px rgba(70, 140, 255, 0.32),
+    inset 0 0 180px 30px rgba(70, 140, 255, 0.16);
+}
+#visibility-edit-vignette.visible{
+  opacity:1;
+}
+
+/* Same screen-edge glow technique as #visibility-edit-vignette above, in
+   the app's own brand yellow (--brand: #FFC83D) instead of blue -- the cue
+   that you're in the "paint pieces" bucket tool (see setBucketMode) rather
+   than the V-key hide/show mode, so the two never look the same. */
+#paint-mode-vignette{
+  position:absolute;
+  inset:0;
+  z-index:var(--z-toasts);
+  pointer-events:none;
+  opacity:0;
+  transition:opacity 260ms ease;
+  box-shadow:
+    inset 0 0 50px 0 rgba(255, 200, 61, 0.55),
+    inset 0 0 100px 10px rgba(255, 200, 61, 0.35),
+    inset 0 0 180px 30px rgba(255, 200, 61, 0.18);
+}
+#paint-mode-vignette.visible{
+  opacity:1;
+}
 
 #skeleton{
   position:absolute;

@@ -123,6 +123,8 @@ const presetButtons = Array.from(document.querySelectorAll('.preset-option[data-
 const presetLabelEl = document.getElementById('preset-active-label');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
 const resetBtn = document.getElementById('resetBtn');
+const projectionBtn = document.getElementById('projectionBtn');
+const visibilityModeBtn = document.getElementById('visibilityModeBtn');
 const factoryResetBtn = document.getElementById('factoryResetBtn');
 const randomizeBtn = document.getElementById('randomizeBtn');
 const shareBtn = document.getElementById('shareBtn');
@@ -178,7 +180,17 @@ renderer.setClearColor(0xffffff, 0);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+const perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+// Placeholder frustum -- real bounds come from updateCameraProjection() once
+// there's a real container size, and again from toggleProjection() (matched
+// to whatever the perspective camera was showing) the first time it's used.
+const orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+let camera = perspectiveCamera;
+// Orthographic camera's vertical half-extent at zoom=1 -- kept independent of
+// aspect ratio (see updateCameraProjection) so a window resize alone never
+// changes the apparent zoom level while in orthographic mode.
+let orthoViewSize = 60;
+
 camera.position.set(-91, 54, 111);
 camera.lookAt(9, 23, -3);
 
@@ -267,6 +279,37 @@ let compatibilityMap = null;
 // restore/preset pass calling refreshConflictBadges): a `const` declared
 // further down would still be in its temporal dead zone at that point.
 const activeGhosts = {};
+
+// True while the Tinkercad-style "press V" visibility-edit mode is active
+// (see setupVisibilityEditMode below): every hidden part is rendered as a
+// translucent blue-outlined ghost and clicking any part in the viewport
+// toggles it, until V exits and hidden parts go back to actually invisible.
+let visibilityEditMode = false;
+
+const GHOST_FILL_OPACITY = 0.3;
+const GHOST_EDGE_BASE_OPACITY = 0.7;
+const GHOST_EDGE_PULSE_AMPLITUDE = 0.22;
+const GHOST_FADE_MS = 260;
+const GHOST_PULSE_PERIOD_MS = 1800;
+// Plain opacity pulsing on a 1px-ish outline barely registers -- WebGL line
+// rendering leans on antialiasing/sub-pixel coverage more than true alpha
+// blending, so an opacity swing that reads clearly on a filled triangle is
+// nearly invisible on a thin line. Pulsing the line's color/brightness too
+// (crossfading toward a lighter blue at the peak) is what actually makes the
+// "breathing" edge glow visible, matching Tinkercad's hidden-shape highlight.
+const GHOST_EDGE_COLOR_BASE = new THREE.Color(0x3d7fff);
+const GHOST_EDGE_COLOR_PEAK = new THREE.Color(0xbcdcff);
+
+// Meshes currently animating as a V-mode ghost -- fading in, pulsing at
+// steady state, or fading out -- tracked independently of visibilityEditMode
+// itself so a fade-out kicked off right as the user exits the mode (or
+// clicks a ghost to reveal it) still gets to finish smoothly instead of
+// being cut off the instant the mode flag flips. See updateGhostAnimation.
+// Declared up here (not next to updateGhostAnimation itself), same reason as
+// activeGhosts above: bootstrap()'s first animate() call reaches this
+// synchronously, before a `const` declared further down the file would have
+// left its temporal dead zone.
+const ghostAnimNodes = new Set();
 
 let activePresetKey = 'starter';
 let isApplyingPreset = false;
@@ -516,6 +559,7 @@ function bootstrap() {
   setupModelHoverPopup();
   setupVariantGrid();
   setupKeyboardNav();
+  setupVisibilityShortcut();
   setupCameraDebugReadout();
   setupGlobalClickHandler();
   setupArPreview();
@@ -560,14 +604,34 @@ function bootstrap() {
   saveStateToLocal();
 }
 
+// Re-fits whichever camera (perspective or orthographic) is currently active
+// to the container's current aspect ratio. Perspective just needs .aspect;
+// orthographic needs its left/right/top/bottom recomputed from orthoViewSize
+// (its zoom-independent vertical half-extent) times the aspect ratio, so a
+// resize alone reflows the frame without changing the apparent zoom level.
+function updateCameraProjection() {
+  const w = container.clientWidth || window.innerWidth;
+  const h = container.clientHeight || window.innerHeight;
+  if (!w || !h) return;
+  const aspect = w / h;
+  if (camera.isPerspectiveCamera) {
+    camera.aspect = aspect;
+  } else {
+    camera.left = -orthoViewSize * aspect;
+    camera.right = orthoViewSize * aspect;
+    camera.top = orthoViewSize;
+    camera.bottom = -orthoViewSize;
+  }
+  camera.updateProjectionMatrix();
+}
+
 function setupResize() {
   function onResize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
     if (!w || !h) return;
     renderer.setSize(w, h);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    updateCameraProjection();
     reallyClosePalette();
   }
 
@@ -650,12 +714,22 @@ function setupInfo() {
   infoTip.addEventListener('mouseenter', () => clearTimeout(tipTimeout));
   infoTip.addEventListener('mouseleave', hideInfoTip);
 
-  // Touch devices have no hover, so tapping the info button toggles the tip directly.
+  // On desktop, clicking the info button jumps straight into the guided
+  // tour -- the hover tooltip (with its own "Quick tour" link) is still
+  // there for anyone who just wants the one-line "what is this" text
+  // without launching anything. Touch devices have no hover and the tour
+  // never runs there (see startTour), so tapping just toggles the tip,
+  // same as before.
   infoBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     clearTimeout(tipTimeout);
-    if (infoTip.style.display === 'block') hideInfoTip();
-    else showInfoTip();
+    if (isTouchLikeDevice()) {
+      if (infoTip.style.display === 'block') hideInfoTip();
+      else showInfoTip();
+      return;
+    }
+    hideInfoTip();
+    startTour(true);
   });
   document.addEventListener('click', (event) => {
     if (event.target.closest('#info-container')) return;
@@ -1578,9 +1652,14 @@ function setupModelHoverPopup() {
 // comes from.
 function setBucketMode(part) {
   if (bucketModePart === part) return;
+  // Mutually exclusive with the V-key hide/show mode -- entering one always
+  // exits the other (enterVisibilityEditMode already does the reverse), so
+  // their two vignettes (blue vs. yellow, see below) never show at once.
+  if (part && visibilityEditMode) exitVisibilityEditMode();
   clearPaintHover();
   if (part) hideModelHoverPopupNow();
   bucketModePart = part;
+  document.getElementById('paint-mode-vignette')?.classList.toggle('visible', !!part);
 
   document.querySelectorAll('[data-role="bucket-toggle"]').forEach((btn) => {
     const active = btn.dataset.part === part;
@@ -1640,6 +1719,13 @@ function setupBucketTool() {
   // at all — that second case is what the "click a piece to open its variant
   // grid" feature below uses instead, so it can land on any visible part.
   function getPaintTargetGroups() {
+    // Visibility-edit mode (see setupVisibilityShortcut) needs hidden parts'
+    // ghost previews to be clickable too, not just the currently-shown ones.
+    if (visibilityEditMode) {
+      return Object.keys(loadedMods)
+        .filter((part) => loadedMods[part])
+        .map((part) => ({ part, model: loadedMods[part] }));
+    }
     if (bucketModePart === GLOBAL_PAINT_KEY || !bucketModePart) {
       return Object.keys(loadedMods)
         .filter((part) => loadedMods[part] && partVis[part])
@@ -1733,7 +1819,12 @@ function setupBucketTool() {
     // rings mean a near-miss usually still lands — only the plain "click to
     // browse" case needs the cursor to reflect whether this exact spot has
     // anything to click.
-    if (!bucketModePart) {
+    if (visibilityEditMode) {
+      // No variant-browse popup here -- in this mode a click toggles
+      // visibility instead, so a popup with its own prev/next buttons would
+      // just be a second, contradictory way to act on the same hover.
+      renderer.domElement.style.cursor = hit ? 'pointer' : '';
+    } else if (!bucketModePart) {
       renderer.domElement.style.cursor = hit ? 'pointer' : '';
       if (hit) showModelHoverPopup(hit.part, event.clientX, event.clientY);
       else scheduleHideModelHoverPopup();
@@ -1751,6 +1842,14 @@ function setupBucketTool() {
 
   renderer.domElement.addEventListener('click', (event) => {
     const hit = getPaintHit(event.clientX, event.clientY);
+
+    // Visibility-edit mode takes over the click entirely -- toggle whatever
+    // was hit (shown -> ghost, ghost -> shown) and skip painting/variant
+    // browsing until the user presses V (or Escape) to leave the mode.
+    if (visibilityEditMode) {
+      if (hit) toggleVisibilityEditPart(hit.part);
+      return;
+    }
 
     if (!hit) {
       // A miss while painting is a no-op, same as always. A miss while just
@@ -1825,6 +1924,16 @@ function setupGlobalPaintTool() {
   btn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
+    setBucketMode(bucketModePart === GLOBAL_PAINT_KEY ? null : GLOBAL_PAINT_KEY);
+  });
+
+  // "P" mirrors the button itself -- toggles the global paint tool on/off,
+  // same as "V" does for visibility-edit mode (see setupVisibilityShortcut).
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'p' && event.key !== 'P') return;
+    if (event.target.matches('input, textarea, [contenteditable]')) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    event.preventDefault();
     setBucketMode(bucketModePart === GLOBAL_PAINT_KEY ? null : GLOBAL_PAINT_KEY);
   });
 
@@ -2291,6 +2400,121 @@ function setupKeyboardNav() {
       event.preventDefault();
     }
   });
+}
+
+// Tinkercad-style visibility-edit mode: press "V" to enter a mode where
+// every currently-hidden part shows up as a translucent blue-outlined ghost
+// (see setGhostHighlight/enterVisibilityEditMode below) and clicking ANY
+// part in the viewport -- shown or ghosted -- toggles it, exactly like
+// Tinkercad's own "V" tool. Press V (or Escape) again to exit; whatever's
+// still hidden at that point goes back to being actually invisible.
+function setupVisibilityShortcut() {
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      if (visibilityEditMode) exitVisibilityEditMode();
+      return;
+    }
+    if (event.key !== 'v' && event.key !== 'V') return;
+    if (event.target.matches('input, textarea, [contenteditable]')) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    if (visibilityEditMode) exitVisibilityEditMode();
+    else enterVisibilityEditMode();
+    event.preventDefault();
+  });
+
+  // The keyboard shortcut alone has no way to be discovered the first time --
+  // this button (under "Part colors" in the left tools column) is the visible
+  // entry point that teaches people the feature exists at all.
+  visibilityModeBtn.addEventListener('click', () => {
+    if (visibilityEditMode) exitVisibilityEditMode();
+    else enterVisibilityEditMode();
+  });
+}
+
+function enterVisibilityEditMode() {
+  if (visibilityEditMode) return;
+  // Mutually exclusive with the other click-driven viewport modes -- a
+  // click while in this mode always means "toggle visibility", so paint
+  // mode and any open variant grid need to get out of the way first.
+  if (bucketModePart) setBucketMode(null);
+  if (openVariantGridPart) closeVariantGrid();
+  visibilityEditMode = true;
+  hideModelHoverPopupNow();
+  for (const part of Object.keys(modelSets)) {
+    if (partVis[part] || !loadedMods[part]) continue;
+    if (!loadedMods[part].parent) scene.add(loadedMods[part]);
+    loadedMods[part].visible = true;
+    setGhostHighlight(part, true);
+  }
+  document.getElementById('visibility-edit-banner')?.classList.remove('u-hidden');
+  document.getElementById('visibility-edit-vignette')?.classList.add('visible');
+  toastStack.classList.add('has-visibility-banner');
+  visibilityModeBtn.classList.add('active');
+  visibilityModeBtn.setAttribute('aria-pressed', 'true');
+  visibilityModeBtn.querySelector('.material-icons').textContent = 'visibility_off';
+}
+
+function exitVisibilityEditMode() {
+  if (!visibilityEditMode) return;
+  visibilityEditMode = false;
+  for (const part of Object.keys(modelSets)) {
+    if (partVis[part] || !loadedMods[part]) continue;
+    // Just starts the fade-out -- updateGhostAnimation restores the real
+    // material and sets .visible = false itself once it finishes, so the
+    // part doesn't just vanish the instant the mode is exited.
+    setGhostHighlight(part, false);
+  }
+  renderer.domElement.style.cursor = '';
+  document.getElementById('visibility-edit-banner')?.classList.add('u-hidden');
+  document.getElementById('visibility-edit-vignette')?.classList.remove('visible');
+  toastStack.classList.remove('has-visibility-banner');
+  visibilityModeBtn.classList.remove('active');
+  visibilityModeBtn.setAttribute('aria-pressed', 'false');
+  visibilityModeBtn.querySelector('.material-icons').textContent = 'visibility';
+}
+
+// Flips `part`'s real show/hide state (partVis) from inside the
+// visibility-edit mode -- same underlying toggle as clicking the eye icon
+// in the part's row (see the role === 'visibility' branch below), just
+// triggered by clicking the part itself in the 3D view instead. Keeps every
+// part rendered (real material if shown, ghost if hidden) for as long as
+// the mode stays open, so the enforce* calls below -- which can flip OTHER
+// parts' partVis too (e.g. enabling arms auto-hides bumper) -- read back
+// correctly rather than snapping a part invisible mid-preview.
+function toggleVisibilityEditPart(part) {
+  if (!modelSets[part]) return;
+  partVis[part] = !partVis[part];
+
+  const visBtn = document.getElementById(`${part}-visibility`);
+  if (visBtn) visBtn.innerHTML = `<span class="material-icons">${partVis[part] ? 'visibility' : 'visibility_off'}</span>`;
+
+  if (part === 'spacer') {
+    if (partVis.spacer) loadModel('spacer');
+    loadModel('bottom');
+    loadModel('wheels');
+  } else if (loadedMods[part]) {
+    if (!loadedMods[part].parent) scene.add(loadedMods[part]);
+  } else if (partVis[part]) {
+    loadModel(part, true);
+  }
+
+  if (partVis[part]) enforceArmsBumperExclusion(part);
+  enforceBottomMotionExclusion();
+  enforceHatRequiresTopHats();
+  refreshConflictBadges();
+  updateComboChip();
+  markCustomPreset();
+
+  // Resync every part's on-screen state to match its current partVis --
+  // not just the one that was clicked, since the enforce* calls above may
+  // have silently hidden/shown others too.
+  for (const p of Object.keys(modelSets)) {
+    if (!loadedMods[p]) continue;
+    if (!loadedMods[p].parent) scene.add(loadedMods[p]);
+    loadedMods[p].visible = true;
+    setGhostHighlight(p, !partVis[p]);
+  }
 }
 
 // TEMPORARY dev helper for picking the default camera angle -- rotate/zoom
@@ -3612,6 +3836,132 @@ function setConflictHighlight(part, highlighted) {
   });
 }
 
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+// Starts (or reverses) `part`'s ghost animation -- doesn't set final
+// opacity/visibility directly, just the one-time setup (material swap,
+// zero-opacity edge outline, phase = 'in') or flips phase to 'out'; the
+// actual fade math and end-of-fade cleanup both live in updateGhostAnimation
+// below, driven every frame from animate(). Reversing mid-fade (ghosted
+// requested again before a fade-out finished, or vice versa) reuses the
+// still-live material/edges rather than recreating them, so rapid toggling
+// can't leak or double up geometry.
+function setGhostHighlight(part, ghosted) {
+  const obj = loadedMods[part];
+  if (!obj) return;
+  const now = performance.now();
+  obj.traverse((node) => {
+    if (!node.isMesh) return;
+    const phase = node.userData.ghostPhase;
+    if (ghosted) {
+      if (phase === 'in' || phase === 'steady') return;
+      if (phase !== 'out') {
+        node.userData.preGhostMaterial = node.material;
+        node.userData.ghostPart = part;
+        node.material = new THREE.MeshBasicMaterial({
+          color: 0x8ab4e8,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          // Some hidden parts (e.g. Bumper's mounting plate) sit almost flush
+          // against another part's own surface -- two transparent triangles
+          // that close together sort unstably frame-to-frame as the camera
+          // orbits, which reads as flickering/"glitching". Nudging the ghost
+          // slightly toward the camera in depth (without moving it in space)
+          // gives the sort a consistent winner instead.
+          polygonOffset: true,
+          polygonOffsetFactor: -4,
+          polygonOffsetUnits: -4
+        });
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(node.geometry, 30),
+          new THREE.LineBasicMaterial({ color: GHOST_EDGE_COLOR_BASE.getHex(), transparent: true, opacity: 0 })
+        );
+        node.add(edges);
+        node.userData.ghostEdges = edges;
+      }
+      node.userData.ghostPhase = 'in';
+      node.userData.ghostFadeStart = now;
+      ghostAnimNodes.add(node);
+    } else {
+      if (phase !== 'in' && phase !== 'steady') return;
+      node.userData.ghostPhase = 'out';
+      node.userData.ghostFadeStart = now;
+      ghostAnimNodes.add(node);
+    }
+  });
+}
+
+// Drives every in-flight ghost animation: eases fill+edge opacity in from 0
+// on 'in', gives the edge outline a slow color/opacity "breathing" pulse on
+// 'steady', and eases both back down to 0 on 'out' -- restoring the real
+// material and (only if the part is still actually supposed to be hidden;
+// it might instead have just been revealed by a click mid-fade) hiding the
+// part once the fade-out finishes. Runs every frame from animate(); empty-
+// Set iteration is cheap, so no need to gate it on visibilityEditMode.
+function updateGhostAnimation(now) {
+  if (!ghostAnimNodes.size) return;
+  for (const node of ghostAnimNodes) {
+    const edges = node.userData.ghostEdges;
+    if (!edges) {
+      ghostAnimNodes.delete(node);
+      continue;
+    }
+    const phase = node.userData.ghostPhase;
+    const t = Math.min(1, (now - node.userData.ghostFadeStart) / GHOST_FADE_MS);
+
+    if (phase === 'in') {
+      const eased = easeOutCubic(t);
+      node.material.opacity = eased * GHOST_FILL_OPACITY;
+      edges.material.opacity = eased * GHOST_EDGE_BASE_OPACITY;
+      edges.material.color.copy(GHOST_EDGE_COLOR_BASE);
+      if (t >= 1) {
+        node.userData.ghostPhase = 'steady';
+        // Restart the phase clock here so the pulse's sine wave begins at
+        // its zero-crossing (opacity = GHOST_EDGE_BASE_OPACITY) exactly
+        // where the fade-in left off, instead of jumping to wherever a
+        // clock that had already been running since fade-in started
+        // happens to land.
+        node.userData.ghostFadeStart = now;
+      }
+    } else if (phase === 'steady') {
+      const pulse01 = (Math.sin(((now - node.userData.ghostFadeStart) / GHOST_PULSE_PERIOD_MS) * Math.PI * 2) + 1) / 2;
+      edges.material.color.lerpColors(GHOST_EDGE_COLOR_BASE, GHOST_EDGE_COLOR_PEAK, pulse01);
+      edges.material.opacity = GHOST_EDGE_BASE_OPACITY - GHOST_EDGE_PULSE_AMPLITUDE + pulse01 * GHOST_EDGE_PULSE_AMPLITUDE * 2;
+      node.material.opacity = GHOST_FILL_OPACITY;
+    } else {
+      const remaining = 1 - easeOutCubic(t);
+      node.material.opacity = remaining * GHOST_FILL_OPACITY;
+      edges.material.opacity = remaining * GHOST_EDGE_BASE_OPACITY;
+      if (t >= 1) {
+        if (node.userData.preGhostMaterial) {
+          node.material = node.userData.preGhostMaterial;
+          delete node.userData.preGhostMaterial;
+        }
+        node.remove(edges);
+        edges.geometry.dispose();
+        edges.material.dispose();
+        delete node.userData.ghostEdges;
+        delete node.userData.ghostPhase;
+        delete node.userData.ghostFadeStart;
+        ghostAnimNodes.delete(node);
+        const part = node.userData.ghostPart;
+        delete node.userData.ghostPart;
+        // Only actually hide the part if it's still meant to be hidden --
+        // this same fade-out path also runs when a ghost gets clicked to
+        // reveal it, in which case partVis is already true and the part
+        // should stay visible with its now-restored real material.
+        if (part && loadedMods[part] && !partVis[part]) {
+          loadedMods[part].visible = false;
+        }
+      }
+    }
+  }
+}
+
 // Shows/hides each part's conflict badge, keeps the automatic red/transparent
 // clash highlight in sync, and retires any hidden-part ghost preview that no
 // longer applies. Cheap and idempotent like the enforce* functions above, so
@@ -4126,15 +4476,24 @@ function startTour(force = false) {
   if (!force && !shouldAutoStartTour()) return;
   tourRunning = true;
 
+  // Each step's `dock` ('mixes' | 'parts') switches the right-dock tab to
+  // wherever its target actually lives -- both #preset-carousel and
+  // #top-pill etc. sit behind one of the two dock-tab-* tabs (see
+  // setupRightDockTabs) and are display:none while their tab isn't active,
+  // so a step that doesn't switch to the right one first would highlight
+  // nothing at all. `colorSidebar: true` similarly opens the collapsed
+  // #color-sidebar before targeting a pill inside it.
   const steps = [
-    { target: '#preset-toggle', title: 'Presets', body: 'Start from a ready-made configuration. Click to open and pick one.' },
-    { target: '#controls-toggle', title: 'Panels', body: 'Switch between Essential parts and Advanced add-ons.' },
+    { target: '#preset-carousel', dock: 'mixes', title: 'Ready-made mixes', body: 'Pick a full preset combo to start from, or switch to the Parts tab to build your own from scratch.' },
+    { target: '#controls-toggle', dock: 'parts', title: 'Panels', body: 'Switch between Essential parts and Advanced add-ons.' },
     { target: '#globalPaintBtn', title: 'Paint & Browse', body: 'Click any piece right on the model to jump to its variants. Click here first to paint pieces any color instead, straight on the model.' },
-    { target: '#top-pill', title: 'Colors', body: 'Click the color pill for quick presets, or drag in the full picker for any shade you want.' },
-    { target: '#top-controls [data-role="next"]', title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
-    { target: '#top-visibility', title: 'Visibility', body: 'Temporarily hide or show a part to see how it affects the build.' },
-    { target: '#top-controls [data-role="print"]', title: 'Direct 3D Print', body: 'Open the current part directly in your slicer using the orcaslicer:// link.' },
-    { target: '#download-group', title: 'Export', body: 'Download STL instantly, or open the menu for GLB and STEP.' }
+    { target: '#top-pill', dock: 'parts', essential: true, colorSidebar: true, title: 'Colors', body: 'Click the color pill for quick presets, or drag in the full picker for any shade you want.' },
+    { target: '#top-controls [data-role="next"]', dock: 'parts', essential: true, title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
+    { target: '#top-visibility', dock: 'parts', essential: true, title: 'Visibility', body: 'Temporarily hide or show a single part to see how it affects the build.' },
+    { target: '#visibilityModeBtn', dock: 'parts', title: 'Hide / show parts', body: 'Preview several hidden parts at once -- they turn into clickable blue ghosts you can tap to toggle. Press V anytime to jump straight into this mode.' },
+    { target: '#top-controls [data-role="print"]', dock: 'parts', essential: true, title: 'Direct 3D Print', body: 'Open the current part directly in your slicer using the orcaslicer:// link.' },
+    { target: '#download-group', title: 'Export', body: 'Download STL instantly, or open the menu for GLB and STEP.' },
+    { target: '#projectionBtn', title: 'Perspective / Orthographic', body: 'Switch the camera between a realistic perspective view and a flat, true-to-scale orthographic one.' }
   ];
 
   const tip = document.createElement('div');
@@ -4199,11 +4558,26 @@ function startTour(force = false) {
     });
   }
 
+  // Clicks the real tab buttons rather than duplicating setupRightDockTabs'
+  // own switching logic -- a no-op if the requested tab is already active.
+  function switchRightDockTab(which) {
+    const btn = document.getElementById(which === 'mixes' ? 'dock-tab-mixes' : 'dock-tab-parts');
+    if (btn && !btn.classList.contains('active')) btn.click();
+  }
+
+  function openColorSidebar() {
+    const sidebar = document.getElementById('color-sidebar');
+    const toggle = document.getElementById('color-sidebar-toggle');
+    if (sidebar && toggle && !sidebar.classList.contains('open')) toggle.click();
+  }
+
   function show() {
+    const step = steps[index];
+    if (step.dock) switchRightDockTab(step.dock);
     // Colors/Variants/Visibility/Print steps all target #top-* controls, which
     // only exist in the DOM (and are only reachable) while Essential is showing.
-    if (index >= 3 && index <= 6) showEssentialPanel();
-    const step = steps[index];
+    if (step.essential) showEssentialPanel();
+    if (step.colorSidebar) openColorSidebar();
     const target = document.querySelector(step.target);
     if (!target) {
       if (index < steps.length - 1) {
@@ -4238,7 +4612,17 @@ function startTour(force = false) {
     writeTourState(state);
   }
 
-  btnNext.addEventListener('click', () => {
+  btnNext.addEventListener('click', (event) => {
+    // show() can now open the color sidebar / switch dock tabs on the
+    // viewer's behalf (see switchRightDockTab/openColorSidebar above) by
+    // dispatching a synthetic click on THEIR toggle buttons -- that nested
+    // click bubbles and resolves fine, but this OUTER click (on Next itself)
+    // then keeps bubbling too once this handler returns, reaching e.g. the
+    // color sidebar's own "click outside closes it" document listener with
+    // event.target = the Next button, which isn't inside the sidebar, so it
+    // would immediately close what show() just opened. Stopping it here
+    // keeps this button's click from being mistaken for a click "outside".
+    event.stopPropagation();
     if (index < steps.length - 1) {
       index += 1;
       show();
@@ -4247,7 +4631,8 @@ function startTour(force = false) {
       toast('You can reopen the tour from the Info button.', 'ok', 1800);
     }
   });
-  btnPrev.addEventListener('click', () => {
+  btnPrev.addEventListener('click', (event) => {
+    event.stopPropagation();
     if (index > 0) {
       index -= 1;
       show();
@@ -4265,6 +4650,7 @@ function animate() {
   if (renderingPaused) return;
   controls.update();
   updatePartPops(performance.now());
+  updateGhostAnimation(performance.now());
   paintHoverFlush?.();
   renderer.render(scene, camera);
 }
@@ -4273,6 +4659,47 @@ resetBtn.addEventListener('click', () => {
   controls.reset();
   toast('View reset', 'ok', 900);
 });
+
+// Swaps the active camera between perspective and orthographic, matching
+// the new camera's apparent zoom/framing to the old one's so the switch
+// reads as a projection change, not a jump-cut to a different shot.
+function toggleProjection() {
+  const switchingToOrtho = camera.isPerspectiveCamera;
+  const next = switchingToOrtho ? orthographicCamera : perspectiveCamera;
+  const dir = camera.position.clone().sub(controls.target).normalize();
+
+  if (switchingToOrtho) {
+    const distance = camera.position.distanceTo(controls.target);
+    const fovRad = THREE.MathUtils.degToRad(camera.fov);
+    orthoViewSize = (Math.tan(fovRad / 2) * distance) / camera.zoom;
+    next.zoom = 1;
+    next.position.copy(camera.position);
+  } else {
+    // Reverse: place the perspective camera at whatever distance reproduces
+    // the ortho camera's current apparent size (orthoViewSize / its zoom).
+    const fovRad = THREE.MathUtils.degToRad(next.fov);
+    const halfHeight = orthoViewSize / camera.zoom;
+    const distance = halfHeight / Math.tan(fovRad / 2);
+    next.position.copy(controls.target).addScaledVector(dir, distance);
+  }
+  next.quaternion.copy(camera.quaternion);
+
+  camera = next;
+  controls.object = camera;
+  updateCameraProjection();
+  controls.update();
+  controls.saveState();
+
+  const nowPerspective = camera.isPerspectiveCamera;
+  projectionBtn.innerHTML = `<span class="material-icons">${nowPerspective ? 'videocam' : 'crop_din'}</span>`;
+  const label = nowPerspective ? 'Switch to orthographic view' : 'Switch to perspective view';
+  projectionBtn.title = label;
+  projectionBtn.setAttribute('aria-label', label);
+  projectionBtn.setAttribute('aria-pressed', String(!nowPerspective));
+  toast(nowPerspective ? 'Perspective view' : 'Orthographic view', 'ok', 900);
+}
+
+projectionBtn.addEventListener('click', toggleProjection);
 
 factoryResetBtn.addEventListener('click', () => {
   resetToFactory();
