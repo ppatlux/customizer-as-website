@@ -5,6 +5,11 @@ import { ASSET_MANIFEST } from './asset-manifest.js';
 import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer } from './slicer-preference.js';
 
 const COLOR_OPTIONS = ['#231F20', '#549EF7', '#00D072', '#FFBD3B', '#A89EFA', '#CE4A4A', '#E6E6E6', '#FFFFFF'];
+// Pseudo part-key for the global "paint any piece" tool (#globalPaintBtn) —
+// not a real entry in modelSets/loadedMods. Bucket mode keys off this the
+// same way it keys off a real part string; see getPaintHit/setBucketMode for
+// the one place that actually branches on it.
+const GLOBAL_PAINT_KEY = '__all__';
 const PART_META = [
   { key: 'top', label: 'Top', panel: 'essential' },
   { key: 'hat', label: 'Hat', panel: 'essential' },
@@ -20,6 +25,8 @@ const PART_META = [
 
 const MODEL_Y_OFFSET = 30;
 const STATE_KEY = 'hp_robot_customizer_state';
+const COLOR_HISTORY_KEY = 'hp_robot_color_history';
+const COLOR_HISTORY_MAX = 10;
 const TOUR_VERSION = 'standalone-v1';
 const TOUR_STATE_KEY = 'hp_robot_tour_state';
 const ADVANCED_DEFAULTS = new Set(['hat', 'arms', 'bumper', 'tail']);
@@ -102,29 +109,6 @@ const presets = {
   }
 };
 
-// The #part-map mini viewport's reference build — every visually-distinct part
-// at once, so it doubles as a "here's everything you can customize" index even
-// for parts hidden by default (hat/arms). Reuses "sensor" since it's the only
-// preset with both hat and arms visible; swap the key for a different look.
-const PART_MAP_PRESET_KEY = 'Walk & Roll';
-const PART_MAP_PARTS = ['top', 'middle', 'face', 'bottom', 'wheels', 'hat', 'arms'];
-
-// Per-part tint for the reference build, pulled from the customizer's own
-// COLOR_OPTIONS ('#549EF7' blue, '#00D072' green, '#E6E6E6' silver) so the
-// map's colors always match what's actually pickable.
-const PART_MAP_TINTS = {
-  hat: '#00D072',
-  top: '#E6E6E6',
-  middle: '#549EF7',
-  face: '#549EF7',
-  bottom: '#E6E6E6',
-  wheels: '#549EF7',
-  arms: '#549EF7'
-};
-// Blended toward the neutral base gray so the map reads as one cohesive
-// object with a hint of color rather than a full-saturation preview.
-const PART_MAP_TINT_STRENGTH = 0.35;
-
 renderPanels();
 
 const container = document.getElementById('viewer-container');
@@ -181,21 +165,25 @@ const consentCancel = document.getElementById('consent-cancel');
 const loader = new GLTFLoader();
 loader.setCrossOrigin('anonymous');
 
+// No scene.background / opaque clear color -- the canvas renders transparent
+// so the page's own background (the dot-grid pattern on body, see app.css)
+// shows through behind the robot instead of being hidden under a flat fill.
+// The ground plane is a ShadowMaterial (near-fully transparent itself, only
+// darkening where a shadow actually falls), so this doesn't lose anything.
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xecf4f9);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio || 1);
-renderer.setClearColor(0xecf4f9);
+renderer.setClearColor(0xffffff, 0);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-camera.position.set(-90, 100, 120);
-camera.lookAt(0, 0, 0);
+camera.position.set(-91, 54, 111);
+camera.lookAt(9, 23, -3);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0, 0);
+controls.target.set(9, 23, -3);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.update();
@@ -255,6 +243,12 @@ const currentIdx = {};
 const loadedMods = {};
 const loadGeneration = {};
 const modelCols = {};
+// Per-object paint overrides for parts built from multiple meshes (see the
+// "paint pieces" bucket tool). Shape: { [part]: { [variantIndex]: { [meshIndex]: hex } } }.
+// Keyed by variant index (not just part) because mesh layout/order differs
+// between variants of the same part — an override that made sense for one
+// variant's mesh #3 would be meaningless (or wrong) applied to another's.
+const modelMeshCols = {};
 const partVis = {};
 const activePops = new Map();
 const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -292,14 +286,32 @@ let mobileSheetHandleEl = null;
 let renderingPaused = false;
 let openVariantGridPart = null;
 let thumbRenderer3D = null;
-// Set by setupPartMap() once it's running — lets adjustControlsWidth() (which
-// knows nothing about the part-map) notify it that the side panel's width may
-// have changed, so the map's minimum size can follow. Stays null on touch
-// devices, where the part-map never gets set up at all.
-let partMapWidthSync = null;
+// Part currently in "paint pieces" bucket mode, or null. While set, clicking a
+// mesh belonging to loadedMods[bucketModePart] in the main viewer paints just
+// that mesh with the palette's current brush color instead of recoloring the
+// whole part. See setupBucketTool().
+let bucketModePart = null;
+let paintHoverMesh = null;
+// Set by setupBucketTool() — called once per rendered frame from animate() to
+// process the latest queued pointermove for bucket-paint hover, batching the
+// (potentially expensive) raycast instead of running it on every raw event.
+let paintHoverFlush = null;
 const variantThumbCache = {};
 const variantThumbPromises = {};
+const presetThumbCache = {};
+const presetThumbPromises = {};
+// Guards renderPresetCarousel against rebuilding its cards on every open —
+// set true once, checked/read as early as bootstrap() itself (called below,
+// synchronously, from setupRightDockTabs), so it has to live up here with
+// the rest of this early state rather than next to the function that uses it.
+let presetCarouselBuilt = false;
 const pickerHSV = {};
+// Most-recently-used brush colors across any bucket-paint action (global or
+// per-part), most recent first — see recordColorHistory. Persisted across
+// sessions in localStorage; only #globalPaintBtn's panel displays it today
+// (renderColorHistorySwatches), but every paint action feeds it regardless
+// of which palette it came from.
+let colorHistory = [];
 
 for (const part of Object.keys(modelSets)) {
   currentIdx[part] = 0;
@@ -313,12 +325,89 @@ bootstrap();
 function renderPanels() {
   const essential = document.getElementById('panel-essential');
   essential.innerHTML = PART_META.map(renderPartSection).join('');
+  renderColorSidebar();
+  renderGlobalPaintPalette();
+}
+
+// Secondary, collapsed-by-default panel listing every part's color in one
+// place, for anyone who wants to target one specific part rather than paint
+// freehand — see #color-sidebar-toggle. The primary way to change color is
+// #globalPaintBtn (renderGlobalPaintPalette below), which paints straight on
+// the model without picking a part first. Reuses the exact same color-palette
+// popover and data-role="color-pill" wiring the old per-part pill used;
+// only the trigger's location and size change. Excludes part.hidden entries
+// (tail has no assets yet, so there's nothing for its pill to control).
+function renderColorSidebar() {
+  const host = document.getElementById('color-sidebar');
+  if (!host) return;
+  host.innerHTML = PART_META.filter((part) => !part.hidden).map((part) => `
+    <div class="color-sidebar-row">
+      <span class="color-sidebar-label">${part.label}</span>
+      <div class="color-pill color-pill--lg" id="${part.key}-pill" data-role="color-pill" data-part="${part.key}" title="Pick color for ${part.label}"></div>
+    </div>
+  `).join('');
+}
+
+// The color picker for #globalPaintBtn (see #global-paint-picker in
+// index.html) — the same swatch-grid/hue-picker markup every per-part
+// palette uses, just not tied to any one part, and always visible rather
+// than something you have to open first. Everything here uses the
+// pseudo-part key GLOBAL_PAINT_KEY, which the rest of the paint-bucket code
+// (setBrushColor, the swatch/hex/drag handlers, etc.) already treats
+// generically — see the `part === GLOBAL_PAINT_KEY` checks added alongside
+// their normal `bucketModePart === part` ones, needed because this picker
+// stays interactive even while paint mode itself is off. Only click-to-paint
+// itself (getPaintTargetGroups) special-cases GLOBAL_PAINT_KEY to search
+// every visible part instead of one fixed model.
+function renderGlobalPaintPalette() {
+  const host = document.getElementById('global-paint-picker');
+  if (!host) return;
+  const swatches = COLOR_OPTIONS.map((color) => {
+    const whiteClass = color === '#FFFFFF' ? ' white' : '';
+    return `<div class="color-swatch${whiteClass}" data-role="swatch" data-part="${GLOBAL_PAINT_KEY}" data-color="${color}" style="background:${color}" title="${color}"></div>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div id="${GLOBAL_PAINT_KEY}-palette" class="color-palette-inline">
+      <div class="color-swatch-grid">${swatches}</div>
+      <div class="color-history-row u-hidden" data-role="color-history-row">
+        <span class="color-history-label">Recent</span>
+        <div class="color-history-swatches" data-role="color-history"></div>
+      </div>
+      <div class="color-picker-advanced">
+        <div class="color-picker-sv" data-role="picker-sv" data-part="${GLOBAL_PAINT_KEY}">
+          <div class="color-picker-sv-thumb" data-role="picker-sv-thumb"></div>
+        </div>
+        <div class="color-picker-hue" data-role="picker-hue" data-part="${GLOBAL_PAINT_KEY}">
+          <div class="color-picker-hue-thumb" data-role="picker-hue-thumb"></div>
+        </div>
+        <div class="color-picker-hex-row">
+          <span class="color-picker-preview" data-role="picker-preview"></span>
+          <span class="color-picker-hash">#</span>
+          <input type="text" class="color-picker-hex" data-role="picker-hex" data-part="${GLOBAL_PAINT_KEY}" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Brush color">
+        </div>
+      </div>
+      <button type="button" class="bucket-reset-btn u-hidden" data-role="global-reset" title="Reset all custom piece colors">
+        <span class="material-icons">restart_alt</span>
+        <span data-role="global-reset-label">Reset all</span>
+      </button>
+      <p class="bucket-hint">Click any piece on the model to paint it. Right-click a painted piece to reset just that one.</p>
+    </div>
+  `;
+  // colorHistory itself isn't loaded yet at this point (see the pickerHSV
+  // comment below — same module-init-order reason); renderColorHistorySwatches()
+  // runs again once setupGlobalPaintTool() has actually loaded it.
+  // Not seeded here: this runs from renderPanels(), called at module init
+  // before pickerHSV exists yet (it's declared further down, alongside the
+  // rest of the UI-interaction state). setupGlobalPaintTool() seeds it once
+  // bootstrap() actually starts, which is early enough that it's already
+  // showing a real color before the first paint of the page.
 }
 
 function renderPartSection(part) {
   const swatches = COLOR_OPTIONS.map((color) => {
     const whiteClass = color === '#FFFFFF' ? ' white' : '';
-    return `<div class="color-swatch${whiteClass}" data-role="swatch" data-part="${part.key}" data-color="${color}" title="${color}"></div>`;
+    return `<div class="color-swatch${whiteClass}" data-role="swatch" data-part="${part.key}" data-color="${color}" style="background:${color}" title="${color}"></div>`;
   }).join('');
 
   const palette = `
@@ -336,6 +425,19 @@ function renderPartSection(part) {
         <input type="text" class="color-picker-hex" data-role="picker-hex" data-part="${part.key}" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Hex color for ${part.label}">
       </div>
     </div>
+    <div class="bucket-row">
+      <button type="button" class="bucket-toggle-btn" data-role="bucket-toggle" data-part="${part.key}" aria-pressed="false" title="Paint individual pieces of this part with the color above">
+        <span class="material-icons">format_color_fill</span>
+        <span data-role="bucket-toggle-label">Paint pieces</span>
+      </button>
+      <button type="button" class="bucket-reset-btn u-hidden" data-role="bucket-reset" data-part="${part.key}" title="Reset custom piece colors" aria-label="Reset custom piece colors for ${part.label}">
+        <span class="material-icons">restart_alt</span>
+        <span data-role="bucket-reset-label">Reset</span>
+      </button>
+    </div>
+    <p class="bucket-hint u-hidden" data-role="bucket-hint" data-part="${part.key}">
+      Click a piece to paint it. Right-click a painted piece to reset just that one.
+    </p>
   `;
 
   return `
@@ -356,7 +458,11 @@ function renderPartSection(part) {
         </button>
       </div>
       <div class="pill-container">
-        <div class="color-pill" id="${part.key}-pill" data-role="color-pill" data-part="${part.key}" title="Pick color for ${part.label}"></div>
+        <!-- Desktop hides this in favor of #color-sidebar's bigger version of the
+             same trigger (see renderColorSidebar) — kept here, not removed, so
+             touch devices (no room for a persistent left sidebar) still have a
+             color entry point right on the part's own row. -->
+        <div class="color-pill color-pill--inline" id="${part.key}-pill-inline" data-role="color-pill" data-part="${part.key}" title="Pick color for ${part.label}"></div>
         <button class="btn btn--sm btn--ghost" id="${part.key}-visibility" data-role="visibility" data-part="${part.key}" aria-label="Toggle visibility for ${part.label}">
           <span class="material-icons">visibility</span>
         </button>
@@ -403,11 +509,14 @@ function bootstrap() {
   setupPaletteWiring();
   setupColorPickerDrag();
   setupColorPickerHexInput();
+  setupBucketTool();
+  setupGlobalPaintTool();
+  setupColorSidebarToggle();
+  setupRightDockTabs();
+  setupModelHoverPopup();
   setupVariantGrid();
-  // Hidden by CSS on touch devices (see #part-map's pointer:coarse rule) — skip
-  // loading its extra GLBs and starting its render loop there entirely.
-  if (!isTouchLikeDevice()) setupPartMap();
   setupKeyboardNav();
+  setupCameraDebugReadout();
   setupGlobalClickHandler();
   setupArPreview();
   if (isTouchLikeDevice()) setupMobileSheet();
@@ -418,8 +527,8 @@ function bootstrap() {
 
   if (restoredFromLocal) {
     // applySavedState() (called by the two restore attempts above) only sets
-    // currentIdx/partVis/modelCols — it doesn't load anything itself, so the
-    // restored indices still need an explicit load pass here.
+    // currentIdx/partVis/modelCols/modelMeshCols — it doesn't load anything
+    // itself, so the restored indices still need an explicit load pass here.
     for (const part of Object.keys(modelSets)) {
       if (part === 'spacer' && !partVis.spacer) continue;
       loadModel(part);
@@ -446,7 +555,6 @@ function bootstrap() {
   }
 
   initPillsAndButtons();
-  adjustControlsWidth();
   animate();
   maybeAutostartTour();
   saveStateToLocal();
@@ -460,7 +568,6 @@ function setupResize() {
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    adjustControlsWidth();
     reallyClosePalette();
   }
 
@@ -980,11 +1087,12 @@ function setupPaletteWiring() {
       positionPalette(palette, pill.getBoundingClientRect());
       openPalette = palette;
       syncColorPickerUI(part);
+      updateBucketResetVisibility(part);
     });
   });
 
   document.addEventListener('pointerup', (event) => {
-    const swatch = event.target.closest('.color-palette [data-role="swatch"]');
+    const swatch = event.target.closest('.color-palette [data-role="swatch"], .color-palette-inline [data-role="swatch"]');
     if (!swatch) return;
 
     event.preventDefault();
@@ -992,6 +1100,13 @@ function setupPaletteWiring() {
 
     const part = swatch.dataset.part;
     const hex = swatch.dataset.color;
+    // GLOBAL_PAINT_KEY's picker is always visible, not gated behind its own
+    // palette being "open" the way a per-part one is — so it's always brush-
+    // only, whether or not paint mode currently happens to be switched on.
+    if (bucketModePart === part || part === GLOBAL_PAINT_KEY) {
+      setBrushColor(part, hex);
+      return;
+    }
     applyLiveColor(part, hex);
     markCustomPreset();
     reallyClosePalette();
@@ -1002,7 +1117,17 @@ function setupPaletteWiring() {
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('.color-palette')) return;
+    // The global paint picker is always part of the page (.color-palette-inline,
+    // not .color-palette) — a click inside it isn't "outside" any palette,
+    // it just isn't itself the trigger for closing whatever per-part one
+    // (if any) happens to also be open.
+    if (event.target.closest('.color-palette-inline')) return;
     if (event.target.closest('[data-role="color-pill"]')) return;
+    // A click that just painted a mesh via the bucket tool (see
+    // setupBucketTool) — the canvas isn't part of the palette DOM-wise, so
+    // without this it would read as "click outside" and close the palette
+    // the user still needs open to keep picking brush colors.
+    if (bucketModePart && event.target === renderer.domElement) return;
     reallyClosePalette();
   });
 
@@ -1022,12 +1147,64 @@ function applyLiveColor(part, hex) {
   if (!partVis[part]) enablePart(part, false);
   modelCols[part].set(hex);
   applyColor(part);
+  syncPillColor(part);
+}
 
-  const pill = document.getElementById(`${part}-pill`);
-  if (pill) {
-    pill.style.backgroundColor = hex;
-    pill.style.border = hex.toLowerCase() === '#ffffff' ? '1px solid #000' : '1px solid var(--stroke)';
+// Every distinct color currently in play for `part`: its base color plus
+// whatever per-piece paint overrides exist for its current variant. Not
+// proportional to how many meshes use each one — just "what colors are on
+// this part right now", for syncPillColor to represent honestly.
+function getPartColorList(part) {
+  const baseHex = `#${modelCols[part].getHexString()}`.toUpperCase();
+  const overrides = getMeshOverrides(part);
+  const colors = new Set([baseHex]);
+  if (overrides) {
+    for (const hex of Object.values(overrides)) colors.add(hex.toUpperCase());
   }
+  return Array.from(colors);
+}
+
+// Hard-edged stripe (not a blurred blend) so multiple colors read as
+// "several distinct pieces", not as one muddy averaged color. Returns null
+// for a single color — callers fall back to a plain background-color then,
+// which layers underneath .color-pill's own CSS sheen overlay instead of
+// replacing it (see syncPillColor).
+function buildSwatchStripBackgroundImage(hexes) {
+  if (hexes.length <= 1) return null;
+  const step = 100 / hexes.length;
+  const stops = hexes.map((hex, i) => `${hex} ${(i * step).toFixed(3)}%, ${hex} ${((i + 1) * step).toFixed(3)}%`);
+  return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
+
+// Two pill elements exist per part — the big one in #color-sidebar (desktop)
+// and the small inline one on the part's own row (touch devices, see
+// .color-pill--inline) — only one is visible at a time, but both need to
+// stay in sync so neither shows a stale color if the viewport crosses the
+// desktop/touch breakpoint.
+//
+// Reads the part's CURRENT actual appearance (see getPartColorList) rather
+// than taking a color as an argument — painting a piece with the bucket
+// tool never touches modelCols, so a pill that only ever showed
+// modelCols[part] directly went stale the moment "Paint any piece" touched
+// any part of it. With more than one color in play this renders as a strip
+// of swatches instead of picking one arbitrarily, so the pill never lies
+// about what's actually on the model.
+//
+// Sets backgroundColor/backgroundImage as separate longhands rather than the
+// `background` shorthand deliberately: .color-pill's own CSS already paints
+// a subtle glossy sheen via its own background-image layer, and an inline
+// shorthand would silently wipe that out for every pill, not just striped
+// ones. Setting backgroundImage alone leaves that CSS layer alone when
+// there's nothing to override it with (single color).
+function syncPillColor(part) {
+  const hexes = getPartColorList(part);
+  const stripImage = buildSwatchStripBackgroundImage(hexes);
+  const borderColor = hexes.length === 1 && hexes[0].toLowerCase() === '#ffffff' ? '#000' : 'var(--stroke)';
+  document.querySelectorAll(`[data-role="color-pill"][data-part="${part}"]`).forEach((pill) => {
+    pill.style.backgroundColor = hexes[0];
+    pill.style.backgroundImage = stripImage || '';
+    pill.style.border = `1px solid ${borderColor}`;
+  });
 }
 
 function hsvToHex(h, s, v) {
@@ -1111,6 +1288,13 @@ function renderColorPickerUI(part) {
   // Never stomp the input while the user is actively typing in it.
   if (hexInput && document.activeElement !== hexInput) hexInput.value = currentHex;
   if (preview) preview.style.background = `#${currentHex}`;
+
+  // Rings the swatch matching the current color (part color normally, brush
+  // color in bucket mode) so it's clear at a glance which preset — if any —
+  // is currently selected, instead of only the hex field reflecting it.
+  palette.querySelectorAll('[data-role="swatch"]').forEach((swatch) => {
+    swatch.classList.toggle('selected', swatch.dataset.color.toUpperCase() === `#${currentHex}`);
+  });
 }
 
 function setupColorPickerDrag() {
@@ -1123,8 +1307,10 @@ function setupColorPickerDrag() {
 
     event.preventDefault();
     track.setPointerCapture(event.pointerId);
-    if (!partVis[part]) enablePart(part, false);
-    if (!pickerHSV[part]) pickerHSV[part] = colorToHsv(modelCols[part]);
+    if (part !== GLOBAL_PAINT_KEY) {
+      if (!partVis[part]) enablePart(part, false);
+      if (!pickerHSV[part]) pickerHSV[part] = colorToHsv(modelCols[part]);
+    }
     const state = pickerHSV[part];
 
     const update = (clientX, clientY) => {
@@ -1138,6 +1324,10 @@ function setupColorPickerDrag() {
         state.h = x * 360;
       }
       renderColorPickerUI(part);
+      // In bucket mode this picker is choosing the brush color for the next
+      // click on the model, not recoloring the part itself — always true for
+      // GLOBAL_PAINT_KEY's picker, which isn't tied to any one part's mode.
+      if (bucketModePart === part || part === GLOBAL_PAINT_KEY) return;
       applyLiveColor(part, hsvToHex(state.h, state.s, state.v));
     };
 
@@ -1148,7 +1338,7 @@ function setupColorPickerDrag() {
       track.removeEventListener('pointermove', onMove);
       track.removeEventListener('pointerup', onUp);
       track.removeEventListener('pointercancel', onUp);
-      markCustomPreset();
+      if (bucketModePart !== part && part !== GLOBAL_PAINT_KEY) markCustomPreset();
     };
     track.addEventListener('pointermove', onMove);
     track.addEventListener('pointerup', onUp);
@@ -1165,6 +1355,10 @@ function setupColorPickerHexInput() {
     if (!/^[0-9a-fA-F]{6}$/.test(raw)) return; // wait for a full, valid hex before applying
 
     const hex = `#${raw}`;
+    if (bucketModePart === part || part === GLOBAL_PAINT_KEY) {
+      setBrushColor(part, hex);
+      return;
+    }
     applyLiveColor(part, hex);
     pickerHSV[part] = colorToHsv(modelCols[part]);
     renderColorPickerUI(part);
@@ -1177,6 +1371,580 @@ function setupColorPickerHexInput() {
     if (!input) return;
     input.blur();
   });
+}
+
+// Updates the palette's picker/preview to a new "brush" color without
+// touching the model — used while bucketModePart is set, where the picker
+// is choosing the color for the *next* click on the model rather than
+// recoloring the whole part immediately (that's what applyLiveColor is for).
+function setBrushColor(part, hex) {
+  pickerHSV[part] = colorToHsv(new THREE.Color(hex));
+  renderColorPickerUI(part);
+}
+
+function getBrushHex(part) {
+  const hsv = pickerHSV[part];
+  if (hsv) return hsvToHex(hsv.h, hsv.s, hsv.v);
+  return `#${modelCols[part].getHexString()}`;
+}
+
+function loadColorHistory() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLOR_HISTORY_KEY) || '[]');
+    if (Array.isArray(raw)) {
+      colorHistory = raw
+        .filter((hex) => typeof hex === 'string' && /^#[0-9a-fA-F]{6}$/.test(hex))
+        .map((hex) => hex.toUpperCase())
+        .slice(0, COLOR_HISTORY_MAX);
+    }
+  } catch {}
+}
+
+// Called every time a piece actually gets painted (any part, global or
+// per-part mode) — not on every brush-preview tick, so dragging the hue
+// picker doesn't flood history with intermediate colors nobody chose.
+function recordColorHistory(hex) {
+  hex = hex.toUpperCase();
+  const existing = colorHistory.indexOf(hex);
+  if (existing !== -1) colorHistory.splice(existing, 1);
+  colorHistory.unshift(hex);
+  if (colorHistory.length > COLOR_HISTORY_MAX) colorHistory.length = COLOR_HISTORY_MAX;
+  try { localStorage.setItem(COLOR_HISTORY_KEY, JSON.stringify(colorHistory)); } catch {}
+  renderColorHistorySwatches();
+}
+
+// Only #globalPaintBtn's panel shows this today, but it's written generically
+// (data-role="swatch" markup, same as the preset grid) so the exact same
+// swatch pointerup handler in setupPaletteWiring picks a history color up
+// with zero extra wiring — no per-swatch click listener needed here.
+function renderColorHistorySwatches() {
+  const row = document.querySelector('[data-role="color-history-row"]');
+  const host = document.querySelector('[data-role="color-history"]');
+  if (!row || !host) return;
+  row.classList.toggle('u-hidden', colorHistory.length === 0);
+  host.innerHTML = colorHistory.map((hex) => {
+    const whiteClass = hex === '#FFFFFF' ? ' white' : '';
+    return `<div class="color-swatch${whiteClass}" data-role="swatch" data-part="${GLOBAL_PAINT_KEY}" data-color="${hex}" style="background:${hex}" title="${hex}"></div>`;
+  }).join('');
+}
+
+// Whenever a part's piece overrides change (painted, right-click reset, or
+// the reset-all button), both the reset button's count AND the color-sidebar
+// pill need to reflect that — bundled into one function so every call site
+// that changes overrides automatically keeps the pill honest too, instead of
+// relying on each one to separately remember to call syncPillColor.
+function updateBucketResetVisibility(part) {
+  syncPillColor(part);
+  const btn = document.querySelector(`[data-role="bucket-reset"][data-part="${part}"]`);
+  if (!btn) return;
+  const overrides = getMeshOverrides(part);
+  const count = overrides ? Object.keys(overrides).length : 0;
+  btn.classList.toggle('u-hidden', count === 0);
+  const label = btn.querySelector('[data-role="bucket-reset-label"]');
+  if (label) label.textContent = count > 1 ? `Reset (${count})` : 'Reset';
+  btn.title = count ? `Reset ${count} custom piece color${count === 1 ? '' : 's'}` : 'Reset custom piece colors';
+}
+
+// Aggregate version of updateBucketResetVisibility for #globalPaintBtn's
+// popover — counts painted pieces across every real part at once, since a
+// global-mode session can paint pieces belonging to several different parts.
+function updateGlobalResetVisibility() {
+  const btn = document.querySelector('[data-role="global-reset"]');
+  if (!btn) return;
+  let count = 0;
+  for (const part of Object.keys(modelSets)) {
+    const overrides = getMeshOverrides(part);
+    if (overrides) count += Object.keys(overrides).length;
+  }
+  btn.classList.toggle('u-hidden', count === 0);
+  const label = btn.querySelector('[data-role="global-reset-label"]');
+  if (label) label.textContent = count > 1 ? `Reset all (${count})` : 'Reset all';
+  btn.title = count ? `Reset ${count} custom piece color${count === 1 ? '' : 's'}` : 'Reset all custom piece colors';
+}
+
+// Clears every part's piece overrides at once (the global popover's "Reset
+// all") — leaves each part's own base color (modelCols) untouched, same as
+// the per-part reset button does.
+function resetAllPaintedPieces() {
+  let touched = false;
+  for (const part of Object.keys(modelSets)) {
+    const overrides = getMeshOverrides(part);
+    if (!overrides || !Object.keys(overrides).length) continue;
+    for (const key of Object.keys(overrides)) delete overrides[key];
+    applyColor(part);
+    updateBucketResetVisibility(part);
+    touched = true;
+  }
+  updateGlobalResetVisibility();
+  if (touched) markCustomPreset();
+}
+
+function clearPaintHover() {
+  if (!paintHoverMesh) return;
+  toMaterialArray(paintHoverMesh.material).forEach((material) => {
+    if (material?.emissive) material.emissive.setHex(0x000000);
+  });
+  paintHoverMesh = null;
+}
+
+// Minimal floating control (#model-hover-popup) shown while hovering a part
+// directly on the model — prev/next, print, download, same as that part's
+// row on the right, just contextual instead of needing to go find the row.
+// Reuses setupGlobalClickHandler's existing role handling verbatim (see the
+// data-role attributes in index.html); this only ever touches which part
+// each button currently targets and where the popup sits on screen.
+//
+// Uses a "hover intent" delay rather than hiding the instant the pointer
+// leaves the model, since the pointer has to cross open space to reach the
+// popup's own buttons — hiding immediately would make it impossible to
+// actually click anything in it. showModelHoverPopup (called on every model
+// hover) and the popup's own pointerenter (see setupModelHoverPopup) both
+// cancel a pending hide; only actually leaving both dismisses it.
+let hoverPopupPart = null;
+let hoverPopupHideTimer = null;
+
+function showModelHoverPopup(part, clientX, clientY) {
+  const popup = document.getElementById('model-hover-popup');
+  if (!popup) return;
+  if (hoverPopupHideTimer) {
+    clearTimeout(hoverPopupHideTimer);
+    hoverPopupHideTimer = null;
+  }
+  // Only reposition when the hovered part actually changes — repositioning
+  // on every pointermove made the popup slide around following the cursor
+  // while it was still sitting over the SAME part, which both looked wrong
+  // and made its own buttons a moving target (the mouse would still be
+  // mid-transit toward wherever the popup used to be by the time it got
+  // there). Once shown, it stays put until hover moves to a different part
+  // or off the model entirely.
+  if (hoverPopupPart === part) return;
+  hoverPopupPart = part;
+  popup.querySelectorAll('[data-role="prev"], [data-role="next"], [data-role="print"], [data-role="download-part"]').forEach((btn) => {
+    btn.dataset.part = part;
+  });
+  const nameEl = popup.querySelector('[data-role="hover-popup-name"]');
+  if (nameEl) nameEl.textContent = getPartDisplayName(part);
+  positionModelHoverPopup(clientX, clientY);
+  popup.classList.add('open');
+}
+
+function positionModelHoverPopup(clientX, clientY) {
+  const popup = document.getElementById('model-hover-popup');
+  if (!popup) return;
+  const pad = 16;
+  const w = popup.offsetWidth || 220;
+  const h = popup.offsetHeight || 38;
+  let left = clientX + pad;
+  let top = clientY - h - pad;
+  if (left + w > window.innerWidth - 8) left = clientX - w - pad;
+  if (top < 8) top = clientY + pad;
+  popup.style.left = `${Math.max(8, Math.min(left, window.innerWidth - w - 8))}px`;
+  popup.style.top = `${Math.max(8, top)}px`;
+}
+
+function scheduleHideModelHoverPopup() {
+  if (hoverPopupHideTimer) return;
+  hoverPopupHideTimer = setTimeout(() => {
+    hoverPopupHideTimer = null;
+    hoverPopupPart = null;
+    document.getElementById('model-hover-popup')?.classList.remove('open');
+  }, 220);
+}
+
+function hideModelHoverPopupNow() {
+  if (hoverPopupHideTimer) {
+    clearTimeout(hoverPopupHideTimer);
+    hoverPopupHideTimer = null;
+  }
+  hoverPopupPart = null;
+  document.getElementById('model-hover-popup')?.classList.remove('open');
+}
+
+function setupModelHoverPopup() {
+  const popup = document.getElementById('model-hover-popup');
+  if (!popup) return;
+  popup.addEventListener('pointerenter', () => {
+    if (hoverPopupHideTimer) {
+      clearTimeout(hoverPopupHideTimer);
+      hoverPopupHideTimer = null;
+    }
+  });
+  popup.addEventListener('pointerleave', scheduleHideModelHoverPopup);
+}
+
+// Toggles "paint pieces" mode on/off for `part` (pass null to turn it off).
+// Only one part can be in bucket mode at a time — tied to its palette being
+// open (see reallyClosePalette) since the palette is where the brush color
+// comes from.
+function setBucketMode(part) {
+  if (bucketModePart === part) return;
+  clearPaintHover();
+  if (part) hideModelHoverPopupNow();
+  bucketModePart = part;
+
+  document.querySelectorAll('[data-role="bucket-toggle"]').forEach((btn) => {
+    const active = btn.dataset.part === part;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+    const label = btn.querySelector('[data-role="bucket-toggle-label"]');
+    if (label) label.textContent = active ? 'Stop' : 'Paint pieces';
+  });
+  // Inline hint instead of a toast — it needs to stay up the whole time
+  // bucket mode is active, not just for a few seconds, since "right-click to
+  // reset a single piece" is otherwise easy to forget or never see at all.
+  document.querySelectorAll('[data-role="bucket-hint"]').forEach((hint) => {
+    hint.classList.toggle('u-hidden', hint.dataset.part !== part);
+  });
+  renderer.domElement.classList.toggle('bucket-cursor', !!part);
+  // Clear any inline cursor the "click to browse variants" hover left behind
+  // (see paintHoverFlush) — an inline style would otherwise outrank
+  // .bucket-cursor's crosshair until the next hover event happens to update it.
+  if (part) renderer.domElement.style.cursor = '';
+
+  if (part && part !== GLOBAL_PAINT_KEY && !partVis[part]) enablePart(part, false);
+}
+
+function setupBucketTool() {
+  document.querySelectorAll('[data-role="bucket-toggle"]').forEach((btn) => {
+    // #globalPaintBtn also has to open/position its popover, not just flip
+    // the mode — setupGlobalPaintTool() wires it separately.
+    if (btn.dataset.part === GLOBAL_PAINT_KEY) return;
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const part = btn.dataset.part;
+      setBucketMode(bucketModePart === part ? null : part);
+    });
+  });
+
+  document.querySelectorAll('[data-role="bucket-reset"]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const part = btn.dataset.part;
+      const overrides = getMeshOverrides(part);
+      if (!overrides || !Object.keys(overrides).length) return;
+      for (const key of Object.keys(overrides)) delete overrides[key];
+      applyColor(part);
+      updateBucketResetVisibility(part);
+      markCustomPreset();
+    });
+  });
+
+  const paintRaycaster = new THREE.Raycaster();
+  const paintPointer = new THREE.Vector2();
+
+  // Which part-groups a click can land on: just bucketModePart's own model in
+  // the normal (per-part) case, or every currently visible loaded part either
+  // when painting via #globalPaintBtn (GLOBAL_PAINT_KEY) or when NOT painting
+  // at all — that second case is what the "click a piece to open its variant
+  // grid" feature below uses instead, so it can land on any visible part.
+  function getPaintTargetGroups() {
+    if (bucketModePart === GLOBAL_PAINT_KEY || !bucketModePart) {
+      return Object.keys(loadedMods)
+        .filter((part) => loadedMods[part] && partVis[part])
+        .map((part) => ({ part, model: loadedMods[part] }));
+    }
+    const model = loadedMods[bucketModePart];
+    return model ? [{ part: bucketModePart, model }] : [];
+  }
+
+  // Returns { part, mesh } for whichever target group's closest hit wins —
+  // when several parts overlap on screen, that's whatever's actually nearest
+  // the camera at this pixel, matching what's visually in front.
+  function castPaintAt(ndcX, ndcY) {
+    paintPointer.set(ndcX, ndcY);
+    paintRaycaster.setFromCamera(paintPointer, camera);
+    let best = null;
+    for (const { part, model } of getPaintTargetGroups()) {
+      const hits = paintRaycaster.intersectObject(model, true);
+      if (hits.length && (!best || hits[0].distance < best.distance)) {
+        best = { part, mesh: hits[0].object, distance: hits[0].distance };
+      }
+    }
+    return best;
+  }
+
+  // A single pixel-exact raycast routinely misses thin or steeply-angled
+  // sub-meshes (a wheel rim viewed edge-on, a thin decorative panel) even
+  // when the cursor looks like it's squarely on the piece, since the visible
+  // 2D silhouette is wider than the actual 3D surface the ray has to thread
+  // through — so try the exact point, then successively wider rings of
+  // offset points, using the first ring that lands on something.
+  const PAINT_HITBOX_RINGS = [
+    { radius: 8, points: 8 },
+    { radius: 16, points: 10 },
+    { radius: 26, points: 12 }
+  ];
+
+  // Not gated on bucketModePart being set — with it null, getPaintTargetGroups
+  // above searches every visible part instead of a paint target, so this
+  // doubles as the hit-test for "click a piece to open its variant grid"
+  // (see the click handler below) as well as for actually painting.
+  function getPaintHit(clientX, clientY) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const toNdc = (x, y) => [((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1];
+
+    const [x0, y0] = toNdc(clientX, clientY);
+    let hit = castPaintAt(x0, y0);
+    if (hit) return hit;
+
+    for (const { radius, points } of PAINT_HITBOX_RINGS) {
+      for (let i = 0; i < points; i++) {
+        const angle = (i / points) * Math.PI * 2;
+        const [x, y] = toNdc(clientX + Math.cos(angle) * radius, clientY + Math.sin(angle) * radius);
+        hit = castPaintAt(x, y);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  // Each getPaintHit() call can cast up to ~30 rays (see PAINT_HITBOX_RINGS)
+  // when it misses, so raycasting on every raw pointermove (which can fire
+  // far faster than the render loop) risks visible jank on a higher-poly
+  // part. Batch to at most once per rendered frame instead; see the
+  // animate() call to flushPaintHover.
+  // Runs regardless of bucketModePart now — hovering always previews
+  // *something* clickable, whether that click will paint or open a variant
+  // grid (see the click handler below).
+  let pendingPaintHoverEvent = null;
+  renderer.domElement.addEventListener('pointermove', (event) => {
+    pendingPaintHoverEvent = event;
+  });
+
+  paintHoverFlush = () => {
+    if (!pendingPaintHoverEvent) return;
+    const event = pendingPaintHoverEvent;
+    pendingPaintHoverEvent = null;
+    const hit = getPaintHit(event.clientX, event.clientY);
+    const mesh = hit ? hit.mesh : null;
+    if (mesh !== paintHoverMesh) {
+      clearPaintHover();
+      if (mesh) {
+        paintHoverMesh = mesh;
+        toMaterialArray(mesh.material).forEach((material) => {
+          if (material?.emissive) material.emissive.setHex(0x3d7fff);
+        });
+      }
+    }
+    // Paint mode already gets a permanent crosshair (see .bucket-cursor in
+    // setBucketMode) regardless of exact hover target, since the hitbox
+    // rings mean a near-miss usually still lands — only the plain "click to
+    // browse" case needs the cursor to reflect whether this exact spot has
+    // anything to click.
+    if (!bucketModePart) {
+      renderer.domElement.style.cursor = hit ? 'pointer' : '';
+      if (hit) showModelHoverPopup(hit.part, event.clientX, event.clientY);
+      else scheduleHideModelHoverPopup();
+    }
+  };
+
+  renderer.domElement.addEventListener('pointerleave', () => {
+    pendingPaintHoverEvent = null;
+    clearPaintHover();
+    if (!bucketModePart) {
+      renderer.domElement.style.cursor = '';
+      scheduleHideModelHoverPopup();
+    }
+  });
+
+  renderer.domElement.addEventListener('click', (event) => {
+    const hit = getPaintHit(event.clientX, event.clientY);
+
+    if (!hit) {
+      // A miss while painting is a no-op, same as always. A miss while just
+      // browsing still closes whatever variant grid is currently open —
+      // the generic "click outside closes it" handler (setupVariantGrid)
+      // deliberately excludes clicks on this canvas entirely, since it can't
+      // tell a miss from the exact click that just opened one; closing on a
+      // miss is this handler's job instead.
+      if (!bucketModePart && openVariantGridPart) closeVariantGrid();
+      return;
+    }
+
+    if (bucketModePart) {
+      if (hit.mesh.userData.meshIndex == null) return;
+      const brushHex = getBrushHex(bucketModePart);
+      const overrides = getMeshOverrides(hit.part, true);
+      overrides[hit.mesh.userData.meshIndex] = brushHex;
+      applyColor(hit.part);
+      updateBucketResetVisibility(hit.part);
+      updateGlobalResetVisibility();
+      recordColorHistory(brushHex);
+      markCustomPreset();
+      return;
+    }
+
+    // Not painting — clicking a piece browses its variants instead, exactly
+    // like clicking its row's name does. Anchored to the click point itself
+    // rather than any specific DOM element, since there isn't one here.
+    if (openVariantGridPart === hit.part) {
+      closeVariantGrid();
+      return;
+    }
+    hideModelHoverPopupNow();
+    const anchorRect = { left: event.clientX, right: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 };
+    openVariantGrid(hit.part, { getBoundingClientRect: () => anchorRect });
+  });
+
+  renderer.domElement.addEventListener('contextmenu', (event) => {
+    if (!bucketModePart) return;
+    const hit = getPaintHit(event.clientX, event.clientY);
+    if (!hit || hit.mesh.userData.meshIndex == null) return;
+    const overrides = getMeshOverrides(hit.part);
+    if (!overrides || !(hit.mesh.userData.meshIndex in overrides)) return;
+    event.preventDefault();
+    delete overrides[hit.mesh.userData.meshIndex];
+    applyColor(hit.part);
+    updateBucketResetVisibility(hit.part);
+    updateGlobalResetVisibility();
+    markCustomPreset();
+  });
+}
+
+// #globalPaintBtn — unlike a part's own color pill, its picker (see
+// renderGlobalPaintPalette) is always visible in the left column, not a
+// popover you open first. So there's nothing to mount/position here: the
+// button just flips bucket mode on/off for GLOBAL_PAINT_KEY, and the model
+// becomes paintable (or stops being) immediately.
+function setupGlobalPaintTool() {
+  const btn = document.getElementById('globalPaintBtn');
+  const palette = document.getElementById(`${GLOBAL_PAINT_KEY}-palette`);
+  if (!btn || !palette) return;
+
+  // Deferred from renderGlobalPaintPalette() — see the comment there — now
+  // that pickerHSV exists, seed it and paint the picker's actual starting
+  // state instead of leaving it at whatever the raw HTML defaults to.
+  if (!pickerHSV[GLOBAL_PAINT_KEY]) pickerHSV[GLOBAL_PAINT_KEY] = colorToHsv(new THREE.Color(COLOR_OPTIONS[0]));
+  renderColorPickerUI(GLOBAL_PAINT_KEY);
+  updateGlobalResetVisibility();
+  loadColorHistory();
+  renderColorHistorySwatches();
+
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setBucketMode(bucketModePart === GLOBAL_PAINT_KEY ? null : GLOBAL_PAINT_KEY);
+  });
+
+  palette.querySelector('[data-role="global-reset"]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    resetAllPaintedPieces();
+  });
+}
+
+// Collapsed-by-default per-part color list (see #color-sidebar-toggle in
+// index.html) — same open/close pattern as the color palettes themselves
+// (outside click, Escape, scroll all close it), but it isn't a color-palette
+// popover itself, just the panel that hosts each part's own pill/palette.
+function setupColorSidebarToggle() {
+  const toggle = document.getElementById('color-sidebar-toggle');
+  const sidebar = document.getElementById('color-sidebar');
+  if (!toggle || !sidebar) return;
+
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    toggle.setAttribute('aria-expanded', 'false');
+  }
+
+  toggle.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const open = sidebar.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!sidebar.classList.contains('open')) return;
+    if (event.target.closest('#color-sidebar, #color-sidebar-toggle, .color-palette')) return;
+    closeSidebar();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeSidebar();
+  });
+}
+
+// One always-visible dock on the right (see .right-dock in index.html) with
+// two tabbed pages — mixes carousel and part controls — instead of two
+// independently collapsible panels. Exactly one page is ever showing:
+// there's no "both closed" state to fall into, switching tabs is the only
+// interaction, and Mixes is both the default and the higher-priority tab
+// (variant browsing, print, and download all moved onto the model itself —
+// click-to-select + the hover popup — so Parts' remaining job is just
+// toggling visibility for parts hidden by default and picking a base part).
+// Skipped entirely on touch: the dock is CSS-hidden there, mixes are still
+// picked from the old top-left dropdown, and #panel-essential + the
+// Essential/Advanced switch get reparented into the mobile sheet instead
+// (see setupMobileSheet) rather than living in this dock.
+function setupRightDockTabs() {
+  if (isTouchLikeDevice()) return;
+  const mixesTab = document.getElementById('dock-tab-mixes');
+  const partsTab = document.getElementById('dock-tab-parts');
+  const mixesPage = document.getElementById('preset-panel');
+  const partsPage = document.getElementById('parts-page');
+  const controlsToggle = document.getElementById('controls-toggle');
+  if (!mixesTab || !partsTab || !mixesPage || !partsPage) return;
+
+  // Nest the Essential/Advanced switch into the Parts page, right above the
+  // part list it controls, instead of leaving it floating independently —
+  // touch leaves it exactly where it started (see the (pointer:coarse) CSS).
+  if (controlsToggle) partsPage.insertBefore(controlsToggle, partsPage.firstChild);
+
+  function showMixes() {
+    mixesTab.classList.add('active');
+    mixesTab.setAttribute('aria-selected', 'true');
+    partsTab.classList.remove('active');
+    partsTab.setAttribute('aria-selected', 'false');
+    mixesPage.classList.add('active');
+    partsPage.classList.remove('active');
+    renderPresetCarousel();
+  }
+  function showParts() {
+    partsTab.classList.add('active');
+    partsTab.setAttribute('aria-selected', 'true');
+    mixesTab.classList.remove('active');
+    mixesTab.setAttribute('aria-selected', 'false');
+    partsPage.classList.add('active');
+    mixesPage.classList.remove('active');
+  }
+
+  mixesTab.addEventListener('click', showMixes);
+  partsTab.addEventListener('click', showParts);
+
+  // Mixes starts .active in the markup itself (see index.html) so it's
+  // visible on first paint with no flash of an empty dock — just needs its
+  // cards built and thumbnails kicked off to match.
+  renderPresetCarousel();
+}
+
+function renderPresetCarousel() {
+  const host = document.getElementById('preset-carousel');
+  if (!host || presetCarouselBuilt) return;
+  presetCarouselBuilt = true;
+
+  Object.entries(presets).forEach(([key, preset]) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'preset-card';
+    card.dataset.preset = key;
+    card.setAttribute('aria-selected', key === activePresetKey ? 'true' : 'false');
+    card.innerHTML = `
+      <img class="preset-card-thumb" alt="${preset.label} preview">
+      <span class="preset-card-title">${preset.label}</span>
+      <span class="preset-card-desc">${preset.description}</span>
+    `;
+    card.addEventListener('click', () => applyPreset(key));
+    host.appendChild(card);
+
+    renderPresetThumbnail(key).then((dataUrl) => {
+      if (dataUrl) card.querySelector('.preset-card-thumb').src = dataUrl;
+    });
+  });
+
+  syncPresetButtons(activePresetKey === 'custom' ? '' : activePresetKey);
 }
 
 // Cleans up a filename like "TopUSmatrix.glb" or "Bumper_motor_ramp.glb" into a
@@ -1244,6 +2012,41 @@ function disposeThumbObject(object) {
   });
 }
 
+// Frames the shared thumbnail camera on one object (a single variant's scene,
+// or a whole Group of parts assembled for a preset preview) and snapshots it
+// to a PNG data URL. Shared by renderVariantThumbnail and
+// renderPresetThumbnail so the "axes swapped" precise-bounding-box fix and
+// the camera-framing math only exist in one place.
+function snapshotThumbnail(object) {
+  const { scene: rScene, camera: rCamera, renderer: rRenderer } = getThumbRenderer();
+
+  // precise=true forces a fresh bounding box from actual vertex positions.
+  // The default (imprecise) mode trusts each mesh's cached geometry.boundingBox,
+  // which for some of these assets doesn't match the real vertex data (axes
+  // swapped) — that stale cache is what was producing thumbnails aimed at the
+  // wrong point in space (cropped/off-center/tiny-in-a-corner renders).
+  const box = new THREE.Box3().setFromObject(object, true);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  object.position.sub(sphere.center);
+
+  const radius = Math.max(sphere.radius, 0.001);
+  const fovRad = (rCamera.fov * Math.PI) / 180;
+  const dist = (radius / Math.sin(fovRad / 2)) * 1.35;
+  const direction = new THREE.Vector3(0.62, 0.56, 0.62).normalize();
+  rCamera.position.copy(direction.multiplyScalar(dist));
+  rCamera.near = Math.max(dist / 100, 0.01);
+  rCamera.far = dist * 10;
+  rCamera.lookAt(0, 0, 0);
+  rCamera.updateProjectionMatrix();
+
+  rScene.add(object);
+  rRenderer.render(rScene, rCamera);
+  const dataUrl = rRenderer.domElement.toDataURL('image/png');
+  rScene.remove(object);
+  disposeThumbObject(object);
+  return dataUrl;
+}
+
 // Renders one variant's GLB to a small PNG data URL for the picker grid, caching
 // by URL (both the finished image and the in-flight promise, so opening the same
 // part's grid twice — or fast repeated clicks — never re-renders or re-fetches).
@@ -1252,34 +2055,7 @@ function renderVariantThumbnail(url) {
   if (variantThumbPromises[url]) return variantThumbPromises[url];
 
   const promise = loader.loadAsync(url).then((gltf) => {
-    const { scene: rScene, camera: rCamera, renderer: rRenderer } = getThumbRenderer();
-    const model = gltf.scene;
-
-    // precise=true forces a fresh bounding box from actual vertex positions.
-    // The default (imprecise) mode trusts each mesh's cached geometry.boundingBox,
-    // which for some of these assets doesn't match the real vertex data (axes
-    // swapped) — that stale cache is what was producing thumbnails aimed at the
-    // wrong point in space (cropped/off-center/tiny-in-a-corner renders).
-    const box = new THREE.Box3().setFromObject(model, true);
-    const sphere = box.getBoundingSphere(new THREE.Sphere());
-    model.position.sub(sphere.center);
-
-    const radius = Math.max(sphere.radius, 0.001);
-    const fovRad = (rCamera.fov * Math.PI) / 180;
-    const dist = (radius / Math.sin(fovRad / 2)) * 1.35;
-    const direction = new THREE.Vector3(0.62, 0.56, 0.62).normalize();
-    rCamera.position.copy(direction.multiplyScalar(dist));
-    rCamera.near = Math.max(dist / 100, 0.01);
-    rCamera.far = dist * 10;
-    rCamera.lookAt(0, 0, 0);
-    rCamera.updateProjectionMatrix();
-
-    rScene.add(model);
-    rRenderer.render(rScene, rCamera);
-    const dataUrl = rRenderer.domElement.toDataURL('image/png');
-    rScene.remove(model);
-    disposeThumbObject(model);
-
+    const dataUrl = snapshotThumbnail(gltf.scene);
     variantThumbCache[url] = dataUrl;
     delete variantThumbPromises[url];
     return dataUrl;
@@ -1290,6 +2066,40 @@ function renderVariantThumbnail(url) {
   });
 
   variantThumbPromises[url] = promise;
+  return promise;
+}
+
+// Renders a whole preset's visible parts assembled together (each part's own
+// GLB already carries its correct world-space offset, same as the live scene
+// — see exportVisiblePartsAsGlb — so no extra positioning is needed here) to
+// one preview image, caching by preset key. Uses each part's raw exported
+// material colors, not the user's current live color choices, since a preset
+// only pins part/variant/visibility, never color.
+function renderPresetThumbnail(key) {
+  if (presetThumbCache[key]) return Promise.resolve(presetThumbCache[key]);
+  if (presetThumbPromises[key]) return presetThumbPromises[key];
+
+  const preset = presets[key];
+  const urls = Object.entries(preset?.parts || {})
+    .filter(([part]) => preset.visibility?.[part] && modelSets[part]?.length)
+    .map(([part, idx]) => modelSets[part][clampPresetIndex(part, idx)])
+    .filter(Boolean);
+
+  const promise = Promise.all(urls.map((url) => loader.loadAsync(url).then((gltf) => gltf.scene)))
+    .then((models) => {
+      const group = new THREE.Group();
+      models.forEach((model) => group.add(model));
+      const dataUrl = snapshotThumbnail(group);
+      presetThumbCache[key] = dataUrl;
+      delete presetThumbPromises[key];
+      return dataUrl;
+    }).catch((error) => {
+      console.error('Preset thumbnail render failed', key, error);
+      delete presetThumbPromises[key];
+      return null;
+    });
+
+  presetThumbPromises[key] = promise;
   return promise;
 }
 
@@ -1394,7 +2204,10 @@ function setupVariantGrid() {
     if (!openVariantGridPart) return;
     if (event.target.closest('.variant-grid-panel')) return;
     if (event.target.closest('[data-role="variant-grid"]')) return;
-    if (event.target.closest('#part-map')) return;
+    // The main viewport's own "click a piece to browse its variants" (see
+    // setupBucketTool) can itself be the click that just opened this grid —
+    // without this it'd bubble up here and close again immediately.
+    if (event.target === renderer.domElement) return;
     closeVariantGrid();
   });
 
@@ -1437,353 +2250,25 @@ function setupVariantGrid() {
   });
 }
 
-function tintModelFlatGray(model, hex = '#d9d9d9') {
-  const color = new THREE.Color('#d9d9d9').lerp(new THREE.Color(hex), PART_MAP_TINT_STRENGTH);
-  model.traverse((node) => {
-    if (!node.isMesh) return;
-    const materials = Array.isArray(node.material) ? node.material : [node.material];
-    materials.forEach((material) => {
-      if (material?.color) material.color.copy(color);
-    });
-  });
-}
-
-// Builds the #part-map mini viewport: its own scene/camera/renderer showing the
-// PART_MAP_PARTS reference build, slowly auto-rotating, with click/hover raycasting
-// against the real meshes (each tagged with userData.partMapKey during load) so
-// picking a part is pixel-accurate from any angle — then opens that part's variant
-// grid exactly like clicking its row's name would. Runs once at startup; the mini
-// scene is independent of the main viewer and of the user's actual part visibility.
-async function setupPartMap() {
-  const mapEl = document.getElementById('part-map');
-  const canvas = document.getElementById('part-map-canvas');
-  const mapLabel = document.getElementById('part-map-label');
-  if (!mapEl || !canvas) return;
-  const defaultMapLabelText = mapLabel?.textContent || 'Tap a part';
-
-  const size = 280; // starting size; kept in sync with the side panel's own width below (syncMinMapSizeToPanel)
-  const pScene = new THREE.Scene();
-  const pCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
-  const pRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  pRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  pRenderer.setSize(size, size, false);
-  pRenderer.setClearColor(0x000000, 0);
-
-  pScene.add(new THREE.AmbientLight(0xffffff, 0.85));
-  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  keyLight.position.set(100, 200, 150);
-  pScene.add(keyLight);
-  const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
-  fillLight.position.set(-120, -40, -80);
-  pScene.add(fillLight);
-
-  const root = new THREE.Group();
-  pScene.add(root);
-
-  const preset = presets[PART_MAP_PRESET_KEY];
-  await Promise.all(PART_MAP_PARTS.map(async (part) => {
-    const idx = preset?.parts?.[part] ?? 0;
-    const urls = getAssetCandidates(part, idx, 'glb');
-    if (!urls.length) return;
-
-    try {
-      const gltf = await loader.loadAsync(urls[0]);
-      const model = gltf.scene;
-      model.position.y = MODEL_Y_OFFSET;
-      tintModelFlatGray(model, PART_MAP_TINTS[part]);
-      model.traverse((node) => {
-        if (!node.isMesh) return;
-        // Mesh.raycast() rejects using geometry.boundingSphere as a fast
-        // pre-check BEFORE testing real triangles — same stale-cache bug as
-        // the thumbnail renderer's Box3 issue, just hitting a different
-        // three.js code path this time. Force a fresh compute from the
-        // actual vertex data so that pre-check doesn't reject valid hits.
-        node.geometry.computeBoundingSphere();
-        node.geometry.computeBoundingBox();
-        node.userData.partMapKey = part;
-      });
-      root.add(model);
-    } catch (error) {
-      console.warn('Part map: failed to load', part, error);
-    }
-  }));
-
-  if (!root.children.length) return;
-
-  const box = new THREE.Box3().setFromObject(root, true);
-  const sphere = box.getBoundingSphere(new THREE.Sphere());
-  root.position.sub(sphere.center);
-
-  // Static top-down 3/4 view: exactly 45° elevation, 45° azimuth — no
-  // auto-rotation, just one fixed, deliberate angle.
-  const fovRad = (pCamera.fov * Math.PI) / 180;
-  const elevation = THREE.MathUtils.degToRad(45);
-  const azimuth = THREE.MathUtils.degToRad(45);
-  const direction = new THREE.Vector3(
-    Math.sin(azimuth) * Math.cos(elevation),
-    Math.sin(elevation),
-    Math.cos(azimuth) * Math.cos(elevation)
-  ).normalize();
-
-  // A bounding-SPHERE fit has to leave room for every possible viewing angle,
-  // which left the model tiny in a sea of margin (and every part's already-small
-  // clickable area smaller still). The camera angle here is fixed, so fit
-  // tightly to what THIS one direction actually needs: project every corner of
-  // the assembly's box onto the camera's own right/up axes and solve for the
-  // closest distance that still keeps all of them inside the frustum.
-  const tanHalfFov = Math.tan(fovRad / 2);
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  const camRight = new THREE.Vector3().crossVectors(worldUp, direction).normalize();
-  const camUp = new THREE.Vector3().crossVectors(direction, camRight).normalize();
-
-  const corners = [
-    [box.min.x, box.min.y, box.min.z], [box.min.x, box.min.y, box.max.z],
-    [box.min.x, box.max.y, box.min.z], [box.min.x, box.max.y, box.max.z],
-    [box.max.x, box.min.y, box.min.z], [box.max.x, box.min.y, box.max.z],
-    [box.max.x, box.max.y, box.min.z], [box.max.x, box.max.y, box.max.z]
-  ].map(([x, y, z]) => new THREE.Vector3(x, y, z).sub(sphere.center));
-
-  let dist = 0.001;
-  for (const corner of corners) {
-    const alongBack = corner.dot(direction);
-    const alongUp = Math.abs(corner.dot(camUp));
-    const alongRight = Math.abs(corner.dot(camRight));
-    dist = Math.max(dist, alongUp / tanHalfFov + alongBack, alongRight / tanHalfFov + alongBack);
-  }
-  dist *= 1.18;
-
-  pCamera.position.copy(direction).multiplyScalar(dist);
-  pCamera.near = Math.max(dist / 100, 0.01);
-  pCamera.far = dist * 10;
-  pCamera.lookAt(0, 0, 0);
-  pCamera.updateProjectionMatrix();
-
-  const raycaster = new THREE.Raycaster();
-  const pointerNdc = new THREE.Vector2();
-  let hoveredMaterials = [];
-  let dirty = true;
-
-  function setHoverTint(materials, on) {
-    materials.forEach((material) => {
-      if (!material?.emissive) return;
-      material.emissive.setHex(on ? 0x3d7fff : 0x000000);
-    });
-  }
-
-  function castAt(ndcX, ndcY) {
-    pointerNdc.set(ndcX, ndcY);
-    raycaster.setFromCamera(pointerNdc, pCamera);
-    const hits = raycaster.intersectObjects(root.children, true);
-    return hits.find((h) => h.object.userData?.partMapKey) || null;
-  }
-
-  // Small/thin parts (face, hat) are easy to miss by a few pixels at this
-  // size, especially with the auto-rotation gone (users now have to line up
-  // the click themselves). Try the exact point, then successively wider rings
-  // of offset points, using the first ring that lands on something.
-  const HITBOX_RINGS = [
-    { radius: 8, points: 8 },
-    { radius: 16, points: 10 },
-    { radius: 24, points: 12 }
-  ];
-
-  function pickPartAt(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const toNdc = (x, y) => [((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1];
-
-    const [x0, y0] = toNdc(clientX, clientY);
-    let hit = castAt(x0, y0);
-    if (hit) return hit.object;
-
-    for (const { radius, points } of HITBOX_RINGS) {
-      for (let i = 0; i < points; i++) {
-        const angle = (i / points) * Math.PI * 2;
-        const [x, y] = toNdc(clientX + Math.cos(angle) * radius, clientY + Math.sin(angle) * radius);
-        hit = castAt(x, y);
-        if (hit) return hit.object;
-      }
-    }
-    return null;
-  }
-
-  function applyHover(clientX, clientY) {
-    const hitObj = pickPartAt(clientX, clientY);
-    if (hoveredMaterials.length) {
-      setHoverTint(hoveredMaterials, false);
-      hoveredMaterials = [];
-      dirty = true;
-    }
-    if (hitObj) {
-      const mats = Array.isArray(hitObj.material) ? hitObj.material : [hitObj.material];
-      setHoverTint(mats, true);
-      hoveredMaterials = mats;
-      canvas.style.cursor = 'pointer';
-      dirty = true;
-      if (mapLabel) {
-        const part = hitObj.userData.partMapKey;
-        mapLabel.textContent = PART_META.find((entry) => entry.key === part)?.label || defaultMapLabelText;
-      }
-    } else {
-      canvas.style.cursor = '';
-      if (mapLabel) mapLabel.textContent = defaultMapLabelText;
-    }
-  }
-
-  // Scene is static now (no auto-rotation), so there's no need to raycast on
-  // every raw pointermove — batch to at most once per rendered frame.
-  let pendingHoverEvent = null;
-  canvas.addEventListener('pointermove', (event) => {
-    pendingHoverEvent = event;
-  });
-
-  canvas.addEventListener('pointerleave', () => {
-    pendingHoverEvent = null;
-    if (hoveredMaterials.length) {
-      setHoverTint(hoveredMaterials, false);
-      hoveredMaterials = [];
-      dirty = true;
-    }
-    canvas.style.cursor = '';
-    if (mapLabel) mapLabel.textContent = defaultMapLabelText;
-  });
-
-  canvas.addEventListener('click', (event) => {
-    const hitObj = pickPartAt(event.clientX, event.clientY);
-    if (!hitObj) return;
-    const part = hitObj.userData.partMapKey;
-    if (openVariantGridPart === part) {
-      closeVariantGrid();
-    } else {
-      openVariantGrid(part, mapEl);
-    }
-  });
-
-  // Drag the top-right grip to resize — the box is anchored bottom-left (see
-  // #part-map's CSS), so growing it means dragging up/right. The floor tracks
-  // the side panel's own (dynamic — see adjustControlsWidth) rendered width,
-  // just as a reasonable default starting size, not for any edge-alignment
-  // reason (the map and that panel don't share a screen corner). Persists
-  // across sessions once the user has actually grown it past that floor.
-  let MIN_MAP_SIZE = Math.round(essPanel.getBoundingClientRect().width || size);
-  const MAX_MAP_SIZE = 480;
-  const MAP_SIZE_KEY = 'hp_robot_partmap_size';
-  let currentMapSize = MIN_MAP_SIZE;
-
-  // Growing up/right from the bottom-left anchor means #preset-menu (top-left)
-  // is the thing the box can grow into — cap available growth against its
-  // bottom edge instead of the fixed MAX_MAP_SIZE once the viewport is short
-  // enough that the two would otherwise overlap. mapEl's own bottom edge is
-  // fixed (anchored via `bottom`, not `top`), so it stays put as height grows
-  // and is safe to read regardless of the box's current size.
-  function getMaxMapSize() {
-    const presetEl = document.getElementById('preset-menu');
-    if (!presetEl) return MAX_MAP_SIZE;
-    const gap = 12;
-    const available = mapEl.getBoundingClientRect().bottom - presetEl.getBoundingClientRect().bottom - gap;
-    return Math.min(MAX_MAP_SIZE, available);
-  }
-
-  function applyMapSize(next) {
-    currentMapSize = Math.round(Math.max(MIN_MAP_SIZE, Math.min(getMaxMapSize(), next)));
-    mapEl.style.width = `${currentMapSize}px`;
-    mapEl.style.height = `${currentMapSize}px`;
-    pRenderer.setSize(currentMapSize, currentMapSize, false);
-    dirty = true;
-  }
-
-  // Re-reads the panel's current width and, if the box hasn't been manually
-  // grown past the floor, follows it — so resizing the browser (which can
-  // change the panel's width) keeps the floor current instead of only
-  // matching once at startup.
-  function syncMinMapSizeToPanel() {
-    const panelWidth = Math.round(essPanel.getBoundingClientRect().width || 0);
-    if (!panelWidth || panelWidth === MIN_MAP_SIZE) return;
-    const wasAtFloor = currentMapSize <= MIN_MAP_SIZE + 1;
-    MIN_MAP_SIZE = panelWidth;
-    if (wasAtFloor) applyMapSize(MIN_MAP_SIZE);
-  }
-  partMapWidthSync = syncMinMapSizeToPanel;
-
-  let restoredSize = MIN_MAP_SIZE;
-  try {
-    const savedSize = Number(localStorage.getItem(MAP_SIZE_KEY));
-    if (savedSize) restoredSize = savedSize;
-  } catch {}
-  // Always runs, even at the default size — a short viewport can need the
-  // box clamped even before anyone drags the resize handle.
-  applyMapSize(restoredSize);
-
-  // The map's size is fixed in px while the viewport isn't — a browser resize
-  // (or rotation) can change whether the panel has room, or how much vertical
-  // space is left before #preset-menu, even without the map's own size
-  // changing.
-  window.addEventListener('resize', () => {
-    syncMinMapSizeToPanel();
-    applyMapSize(currentMapSize);
-  });
-
-  // Double-click-to-reset is handled here rather than via a separate
-  // 'dblclick' listener: preventDefault() on pointerdown (needed below, so
-  // dragging doesn't also fire a click on whatever's underneath) suppresses
-  // the browser's synthesized click/dblclick events for that same
-  // interaction entirely, so a real 'dblclick' listener would never fire.
-  const resizeHandle = document.getElementById('part-map-resize');
-  let lastResizePointerDown = 0;
-  resizeHandle?.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const now = performance.now();
-    const isDoubleClick = now - lastResizePointerDown < 350;
-    lastResizePointerDown = now;
-    if (isDoubleClick) {
-      applyMapSize(MIN_MAP_SIZE);
-      try { localStorage.setItem(MAP_SIZE_KEY, String(currentMapSize)); } catch {}
-      return;
-    }
-
-    resizeHandle.setPointerCapture(event.pointerId);
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const startSize = currentMapSize;
-
-    const onMove = (moveEvent) => {
-      const grownBy = Math.max(moveEvent.clientX - startX, startY - moveEvent.clientY);
-      applyMapSize(startSize + grownBy);
-    };
-    const onUp = () => {
-      resizeHandle.removeEventListener('pointermove', onMove);
-      resizeHandle.removeEventListener('pointerup', onUp);
-      resizeHandle.removeEventListener('pointercancel', onUp);
-      try { localStorage.setItem(MAP_SIZE_KEY, String(currentMapSize)); } catch {}
-    };
-    resizeHandle.addEventListener('pointermove', onMove);
-    resizeHandle.addEventListener('pointerup', onUp);
-    resizeHandle.addEventListener('pointercancel', onUp);
-  });
-
-  // Static scene: only re-render when something actually changes (a hover
-  // tint toggling) instead of looping forever.
-  function tick() {
-    requestAnimationFrame(tick);
-    if (document.hidden) return;
-    if (pendingHoverEvent) {
-      applyHover(pendingHoverEvent.clientX, pendingHoverEvent.clientY);
-      pendingHoverEvent = null;
-    }
-    if (dirty) {
-      pRenderer.render(pScene, pCamera);
-      dirty = false;
-    }
-  }
-  requestAnimationFrame(tick);
-}
 
 function setupKeyboardNav() {
-  container.addEventListener('keydown', (event) => {
+  // Listens on document, not container -- hovering a part (the hoverPopupPart
+  // fallback below) never moves keyboard focus, so the focused element at
+  // that point is still whatever it was before (often document.body, which
+  // is an ancestor of container, not a descendant) and a container-scoped
+  // listener would never see the event bubble through it.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    // Don't hijack cursor movement while typing in a hex field or similar —
+    // only relevant when hoverPopupPart is the fallback (below), since focus
+    // inside an editable element is never inside a .model-section anyway.
+    if (event.target.matches('input, textarea, [contenteditable]')) return;
     const section = event.target.closest('.model-section');
-    if (!section) return;
-    const part = section.id.replace('-controls', '');
+    // No focused row? Fall back to whichever part is currently hovered
+    // directly on the model (see showModelHoverPopup) — lets the arrow keys
+    // cycle variants just by hovering, without also needing to click into
+    // the hover popup's own prev/next buttons.
+    const part = section ? section.id.replace('-controls', '') : hoverPopupPart;
     if (!part || !modelSets[part]) return;
 
     if (event.key === 'ArrowLeft') {
@@ -1805,6 +2290,22 @@ function setupKeyboardNav() {
       markCustomPreset();
       event.preventDefault();
     }
+  });
+}
+
+// TEMPORARY dev helper for picking the default camera angle -- rotate/zoom
+// the model by hand, press "C", and read the exact position/target off the
+// toast instead of guessing coordinates from a screenshot. Remove once the
+// final angle is locked in.
+function setupCameraDebugReadout() {
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'c' && event.key !== 'C') return;
+    if (event.target.matches('input, textarea, [contenteditable]')) return;
+    const p = camera.position;
+    const t = controls.target;
+    const msg = `pos(${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}) target(${t.x.toFixed(0)}, ${t.y.toFixed(0)}, ${t.z.toFixed(0)})`;
+    console.log('CAMERA:', msg);
+    toast(msg, 'ok', 6000);
   });
 }
 
@@ -1910,7 +2411,7 @@ function setupGlobalClickHandler() {
 
       const url = new URL('./engrave.html', window.location.href);
       url.searchParams.set('part', 'top');
-      url.searchParams.set('file', 'Toplights_NOlogo.glb');
+      url.searchParams.set('file', 'Top_lights_NOlogo.glb');
       navigateWithFade(url.href);
       return;
     }
@@ -1982,12 +2483,7 @@ function setupGlobalClickHandler() {
 
 function initPillsAndButtons() {
   for (const part of Object.keys(modelSets)) {
-    const pill = document.getElementById(`${part}-pill`);
-    const hex = `#${modelCols[part].getHexString()}`;
-    if (pill) {
-      pill.style.backgroundColor = hex;
-      pill.style.border = hex.toLowerCase() === '#ffffff' ? '1px solid #000' : '1px solid var(--stroke)';
-    }
+    syncPillColor(part);
 
     const visBtn = document.getElementById(`${part}-visibility`);
     if (visBtn) {
@@ -2017,23 +2513,19 @@ function toast(message, type = 'ok', ms = 2000) {
   setTimeout(() => el.remove(), ms + 300);
 }
 
-function adjustControlsWidth() {
-  if (mobileLayoutActive) return; // sheet content is full-width via CSS instead
-  const toggle = document.getElementById('controls-toggle');
-  if (!toggle) return;
-  const width = toggle.getBoundingClientRect().width;
-  const nextWidth = Math.min(Math.max(260, width), (container.clientWidth || window.innerWidth) - 24);
-  essPanel.style.width = `${nextWidth}px`;
-  partMapWidthSync?.();
-}
-
 function setPresetLabel(label) {
   presetLabelEl.textContent = label;
   presetToggle.setAttribute('aria-label', `Active preset: ${label}`);
+  const presetPanelCurrent = document.getElementById('preset-panel-current');
+  if (presetPanelCurrent) presetPanelCurrent.textContent = label;
 }
 
+// Queries live rather than using a cached list — the desktop .preset-card
+// elements (see renderPresetCarousel) don't exist yet at script-parse time,
+// only once the mixes panel first builds them, so a snapshot array taken up
+// front would never see them.
 function syncPresetButtons(key) {
-  presetButtons.forEach((button) => {
+  document.querySelectorAll('.preset-option[data-preset], .preset-card[data-preset]').forEach((button) => {
     const isActive = button.dataset.preset === key;
     button.classList.toggle('active', isActive);
     button.setAttribute('aria-selected', isActive ? 'true' : 'false');
@@ -2157,6 +2649,7 @@ function saveStateToLocal() {
     currentIdx,
     partVis,
     modelCols: Object.fromEntries(Object.entries(modelCols).map(([part, color]) => [part, `#${color.getHexString()}`])),
+    modelMeshCols,
     presetKey: activePresetKey
   };
 
@@ -2182,6 +2675,17 @@ function applySavedState(saved) {
     for (const part of Object.keys(saved.modelCols)) {
       if (!modelCols[part]) modelCols[part] = new THREE.Color('#d9d9d9');
       modelCols[part].set(saved.modelCols[part] || '#d9d9d9');
+    }
+  }
+
+  // Per-mesh paint overrides, keyed by part -> variant index -> mesh index
+  // (see modelMeshCols above applyColor). Restored wholesale — applyColor
+  // looks entries up by the current variant index at repaint time, so a
+  // variant this build isn't currently showing just sits unused until (if
+  // ever) the user navigates back to it.
+  if (saved.modelMeshCols && typeof saved.modelMeshCols === 'object') {
+    for (const part of Object.keys(saved.modelMeshCols)) {
+      if (modelSets[part]) modelMeshCols[part] = saved.modelMeshCols[part];
     }
   }
 
@@ -2215,7 +2719,8 @@ function encodeShareState() {
   const state = {
     currentIdx,
     partVis,
-    modelCols: Object.fromEntries(Object.entries(modelCols).map(([part, color]) => [part, `#${color.getHexString()}`]))
+    modelCols: Object.fromEntries(Object.entries(modelCols).map(([part, color]) => [part, `#${color.getHexString()}`])),
+    modelMeshCols
   };
   const json = JSON.stringify(state);
   const bytes = new TextEncoder().encode(json);
@@ -2854,15 +3359,40 @@ function setupArPreview() {
 function applyColor(part) {
   const model = loadedMods[part];
   if (!model) return;
+  const overrides = getMeshOverrides(part);
   model.traverse((child) => {
     if (!child.isMesh) return;
+    const overrideHex = overrides && overrides[child.userData.meshIndex];
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     materials.forEach((material) => {
       if (!material?.color) return;
-      material.color.set(modelCols[part]);
+      if (overrideHex) material.color.set(overrideHex);
+      else material.color.set(modelCols[part]);
       material.needsUpdate = true;
     });
   });
+}
+
+// Returns this part's per-mesh paint overrides for its *currently loaded
+// variant* (see modelMeshCols above). `create` lazily allocates the nested
+// objects so callers that only want to read (e.g. applyColor, on every
+// repaint) don't leave empty {} entries behind for every part/variant ever
+// visited.
+function getMeshOverrides(part, create = false) {
+  const variantIdx = currentIdx[part] ?? 0;
+  if (!modelMeshCols[part]) {
+    if (!create) return null;
+    modelMeshCols[part] = {};
+  }
+  if (!modelMeshCols[part][variantIdx]) {
+    if (!create) return null;
+    modelMeshCols[part][variantIdx] = {};
+  }
+  return modelMeshCols[part][variantIdx];
+}
+
+function toMaterialArray(material) {
+  return Array.isArray(material) ? material : [material];
 }
 
 function getPartDisplayName(part) {
@@ -3245,8 +3775,27 @@ function loadModel(part, animatePop = false) {
         }
         model.position.y = yOffset;
         model.visible = partVis[part];
+        // meshIndex is assigned in traversal order, deterministic for a given
+        // glb — it's how paint overrides (modelMeshCols) target a specific
+        // sub-object within a multi-mesh part. See getMeshOverrides/applyColor.
+        let meshIndex = 0;
         model.traverse((node) => {
-          if (node.isMesh) node.castShadow = true;
+          if (node.isMesh) {
+            node.castShadow = true;
+            node.userData.meshIndex = meshIndex++;
+            // Same "axes swapped" cached-bounds issue noted in getThumbRenderer
+            // (search for "precise=true" above) — some of these assets carry a
+            // stale/wrong geometry.boundingSphere from the exporter's declared
+            // accessor min/max. Mesh.raycast() uses that cached sphere for its
+            // early-out check, so a bad one makes the paint bucket's raycast
+            // silently miss real, visible geometry (e.g. Face_Eyebrows.glb's
+            // eyebrow meshes) no matter how carefully the click lands. Forcing
+            // a fresh computation from the actual current vertex data fixes it
+            // at the source, for every consumer (bucket paint, click-to-browse
+            // hover), not just the thumbnail renderer that first hit this.
+            node.geometry.computeBoundingSphere();
+            node.geometry.computeBoundingBox();
+          }
         });
         loadedMods[part] = model;
         if (partVis[part]) scene.add(model);
@@ -3325,6 +3874,7 @@ function applyPreset(key, showToast = true) {
 }
 
 function resetToFactory() {
+  setBucketMode(null);
   applyPreset('starter', false);
   partVis.spacer = false;
   const spacerBtn = document.getElementById('spacer-visibility');
@@ -3339,12 +3889,10 @@ function resetToFactory() {
 
   for (const part of Object.keys(modelSets)) {
     modelCols[part].set('#d9d9d9');
+    delete modelMeshCols[part];
     applyColor(part);
-    const pill = document.getElementById(`${part}-pill`);
-    if (pill) {
-      pill.style.backgroundColor = '#d9d9d9';
-      pill.style.border = '1px solid var(--stroke)';
-    }
+    updateBucketResetVisibility(part);
+    syncPillColor(part);
   }
 
   updateAllCounters();
@@ -3545,6 +4093,10 @@ function reallyClosePalette() {
   openPalette.style.zIndex = '';
   restorePalette(openPalette);
   openPalette = null;
+  // Bucket mode only makes sense while its palette (the brush color source) is
+  // open, so closing the palette any other way (outside click, Escape, scroll,
+  // picking a plain swatch) always exits it too.
+  setBucketMode(null);
 }
 
 function shouldAutoStartTour() {
@@ -3577,7 +4129,7 @@ function startTour(force = false) {
   const steps = [
     { target: '#preset-toggle', title: 'Presets', body: 'Start from a ready-made configuration. Click to open and pick one.' },
     { target: '#controls-toggle', title: 'Panels', body: 'Switch between Essential parts and Advanced add-ons.' },
-    { target: '#part-map', title: 'Quick Part Picker', body: 'Click any part on this mini model to jump straight to customizing it — including Hat and Arms, which start hidden in the list.' },
+    { target: '#globalPaintBtn', title: 'Paint & Browse', body: 'Click any piece right on the model to jump to its variants. Click here first to paint pieces any color instead, straight on the model.' },
     { target: '#top-pill', title: 'Colors', body: 'Click the color pill for quick presets, or drag in the full picker for any shade you want.' },
     { target: '#top-controls [data-role="next"]', title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
     { target: '#top-visibility', title: 'Visibility', body: 'Temporarily hide or show a part to see how it affects the build.' },
@@ -3713,6 +4265,7 @@ function animate() {
   if (renderingPaused) return;
   controls.update();
   updatePartPops(performance.now());
+  paintHoverFlush?.();
   renderer.render(scene, camera);
 }
 

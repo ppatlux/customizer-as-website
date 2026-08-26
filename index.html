@@ -71,6 +71,28 @@
         </div>
       </div>
 
+      <!-- Minimal floating control shown while hovering a part directly on the model
+           (desktop, non-touch — see setupModelHoverPopup in app.js). data-part on each
+           button is filled in dynamically to match whichever part is currently hovered,
+           so these reuse setupGlobalClickHandler's existing prev/next/print/download-part
+           handling verbatim — no separate logic needed here. -->
+      <div id="model-hover-popup" class="model-hover-popup" role="group" aria-label="Quick part controls">
+        <button type="button" class="model-hover-popup-arrow" data-role="prev" aria-label="Previous variant">
+          <span class="material-icons">chevron_left</span>
+        </button>
+        <span class="model-hover-popup-name" data-role="hover-popup-name">Part</span>
+        <button type="button" class="model-hover-popup-arrow" data-role="next" aria-label="Next variant">
+          <span class="material-icons">chevron_right</span>
+        </button>
+        <span class="model-hover-popup-divider" aria-hidden="true"></span>
+        <button type="button" class="model-hover-popup-icon" data-role="print" title="Print part" aria-label="Open in OrcaSlicer">
+          <span class="material-icons">print</span>
+        </button>
+        <button type="button" class="model-hover-popup-icon" data-role="download-part" title="Download STL" aria-label="Download STL">
+          <span class="material-icons">file_download</span>
+        </button>
+      </div>
+
       <div id="variant-grid-panel" class="variant-grid-panel" role="dialog" aria-labelledby="variant-grid-title">
         <div class="variant-grid-panel-head">
           <h2 id="variant-grid-title">Choose a part</h2>
@@ -89,6 +111,8 @@
         <div id="brand-mark" aria-hidden="true">
           <img src="./assets/hp%20robots%20customizer.svg" alt="" id="brand-logo">
         </div>
+        <!-- Touch-only from here down (see app.css) -- desktop picks a mix from
+             the new #preset-panel carousel on the right instead. -->
         <button id="preset-toggle" class="preset-toggle" aria-haspopup="listbox" aria-expanded="false" aria-label="Active preset: Starter Kit">
           <span class="material-icons">layers</span>
           <span id="preset-active-label" class="preset-label">Starter Kit</span>
@@ -114,6 +138,11 @@
         </div>
       </div>
 
+      <!-- Desktop reparents this into .right-dock's Parts page at bootstrap
+           (see setupRightDockTabs), nested alongside the #panel-essential list
+           it controls, same way essPanel itself gets reparented into the
+           mobile sheet on touch. Touch leaves it right here, floating at its
+           own fixed position same as always (see the (pointer:coarse) CSS). -->
       <div id="controls-toggle" role="tablist" aria-label="Customizer sections">
         <button id="show-essential" class="toggle-btn active" role="tab" aria-selected="true">
           <span class="material-icons">tune</span>&nbsp;Essential
@@ -208,15 +237,69 @@
         <span class="combo-chip" id="comboChip">Combos: —</span>
       </div>
 
-      <div class="model-controls essential hide-advanced" id="panel-essential" role="tabpanel" aria-labelledby="show-essential"></div>
+      <!-- Desktop-only: one always-visible dock with two tabbed pages instead of
+           the old two independent collapsible panels -- exactly one page is
+           shown at a time, Mixes by default and always the higher-priority tab
+           (it's the faster path for most visitors), Parts one click away for
+           the deeper cut (toggling Hat/Arms/Bumper visibility, picking a base
+           part -- variant browsing, print, and download all moved onto the
+           model itself). There's deliberately no way to collapse both pages
+           away: switching tabs is the only interaction, so something is always
+           on screen here. See setupRightDockTabs. Untouched on touch devices,
+           where the old top-left preset dropdown and the mobile-sheet-reparented
+           parts panel are used instead. -->
+      <div class="right-dock" id="right-dock">
+        <div class="right-dock-tabs" role="tablist" aria-label="Right panel">
+          <button type="button" id="dock-tab-mixes" class="right-dock-tab active" role="tab" aria-selected="true" aria-controls="preset-panel">
+            <span class="material-icons">auto_awesome</span>
+            <span>Mixes</span>
+          </button>
+          <button type="button" id="dock-tab-parts" class="right-dock-tab" role="tab" aria-selected="false" aria-controls="parts-page">
+            <span class="material-icons">tune</span>
+            <span>Parts</span>
+          </button>
+        </div>
 
-      <!-- Desktop-only visual index into the parts list: a small reference build showing
-           every major part (including ones hidden by default, like Hat/Arms) at once.
-           Clicking a part opens that part's variant grid, same as clicking its row's name. -->
-      <div id="part-map" aria-label="Interactive part map — click a part of Otto to customize it">
-        <canvas id="part-map-canvas"></canvas>
-        <span id="part-map-label">Tap a part</span>
-        <div id="part-map-resize" title="Drag to resize (double-click to reset)" aria-hidden="true"></div>
+        <div class="right-dock-page active" id="preset-panel" role="tabpanel" aria-label="Ready-made mixes">
+          <div class="preset-panel-head">
+            <span class="preset-panel-title">Ready-made mixes</span>
+            <span class="preset-panel-current" id="preset-panel-current">Basic</span>
+          </div>
+          <div class="preset-carousel" id="preset-carousel"></div>
+        </div>
+
+        <!-- #controls-toggle gets moved in here at bootstrap, right above
+             #panel-essential (see the comment by its original spot in the DOM
+             and setupRightDockTabs). -->
+        <div class="right-dock-page" id="parts-page" role="tabpanel" aria-label="Part controls">
+          <div class="model-controls hide-advanced" id="panel-essential" role="tabpanel" aria-labelledby="show-essential"></div>
+        </div>
+      </div>
+
+      <!-- Desktop-only left column: the primary "paint anything, right away" tool on
+           top, and (collapsed by default) the per-part color list below it for anyone
+           who wants to target one specific part instead. Hidden entirely on touch
+           devices, where each part row's own inline pill (.color-pill--inline) and its
+           own "Paint pieces" toggle are used instead — see the (pointer:coarse) rules
+           in app.css. -->
+      <div id="left-tools" class="left-tools">
+        <div id="global-paint-panel" class="global-paint-panel" aria-label="Paint any piece">
+          <button id="globalPaintBtn" class="global-paint-toggle-btn" data-role="bucket-toggle" data-part="__all__" aria-pressed="false" title="Click, then click any piece on the model to paint it">
+            <span class="material-icons">format_color_fill</span>
+            <span data-role="bucket-toggle-label">Paint any piece</span>
+          </button>
+          <!-- Filled by renderGlobalPaintPalette() in app.js — the swatch grid,
+               hue/saturation picker, and hex input, always visible here (not a
+               popover you have to open first). -->
+          <div id="global-paint-picker"></div>
+        </div>
+
+        <button id="color-sidebar-toggle" class="color-sidebar-toggle-btn" aria-expanded="false" aria-controls="color-sidebar">
+          <span class="material-icons">palette</span>
+          <span>Part colors</span>
+          <span class="material-icons caret">expand_more</span>
+        </button>
+        <div id="color-sidebar" class="color-sidebar" aria-label="Part colors"></div>
       </div>
 
       <!-- Mobile-only (pointer:coarse) bottom sheet. On touch devices app.js moves the

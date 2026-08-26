@@ -14,7 +14,8 @@
   --hpro-yellow: #FFC83D;
   --hpro-mint: #8EE9C9;
   --hpro-navy: #25284F;
-  --canvas: #ECF4F9;
+  --canvas: #ffffff;
+  --dot-grid: rgba(185, 204, 216, 0.55);
   --text: #000000;
   --muted: #515E80;
   --bg-start: #FFFFFF;
@@ -23,7 +24,7 @@
   --glass-hover: #F6F7F9;
   --glass-strong: #FFFFFF;
   --glass-press: #EDF1F5;
-  --track: #D4E2EA;
+  --track: #d4e2ea;
   --stroke: #B9CCD8;
   --stroke-strong: #B9CCD8;
   --edge: 16px;
@@ -71,7 +72,12 @@ body{
   margin:0;
   color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Roboto,Segoe UI,system-ui,Arial,sans-serif;
-  background:var(--canvas);
+  background-color:var(--canvas);
+  /* Faint dot grid instead of flat white -- the 3D canvas itself renders
+     transparent (see the renderer setup in app.js) so this shows straight
+     through behind the robot, not just around the edges of the page. */
+  background-image:radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
+  background-size:24px 24px;
   overflow:hidden;
   /* Kills the browser's native double-tap-to-zoom on the UI chrome (buttons,
      sheet, top bar) — this is an app-like interface, not a content page, and
@@ -114,8 +120,6 @@ html.vt-fallback.vt-leaving body{
 .u-hidden{ display:none !important; }
 .u-glass{
   background:var(--glass-bg);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
-  backdrop-filter: blur(var(--blur)) saturate(140%);
   border:1px solid var(--stroke);
 }
 
@@ -124,7 +128,9 @@ html.vt-fallback.vt-leaving body{
   height:100%;
   position:relative;
   overflow:hidden;
-  background:var(--canvas);
+  background-color:var(--canvas);
+  background-image:radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
+  background-size:24px 24px;
   isolation:isolate;
 }
 
@@ -230,20 +236,50 @@ html.vt-fallback.vt-leaving body{
   z-index:var(--z-floating);
 }
 
+/* Desktop moves the wordmark down to sit opposite #info-container -- toolbar
+   bottom-left, watermark bottom-right -- now that #preset-menu has nothing
+   else left in it (the preset picker moved into .right-dock's carousel and
+   #preset-toggle is touch-only). Faded down to a watermark rather than a
+   full-opacity logo since it's no longer doing the job of labeling an
+   interactive control, just quietly balancing the bottom row. Touch restores
+   the original inline top-left placement below (it still sits next to the
+   preset picker there). */
 #brand-mark{
+  position:fixed;
+  left:auto;
+  top:auto;
+  right:calc(var(--edge) + env(safe-area-inset-right, 0px));
+  bottom:calc(var(--edge) + env(safe-area-inset-bottom, 0px));
   display:flex;
   align-items:center;
-  opacity:0.9;
+  opacity:0.4;
+  filter:grayscale(1);
   user-select:none;
   pointer-events:none;
+  z-index:var(--z-toolbar);
 }
 #brand-logo{
   height:36px;
   width:auto;
 }
+@media (pointer: coarse) and (max-width: 1024px){
+  #brand-mark{
+    position:static;
+    right:auto;
+    bottom:auto;
+    opacity:0.9;
+    filter:none;
+  }
+}
+
+/* Desktop picks a mix from the new .right-dock carousel instead (see
+   setupRightDockTabs) -- this pill + its dropdown stay for touch only. */
+.preset-toggle{ display:none; }
+@media (pointer: coarse) and (max-width: 1024px){
+  .preset-toggle{ display:inline-flex; }
+}
 
 .preset-toggle{
-  display:inline-flex;
   align-items:center;
   gap:10px;
   min-height:var(--control-h);
@@ -292,8 +328,6 @@ html.vt-fallback.vt-leaving body{
   border-radius:var(--radius-lg);
   box-shadow:var(--shadow-lg);
   padding:6px;
-  -webkit-backdrop-filter:blur(var(--blur));
-  backdrop-filter:blur(var(--blur));
   z-index:var(--z-floating);
 }
 #preset-menu.open .preset-options{ display:block; }
@@ -352,20 +386,35 @@ html.vt-fallback.vt-leaving body{
   color:var(--hpro-navy);
 }
 
+/* Position is touch-only now -- desktop reparents this element into
+   .right-dock's Parts page at bootstrap (see setupRightDockTabs), where it
+   just needs to sit in normal flow, full width, above #panel-essential. */
 #controls-toggle{
-  position:absolute;
-  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
-  right:var(--edge);
   height:var(--control-h);
   display:inline-flex;
   align-items:center;
   gap:0;
-  z-index:var(--z-toolbar);
   padding:0 6px;
   background:var(--track);
   border:1px solid var(--stroke);
   border-radius:999px;
   box-shadow:var(--shadow-sm);
+}
+@media (pointer: coarse) and (max-width: 1024px){
+  #controls-toggle{
+    position:absolute;
+    top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+    right:var(--edge);
+    z-index:var(--z-toolbar);
+  }
+}
+/* Full width once nested in .right-dock's Parts page (see #controls-toggle
+   above) instead of the fixed-content-width pill it is floating on touch. */
+.right-dock-page #controls-toggle{
+  width:100%;
+}
+.right-dock-page #controls-toggle .toggle-btn{
+  flex:1 1 0;
 }
 .toggle-btn{
   height:calc(var(--control-h) - 12px);
@@ -390,29 +439,74 @@ html.vt-fallback.vt-leaving body{
   box-shadow:var(--shadow-xs);
 }
 
+/* Just the part-list's own visual/scroll styling now -- position comes from
+   whichever context it's living in (nested in .right-dock-page's Parts page
+   on desktop, reparented into .mobile-sheet-list on touch, see
+   setupRightDockTabs / setupMobileSheet), so this class no longer positions
+   or shows/hides itself at all; both those contexts fully control that. */
 .model-controls{
-  position:absolute;
-  top:calc(var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
-  right:var(--edge);
-  display:none;
+  display:flex;
   flex-direction:column;
   gap:10px;
-  background:var(--glass-bg);
-  -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
-  backdrop-filter:blur(var(--blur)) saturate(140%);
-  padding:12px;
-  border-radius:var(--radius-lg);
-  border:1px solid var(--stroke);
-  box-shadow:var(--shadow);
-  width:280px;
   min-width:0;
-  max-height:calc(100vh - 140px);
-  max-height:calc(100svh - 140px);
+  width:100%;
+  flex:1 1 auto;
   overflow:auto;
-  z-index:var(--z-panels);
-  animation:fadeSlide var(--transition) ease-out both;
 }
-.model-controls.essential{ display:flex; }
+
+/* Two-column grid, scrolling vertically -- matches how #panel-essential's own
+   part list scrolls on the Parts tab (see .model-controls), fills the dock's
+   available height the same way instead of sitting as a short single row
+   with a lot of empty space below it, and keeps the scrollbar itself visible
+   as a clear "there's more below" cue. */
+.preset-carousel{
+  display:grid;
+  grid-template-columns:repeat(2, 1fr);
+  gap:10px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:2px;
+  margin:0 -2px;
+  flex:1 1 auto;
+  min-height:0;
+}
+.preset-card{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:8px;
+  background:#FFFFFF;
+  border:1px solid var(--stroke);
+  border-radius:12px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.35);
+  cursor:pointer;
+  text-align:left;
+  font-family:inherit;
+  transition:transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+.preset-card:hover{
+  transform:translateY(-1px);
+  box-shadow:var(--shadow-sm);
+}
+.preset-card.active{
+  border-color:var(--hpro-navy);
+  box-shadow:0 0 0 2px var(--hpro-navy) inset;
+}
+.preset-card-thumb{
+  width:100%;
+  aspect-ratio:1 / 1;
+  border-radius:8px;
+  background:var(--track);
+  object-fit:contain;
+}
+.preset-card-title{
+  font:700 12px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+.preset-card-desc{
+  font:500 11px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+}
 
 /* Advanced shows every part in the same single scrollable list, essential
    ones included (see showAdvancedPanel) — .hide-advanced just hides the
@@ -422,87 +516,6 @@ html.vt-fallback.vt-leaving body{
   display:none;
 }
 
-#part-map{
-  position:absolute;
-  left:var(--edge);
-  bottom:calc(var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px));
-  width:280px;
-  height:280px;
-  border-radius:var(--radius-lg);
-  background:var(--glass-bg);
-  border:1px solid var(--stroke);
-  box-shadow:var(--shadow);
-  overflow:hidden;
-  z-index:var(--z-toolbar);
-  cursor:pointer;
-  transition:box-shadow var(--transition), transform var(--transition);
-}
-#part-map:hover{
-  box-shadow:var(--shadow-lg);
-  transform:translateY(-1px);
-}
-#part-map-canvas{
-  display:block;
-  width:100%;
-  height:100%;
-  touch-action:none;
-}
-#part-map-label{
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:0;
-  padding:10px 0 6px;
-  text-align:center;
-  font:700 9px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  letter-spacing:.08em;
-  text-transform:uppercase;
-  color:var(--muted);
-  pointer-events:none;
-  background:linear-gradient(to top, var(--glass-bg), transparent);
-}
-/* #part-map is anchored bottom-left (left/bottom offsets), so the grip lives at
-   the opposite (top-right) corner — dragging it up-right grows the box while
-   the anchored corner stays put, which is the intuitive direction to drag. */
-#part-map-resize{
-  position:absolute;
-  top:0;
-  right:0;
-  width:24px;
-  height:24px;
-  cursor:nesw-resize;
-  touch-action:none;
-  z-index:2;
-}
-#part-map-resize::before{
-  content:"";
-  position:absolute;
-  top:7px;
-  right:7px;
-  width:10px;
-  height:10px;
-  border-top:2px solid var(--stroke-strong);
-  border-right:2px solid var(--stroke-strong);
-  border-radius:0 4px 0 0;
-  opacity:.55;
-  transition:opacity var(--transition), border-color var(--transition);
-}
-#part-map-resize:hover::before{
-  opacity:1;
-  border-color:var(--brand);
-}
-/* Mobile already has a lot competing for bottom-of-screen space (the sheet,
-   its actions) — this is a desktop-only navigation aid.
-   pointer:coarse alone isn't "is this a phone" — touchscreen 2-in-1 laptops
-   (HP Omnibook X Flip, Surface, Spectre x360...) report a coarse primary
-   pointer purely because a touch digitizer is present, even when driven by
-   keyboard+trackpad at full laptop width. The max-width caps this to
-   viewports actually phone-sized (see the 1024px "landscape-phone" and
-   480px "portrait-phone" buckets used elsewhere in this file). */
-@media (pointer: coarse) and (max-width: 1024px){
-  #part-map{ display:none; }
-}
-
 .model-section{
   position:relative;
   display:flex;
@@ -510,8 +523,13 @@ html.vt-fallback.vt-leaving body{
   min-width:0;
   gap:8px;
   background:#FFFFFF;
-  -webkit-backdrop-filter:blur(1px);
-  backdrop-filter:blur(1px);
+  /* backdrop-filter is a no-op behind a fully opaque background -- it was
+     harmlessly doing nothing when the backdrop was a flat color, but now
+     that the page has a dot-grid texture behind it (see body in this file),
+     a border-radius + backdrop-filter combo can leak a faint filtered sliver
+     of that texture past the opaque fill at the rounded corners in some
+     browsers, reading as a stray dark smudge. Removed everywhere it was
+     paired with an opaque background rather than only here. */
   padding:10px;
   border-radius:12px;
   border:1px solid var(--stroke);
@@ -628,6 +646,307 @@ html.vt-fallback.vt-leaving body{
   animation:sheen 900ms ease-out;
 }
 
+/* Desktop-only left column: #globalPaintBtn's always-open picker on top (the
+   primary way to paint — no part has to be selected first), and the
+   collapsed-by-default per-part color list below it for anyone who wants to
+   target one specific part instead. Plain flex column, not its own card —
+   #global-paint-panel and #color-sidebar-toggle/#color-sidebar each carry
+   their own chrome, same as #preset-menu does independently.
+   Height-capped to leave room for the bottom toolbar (#info-container),
+   same reasoning as .model-controls' own max-height on the opposite side.
+   .global-paint-panel and the toggle button opt out of shrinking
+   (flex-shrink:0 — they must always show in full); #color-sidebar is the one
+   flexible child (flex:1 1 auto + min-height:0) that absorbs whatever space
+   is actually left over once expanded, scrolling internally past that via
+   its own overflow:auto rather than pushing the toolbar off-screen. */
+.left-tools{
+  position:absolute;
+  left:var(--edge);
+  top:calc(var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:10px;
+  width:220px;
+  /* A flat "100vh - 140px" guess undercounted: it measured the reservation
+     from the viewport's top edge, but this box's own `top` above already
+     eats 72px of that before its content even starts, so the real bottom
+     clearance ended up 72px short — just enough for #color-sidebar's rows,
+     once actually tall enough to reach this ceiling, to poke a few pixels
+     into #info-container (the bottom toolbar) sitting on top of it at a much
+     higher z-index. Deriving both the top offset and the bottom reservation
+     from the same spacing tokens the toolbar itself is built from (rather
+     than a second guessed constant) keeps this correct if either changes. */
+  max-height:calc(100vh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  max-height:calc(100svh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  overflow:hidden;
+  z-index:var(--z-panels);
+}
+/* Mobile already has a lot competing for bottom-of-screen space (the sheet,
+   its actions) — this column is a desktop-only convenience.
+   pointer:coarse alone isn't "is this a phone" — touchscreen 2-in-1 laptops
+   (HP Omnibook X Flip, Surface, Spectre x360...) report a coarse primary
+   pointer purely because a touch digitizer is present, even when driven by
+   keyboard+trackpad at full laptop width. The max-width caps this to
+   viewports actually phone-sized (see the 1024px "landscape-phone" and
+   480px "portrait-phone" buckets used elsewhere in this file). */
+@media (pointer: coarse) and (max-width: 1024px){
+  .left-tools{ display:none; }
+}
+/* Separate from the rule above: a plain, pointer-agnostic width guard. A
+   resized (not just touch) desktop window narrow enough that #left-tools,
+   the 3D view, and .model-controls on the right can't all fit had nowhere
+   for this column to go — it was overlapping the Essential/Advanced tabs
+   and the right panel underneath it instead of yielding. A mouse user *can*
+   just widen their window back up, unlike a touch device's fixed screen, so
+   this is a narrower threshold than the 1024px touch one above. */
+@media (max-width: 760px){
+  .left-tools{ display:none; }
+}
+
+.global-paint-panel{
+  flex-shrink:0;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  width:100%;
+  background:var(--glass-bg);
+  padding:12px;
+  border-radius:var(--radius-lg);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow);
+}
+/* Prominent brand-bordered pill — deliberately the loudest button in this
+   column, since it's the primary way to change any color at all now. Gold
+   fill while active mirrors every other "this mode is on" state in the app
+   (.bucket-toggle-btn.active, etc). */
+.global-paint-toggle-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  height:38px;
+  padding:0 14px;
+  border:1px solid var(--brand);
+  border-radius:999px;
+  background:transparent;
+  color:var(--text);
+  font:700 13px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+.global-paint-toggle-btn:hover{
+  background:var(--glass-hover);
+  transform:translateY(-1px);
+}
+.global-paint-toggle-btn.active{
+  background:var(--brand);
+  color:var(--hpro-navy);
+  box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
+}
+.global-paint-toggle-btn .material-icons{
+  font-size:18px;
+}
+/* The picker inside #global-paint-picker reuses the exact swatch-grid/
+   picker-advanced/hex-row/reset/hint markup every per-part palette uses
+   (see renderGlobalPaintPalette) — .color-palette-inline just strips the
+   floating-popover behavior (position/display/background/animation) those
+   pick up from .color-palette, since this one is always part of the page
+   flow, not something mounted/positioned on open. */
+.color-palette-inline{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.color-sidebar-toggle-btn{
+  flex-shrink:0;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  height:var(--control-h);
+  padding:0 12px;
+  background:var(--glass-bg);
+  border:1px solid var(--stroke);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);
+  color:var(--text);
+  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), transform var(--transition);
+}
+.color-sidebar-toggle-btn:hover{
+  background:var(--glass-hover);
+  transform:translateY(-1px);
+}
+.color-sidebar-toggle-btn .material-icons{
+  font-size:18px;
+}
+.color-sidebar-toggle-btn .caret{
+  font-size:18px;
+  transition:transform var(--transition);
+}
+.color-sidebar-toggle-btn[aria-expanded="true"] .caret{
+  transform:rotate(180deg);
+}
+
+/* One always-visible dock on the right replacing the old pair of independent
+   collapsible panels (see setupRightDockTabs) — exactly one of its two pages
+   (#preset-panel / #parts-page) is shown at a time, switched by the tab strip
+   at the top, Mixes active by default. There is no collapsed-to-nothing
+   state: unlike the color sidebar or the old right-panel-toggle, these tabs
+   only ever switch which page shows, never hide the dock itself. */
+.right-dock{
+  position:absolute;
+  /* Same top offset and max-height formula as .left-tools on the opposite
+     side (see there for the derivation), so the two side columns start and
+     end at the same height instead of the dock looking short/lopsided next
+     to it -- the couple dozen pixels this reserves above the dock are unused
+     on this side (nothing else sits at the top-right any more), but a small
+     shared gap beats visibly mismatched columns. */
+  top:calc(var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
+  right:var(--edge);
+  width:352px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  background:var(--glass-bg);
+  padding:12px;
+  border-radius:var(--radius-lg);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow);
+  max-height:calc(100vh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  max-height:calc(100svh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  z-index:var(--z-panels);
+}
+@media (pointer: coarse) and (max-width: 1024px){
+  /* No dock on touch at all -- mixes are still picked from the old top-left
+     dropdown, and #panel-essential + #controls-toggle live in the mobile
+     sheet instead (see setupMobileSheet). */
+  .right-dock{ display:none; }
+}
+
+.right-dock-tabs{
+  display:flex;
+  gap:6px;
+  flex:0 0 auto;
+}
+.right-dock-tab{
+  flex:1 1 0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  height:34px;
+  padding:0 10px;
+  background:transparent;
+  border:1px solid var(--stroke);
+  border-radius:999px;
+  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition);
+}
+.right-dock-tab .material-icons{
+  font-size:16px;
+}
+.right-dock-tab.active{
+  background:var(--track);
+  color:var(--hpro-navy);
+  box-shadow:var(--shadow-xs);
+}
+.preset-panel-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:8px;
+  flex:0 0 auto;
+}
+.preset-panel-title{
+  font:700 13px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+.preset-panel-current{
+  font:600 11px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:140px;
+}
+
+/* One page shown at a time, sliding up into place from just below its own
+   final position -- "the controls should slide from below" was the explicit
+   ask for the Parts page, applied to both pages for a consistent switch. */
+.right-dock-page{
+  display:none;
+  flex-direction:column;
+  gap:10px;
+  flex:1 1 auto;
+  min-height:0;
+}
+.right-dock-page.active{
+  display:flex;
+  animation:dockPageIn var(--transition) ease-out both;
+}
+/* #controls-toggle sits pinned above the scrolling #panel-essential list
+   (which carries its own overflow -- see .model-controls) rather than
+   scrolling away with it. */
+.right-dock-page #controls-toggle{
+  flex:0 0 auto;
+}
+@keyframes dockPageIn{
+  from{ transform:translateY(14px); opacity:0; }
+  to{ transform:translateY(0); opacity:1; }
+}
+
+.color-sidebar{
+  display:none;
+  width:100%;
+  min-width:0;
+  flex:1 1 auto;
+  min-height:80px;
+  overflow:auto;
+  flex-direction:column;
+  gap:10px;
+  background:var(--glass-bg);
+  padding:12px;
+  border-radius:var(--radius-lg);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow);
+  animation:fadeSlide var(--transition) ease-out both;
+}
+.color-sidebar.open{
+  display:flex;
+}
+.color-sidebar-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.color-sidebar-label{
+  flex-shrink:0;
+  width:64px;
+  font:700 12px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+  letter-spacing:.01em;
+}
+.color-pill--lg{
+  flex:1;
+  min-width:0;
+  height:30px;
+  border-radius:8px;
+}
+.color-pill--inline{
+  display:none;
+}
+@media (pointer: coarse) and (max-width: 1024px){
+  .color-pill--inline{ display:block; }
+}
+@media (max-width: 760px){
+  .color-pill--inline{ display:block; }
+}
+
 .color-palette{
   display:none;
   position:absolute;
@@ -654,6 +973,34 @@ html.vt-fallback.vt-leaving body{
   grid-template-columns:repeat(4, 24px);
   gap:10px;
   justify-content:center;
+}
+/* Recently-used brush colors (see recordColorHistory in app.js) — only
+   #globalPaintBtn's picker has this row today. Same .color-swatch markup
+   as the preset grid above it, just in a scrolling single-row strip rather
+   than a fixed grid, since the count grows over time. */
+.color-history-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding-top:8px;
+  border-top:1px solid var(--stroke);
+}
+.color-history-label{
+  flex-shrink:0;
+  font:600 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.color-history-swatches{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  overflow-x:auto;
+  padding:2px;
+}
+.color-history-swatches .color-swatch{
+  flex-shrink:0;
 }
 .color-picker-advanced{
   display:flex;
@@ -761,6 +1108,90 @@ html.vt-fallback.vt-leaving body{
   box-shadow:var(--shadow-xs);
 }
 
+.bucket-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding-top:8px;
+  border-top:1px solid var(--stroke);
+}
+.bucket-toggle-btn{
+  flex:1 1 auto;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  height:32px;
+  padding:0 10px;
+  border:1px solid var(--stroke);
+  border-radius:999px;
+  background:transparent;
+  color:var(--text);
+  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition), border-color var(--transition);
+}
+.bucket-toggle-btn span:last-child{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.bucket-toggle-btn:hover{
+  background:var(--glass-hover);
+}
+.bucket-toggle-btn.active{
+  background:var(--brand);
+  border-color:var(--brand);
+  color:var(--hpro-navy);
+}
+.bucket-toggle-btn .material-icons{
+  font-size:16px;
+}
+.bucket-reset-btn{
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  height:32px;
+  padding:0 10px;
+  border:1px solid var(--stroke);
+  border-radius:999px;
+  background:transparent;
+  color:var(--text);
+  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition), border-color var(--transition);
+}
+.bucket-reset-btn:hover{
+  background:var(--glass-hover);
+  border-color:var(--err);
+  color:var(--err);
+}
+.bucket-reset-btn .material-icons{
+  font-size:16px;
+}
+.bucket-hint{
+  margin:0;
+  padding-top:2px;
+  font:500 11px/1.4 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+  text-align:center;
+}
+
+/* Rings the swatch matching the current color (part color normally, brush
+   color while a bucket-toggle is active) — see renderColorPickerUI. */
+.color-swatch.selected{
+  box-shadow:0 0 0 2px var(--glass-strong), 0 0 0 4px var(--brand);
+}
+
+/* Applied to the main viewer's canvas while a part is in "paint pieces" mode
+   (see setBucketMode) so the pointer reads as a paint tool, not the usual
+   orbit-drag grab. */
+.bucket-cursor{
+  cursor:crosshair;
+}
+
 #info-container{
   position:absolute;
   left:var(--edge);
@@ -771,8 +1202,6 @@ html.vt-fallback.vt-leaving body{
   gap:10px;
   padding:8px;
   background:var(--glass-bg);
-  -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
-  backdrop-filter:blur(var(--blur)) saturate(140%);
   border:1px solid var(--stroke);
   border-radius:var(--radius);
   box-shadow:var(--shadow-sm);
@@ -821,8 +1250,6 @@ html.vt-fallback.vt-leaving body{
   overflow:visible;
   border:1px solid color-mix(in srgb, var(--brand) 55%, var(--stroke));
   background:color-mix(in srgb, var(--brand) 22%, var(--glass-bg));
-  -webkit-backdrop-filter:blur(var(--blur));
-  backdrop-filter:blur(var(--blur));
   box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);
   user-select:none;
 }
@@ -877,8 +1304,6 @@ html.vt-fallback.vt-leaving body{
   overflow:visible;
   border:1px solid var(--stroke);
   background:var(--glass-bg);
-  -webkit-backdrop-filter:blur(var(--blur));
-  backdrop-filter:blur(var(--blur));
   box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);
   user-select:none;
 }
@@ -1114,6 +1539,83 @@ html.vt-fallback.vt-leaving body{
   border:1px solid var(--stroke-strong);
   background:var(--glass-strong);
   box-shadow:var(--shadow-lg);
+}
+
+/* Minimal floating control shown while hovering a part directly on the model
+   (see showModelHoverPopup in app.js) — prev/next, print, download, same as
+   that part's row on the right, just contextual. Desktop-only: touch has no
+   true hover gesture to show it, and already has these same actions on each
+   part's row in the mobile sheet. */
+.model-hover-popup{
+  display:none;
+  position:fixed;
+  align-items:center;
+  gap:2px;
+  padding:6px;
+  background:var(--glass-strong);
+  border:1px solid var(--stroke-strong);
+  border-radius:999px;
+  box-shadow:var(--shadow-lg);
+  z-index:var(--z-max);
+  white-space:nowrap;
+}
+.model-hover-popup.open{
+  display:flex;
+}
+@media (pointer: coarse) and (max-width: 1024px){
+  .model-hover-popup{ display:none !important; }
+}
+.model-hover-popup-arrow{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  border:none;
+  background:transparent;
+  color:var(--text);
+  cursor:pointer;
+  transition:background var(--transition);
+}
+.model-hover-popup-arrow:hover{
+  background:var(--glass-hover);
+}
+.model-hover-popup-arrow .material-icons{
+  font-size:18px;
+}
+.model-hover-popup-name{
+  font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+  padding:0 4px;
+  min-width:44px;
+  text-align:center;
+}
+.model-hover-popup-divider{
+  width:1px;
+  height:18px;
+  background:var(--stroke);
+  margin:0 2px;
+}
+.model-hover-popup-icon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  border:none;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition);
+}
+.model-hover-popup-icon:hover{
+  background:var(--glass-hover);
+  color:var(--text);
+}
+.model-hover-popup-icon .material-icons{
+  font-size:16px;
 }
 
 /* Anchored popover, same interaction family as .color-palette: appears next to
@@ -1486,8 +1988,6 @@ body.hp-lock-scroll{
   position:fixed;
   max-width:320px;
   background:var(--glass-strong);
-  -webkit-backdrop-filter:blur(var(--blur)) saturate(140%);
-  backdrop-filter:blur(var(--blur)) saturate(140%);
   border:1px solid var(--stroke-strong);
   border-radius:14px;
   padding:12px;
@@ -1605,8 +2105,8 @@ body.hp-lock-scroll{
 }
 
 /* max-width guards this whole phone layout against touchscreen 2-in-1
-   laptops matching pointer:coarse at full desktop width — see the #part-map
-   rule above for the full explanation. */
+   laptops matching pointer:coarse at full desktop width — see the
+   .left-tools rule above for the full explanation. */
 @media (pointer: coarse) and (max-width: 1024px){
   :root{ --control-h: 48px; }
   .btn--sm{ width:40px; height:40px; }
@@ -1741,19 +2241,14 @@ body.hp-lock-scroll{
     display:block;
   }
 
-  /* Reflow the reparented panels to sit as plain sheet content — the sheet
-     itself is already the "card", so strip the nested card chrome. Display
-     (which panel is active) stays fully controlled by the existing
-     .essential/.advanced classes + JS inline-style toggle, untouched here. */
+  /* .model-controls no longer carries any card chrome or position of its own
+     (see the base rule) — the sheet itself is already the "card" — so the
+     only thing left to reflow here is its spacing. Which sub-panel is active
+     stays fully controlled by the existing .hide-advanced class, untouched
+     here; the sheet's own peek/expanded states govern whether it's on screen
+     at all. */
   .mobile-sheet-list .model-controls{
-    position:static;
-    width:100%;
-    max-height:none;
-    background:none;
-    border:none;
-    box-shadow:none;
     padding:4px 0;
-    animation:none;
   }
 
   /* Kept as two stacked rows (nav row, then pill/action row) — NOT squeezed
@@ -1833,11 +2328,14 @@ body.hp-lock-scroll{
     left:50%;
     transform:translateX(-50%);
   }
-  /* The branded row (logo + pill) is wider than the pill alone, so in this
-     band it can reach into the right-anchored #controls-toggle even though
-     the two didn't collide before the logo existed. Below 480px they stack
-     into separate rows instead (next block), so the logo is safe to bring
-     back there. */
+}
+/* Touch-only: the branded row (logo + pill) is wider than the pill alone, so
+   in this band it can reach into the right-anchored #controls-toggle even
+   though the two didn't collide before the logo existed. Below 480px they
+   stack into separate rows instead (next block), so the logo is safe to
+   bring back there. Doesn't apply on desktop, where #brand-mark is a fixed
+   bottom-right watermark now, nowhere near either of those. */
+@media (pointer: coarse) and (max-width: 900px){
   #brand-mark{
     display:none;
   }
@@ -1852,10 +2350,12 @@ body.hp-lock-scroll{
    stretching edge-to-edge — Essential/Advanced only has ~230px of actual
    content, so stretching it left a wide pill with a lot of dead space
    around two small buttons. */
-@media (max-width: 480px){
+@media (pointer: coarse) and (max-width: 480px){
   #brand-mark{
     display:flex;
   }
+}
+@media (max-width: 480px){
   #preset-menu{
     left:50%;
     right:auto;
