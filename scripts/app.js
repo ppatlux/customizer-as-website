@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ASSET_MANIFEST } from './asset-manifest.js';
+import { PRESETS as presets, normalizeMixPartColor } from './presets.js';
 import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer, PRUSA_SLICER_LIVE } from './slicer-preference.js';
 
 // Used by syncPrintButtonBranding() — declared up here (not next to that
@@ -51,6 +52,17 @@ const PART_META = [
   { key: 'wheels', label: 'Motion', panel: 'advanced' },
   { key: 'tail', label: 'Tail', panel: 'advanced', hidden: true }
 ];
+
+// Per-variant display-name overrides, keyed `part|filename`. prettyVariantLabel
+// derives a label from the filename by default; entries here win over that for
+// cases where the file name and the name we want to show diverge (e.g. the
+// "Spoiler_F1" hat is shown simply as "Spoiler", the "Bottom_F1" bottom as
+// "Racing"). Only affects the label — the file, the compatibility key, and the
+// preset reference all still use the real filename.
+const VARIANT_LABEL_OVERRIDES = {
+  'hat|Spoiler_F1.glb': 'Spoiler',
+  'bottom|Bottom_F1.glb': 'Racing'
+};
 
 const MODEL_Y_OFFSET = 30;
 const STATE_KEY = 'hp_robot_customizer_state';
@@ -111,32 +123,26 @@ const remoteStlSets = Object.fromEntries(
   Object.entries(remoteModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.stl'))])
 );
 
-const presets = {
-  starter: {
-    label: 'Basic',
-    description: 'from Starter kit',
-    parts: { top: 0, middle: 0, face: 0, bottom: 0, wheels: 0, hat: 0, arms: 1, bumper: 0, tail: 0, spacer: 0 },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: false }
-  },
-  invent: {
-    label: 'Walk & Roll',
-    description: 'from Invent expansion',
-    parts: { top: 14, middle: 7, face: 4, bottom: 0, wheels: 1, hat: 6, arms: 0, bumper: 0, tail: 0, spacer: 0 },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: true, bumper: false, tail: false, spacer: false }
-  },
-  sensor: {
-    label: 'Formula 1',
-    description: 'Vroom vroooom',
-    parts: { top: 13, middle: 6, face: 9, bottom: 11, wheels: 1, hat: 4, arms: 0, bumper: 0, tail: 0, spacer: 0 },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
-  },
-  showtime: {
-    label: 'Duck',
-    description: 'Quack!',
-    parts: { top: 2, middle: 1, face: 6, bottom: 2, wheels: 0, hat: 11, arms: 1, bumper: 0, tail: 0, spacer: 0 },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: true, bumper: false, tail: false, spacer: false }
+// `presets` (the ready-made mixes) is imported from ./presets.js so the
+// standalone colour tool (tools/mix-colorizer.html) can share the exact same
+// definitions. See that file for the filename-not-index rationale.
+
+// Per-mix, per-part colours authored by tools/mix-colorizer.html and written
+// to assets/mix-colors.json. Shape: { [presetKey]: { [part]: '#hex' } }. Only
+// used to tint the Mixes-tab preview thumbnails — applying a mix still loads
+// every part in DEFAULT_PART_COLOR, same as before. Fails open: the file may
+// not exist (fresh checkout, nothing authored yet), in which case every
+// thumbnail just falls back to DEFAULT_PART_COLOR and looks like the live app.
+let mixColors = {};
+const mixColorsReady = (async () => {
+  try {
+    const res = await fetch('./assets/mix-colors.json', { cache: 'no-store' });
+    if (res.ok) mixColors = (await res.json()) || {};
+  } catch {
+    // No mix-colors.json — thumbnails fall back to the default part colour.
   }
-};
+  return mixColors;
+})();
 
 renderPanels();
 
@@ -2156,6 +2162,8 @@ function renderPresetCarousel() {
 // consistent across the asset set, so this is a best-effort heuristic, not a
 // guaranteed clean result — it's a secondary label under a real thumbnail.
 function prettyVariantLabel(part, filename) {
+  const override = VARIANT_LABEL_OVERRIDES[`${part}|${filename}`];
+  if (override) return override;
   let name = filename.replace(/\.[^.]+$/, '');
   const partLabel = PART_META.find((meta) => meta.key === part)?.label;
   [part, partLabel].filter(Boolean).forEach((prefix) => {
@@ -2275,32 +2283,54 @@ function renderVariantThumbnail(url) {
 // Renders a whole preset's visible parts assembled together (each part's own
 // GLB already carries its correct world-space offset, same as the live scene
 // — see exportVisiblePartsAsGlb — so no extra positioning is needed here) to
-// one preview image, caching by preset key. Uses each part's raw exported
-// material colors, not the user's current live color choices, since a preset
-// only pins part/variant/visibility, never color.
+// one preview image, caching by preset key.
+//
+// Each mesh is repainted to its authored mix colour (assets/mix-colors.json,
+// see mixColors) — a per-part colour and/or per-piece overrides keyed by the
+// mesh's position in gltf.scene.traverse() order, the same counter loadModel()
+// assigns as userData.meshIndex — or, with nothing authored, to
+// DEFAULT_PART_COLOR. Never the raw baked-in export colours, which vary wildly
+// per asset and made the cards look garish and unlike what applying the mix
+// actually produces (the live app paints every part DEFAULT_PART_COLOR on load).
 function renderPresetThumbnail(key) {
   if (presetThumbCache[key]) return Promise.resolve(presetThumbCache[key]);
   if (presetThumbPromises[key]) return presetThumbPromises[key];
 
-  const preset = presets[key];
-  const urls = Object.entries(preset?.parts || {})
-    .filter(([part]) => preset.visibility?.[part] && modelSets[part]?.length)
-    .map(([part, idx]) => modelSets[part][clampPresetIndex(part, idx)])
-    .filter(Boolean);
+  const promise = mixColorsReady.then(() => {
+    const preset = presets[key];
+    const parts = Object.entries(preset?.parts || {})
+      .filter(([part]) => preset.visibility?.[part] && modelSets[part]?.length)
+      .map(([part, ref]) => ({ part, url: modelSets[part][resolvePresetIndex(part, ref)] }))
+      .filter((entry) => entry.url);
 
-  const promise = Promise.all(urls.map((url) => loader.loadAsync(url).then((gltf) => gltf.scene)))
-    .then((models) => {
-      const group = new THREE.Group();
-      models.forEach((model) => group.add(model));
-      const dataUrl = snapshotThumbnail(group);
-      presetThumbCache[key] = dataUrl;
-      delete presetThumbPromises[key];
-      return dataUrl;
-    }).catch((error) => {
-      console.error('Preset thumbnail render failed', key, error);
-      delete presetThumbPromises[key];
-      return null;
-    });
+    return Promise.all(parts.map(({ part, url }) => loader.loadAsync(url).then((gltf) => {
+      const { color, meshes } = normalizeMixPartColor(mixColors[key]?.[part]);
+      let meshIndex = 0;
+      gltf.scene.traverse((node) => {
+        if (!node.isMesh) return;
+        const hex = meshes[meshIndex] || color || DEFAULT_PART_COLOR;
+        meshIndex += 1;
+        const materials = Array.isArray(node.material) ? node.material : [node.material];
+        materials.forEach((material) => {
+          if (!material?.color) return;
+          material.color.set(hex);
+          material.needsUpdate = true;
+        });
+      });
+      return gltf.scene;
+    })));
+  }).then((models) => {
+    const group = new THREE.Group();
+    models.forEach((model) => group.add(model));
+    const dataUrl = snapshotThumbnail(group);
+    presetThumbCache[key] = dataUrl;
+    delete presetThumbPromises[key];
+    return dataUrl;
+  }).catch((error) => {
+    console.error('Preset thumbnail render failed', key, error);
+    delete presetThumbPromises[key];
+    return null;
+  });
 
   presetThumbPromises[key] = promise;
   return promise;
@@ -2904,6 +2934,22 @@ function clampPresetIndex(part, idx) {
   const list = modelSets[part] || [];
   if (!list.length) return 0;
   return Math.min(Math.max(Number(idx) || 0, 0), list.length - 1);
+}
+
+// Resolves a preset's part reference to a current index in modelSets. Presets
+// pin variants by filename (see the presets object); this finds where that
+// file currently sits. A plain number is tolerated as a legacy fallback. An
+// unknown/removed filename resolves to the first variant with a warning, so a
+// renamed asset degrades visibly-but-safely instead of loading the wrong part.
+function resolvePresetIndex(part, ref) {
+  if (typeof ref === 'number') return clampPresetIndex(part, ref);
+  const list = modelSets[part] || [];
+  const idx = list.findIndex((url) => url.split('/').pop() === ref);
+  if (idx === -1) {
+    console.warn(`Preset references unknown ${part} variant "${ref}" — falling back to the first.`);
+    return 0;
+  }
+  return idx;
 }
 
 function wrapIndex(part, idx) {
@@ -4337,11 +4383,11 @@ function applyPreset(key, showToast = true) {
   try {
     const toLoad = new Set();
 
-    for (const [part, idx] of Object.entries(preset.parts || {})) {
+    for (const [part, ref] of Object.entries(preset.parts || {})) {
       if (!modelSets[part]) continue;
-      const clamped = clampPresetIndex(part, idx);
-      if (currentIdx[part] !== clamped || !loadedMods[part]) {
-        currentIdx[part] = clamped;
+      const resolved = resolvePresetIndex(part, ref);
+      if (currentIdx[part] !== resolved || !loadedMods[part]) {
+        currentIdx[part] = resolved;
         toLoad.add(part);
       }
     }

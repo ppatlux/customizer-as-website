@@ -1,0 +1,73 @@
+{
+  "starter": {
+    "middle": "#549EF7",
+    "face": "#549EF7"
+  },
+  "invent": {
+    "middle": "#549EF7",
+    "face": "#549EF7",
+    "wheels": {
+      "meshes": {
+        "1": "#549EF7"
+      }
+    }
+  },
+  "sensor": {
+    "bottom": {
+      "meshes": {
+        "0": "#CE4A4A",
+        "1": "#231F20",
+        "2": "#CE4A4A"
+      }
+    },
+    "top": "#CE4A4A",
+    "hat": "#231F20",
+    "middle": "#231F20",
+    "face": {
+      "meshes": {
+        "0": "#231F20",
+        "1": "#FFFFFF"
+      },
+      "color": "#CE4A4A"
+    }
+  },
+  "showtime": {
+    "top": "#FFBD3B",
+    "middle": "#FFBD3B",
+    "face": {
+      "meshes": {
+        "1": "#FF6600"
+      },
+      "color": "#FFBD3B"
+    },
+    "bottom": "#FFBD3B",
+    "wheels": "#FFBD3B",
+    "arms": "#FFBD3B"
+  },
+  "thunder": {
+    "top": "#FFBD3B",
+    "middle": "#FFBD3B",
+    "wheels": "#FFBD3B",
+    "bottom": "#FFBD3B",
+    "face": {
+      "meshes": {
+        "0": "#FFBD3B",
+        "1": "#231F20",
+        "2": "#CE4A4A",
+        "3": "#CE4A4A"
+      }
+    },
+    "hat": "#FFBD3B"
+  },
+  "boat": {
+    "bottom": "#C75A00",
+    "face": {
+      "meshes": {
+        "1": "#231F20"
+      },
+      "color": "#C75A00"
+    },
+    "middle": "#C75A00",
+    "top": "#231F20"
+  }
+}
