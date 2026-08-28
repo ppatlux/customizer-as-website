@@ -7,3 +7,8 @@ backup/
 tools/compat-checker.html
 tools/compat-checker.css
 tools/compat-checker.js
+# Internal-only colour authoring tool. Its OUTPUT (assets/mix-colors.json) and
+# the shared scripts/presets.js stay tracked — the deployed app needs them.
+tools/mix-colorizer.html
+tools/mix-colorizer.css
+tools/mix-colorizer.js

@@ -69,21 +69,14 @@ introduced since the last run (new files added to the manifest show up automatic
 Use "Connect save file…" (Chromium browsers) to autosave decisions straight to
 `assets/compatibility.json`, or "Download JSON" as a fallback to save it by hand.
 
-## Mix Colorizer
+## Mix Thumbnail Colours
 
-`tools/mix-colorizer.html` authors the per-part (and per-piece) colours for the ready-made
-mixes shown on the Mixes tab. The mix definitions themselves live in `scripts/presets.js`
-(shared with `scripts/app.js`); they pin part/variant/visibility only. Colours are stored
-separately in `assets/mix-colors.json` and are applied **to the preview thumbnails only** —
-clicking a mix in the app still loads every part in the default colour, so the user can then
-paint freely. With no `mix-colors.json` (or an empty one) every thumbnail falls back to the
-default part colour, which already matches what the live app shows.
-
-Pick a mix, click a part in the 3D view, choose **Whole part** or **This piece**, then a
-colour. Per-piece overrides are keyed by the mesh's position in `gltf.scene.traverse()`
-order — the same `userData.meshIndex` counter `loadModel()` and `renderPresetThumbnail()`
-use — so an index authored here lines up in the app. Save with "Connect save file…"
-(Chromium) for autosave to `assets/mix-colors.json`, or "Download JSON" as a fallback.
+The ready-made mixes live in `scripts/presets.js` (shared with `scripts/app.js`) and pin
+part/variant/visibility only. Their preview-thumbnail colours are stored separately in
+`assets/mix-colors.json` and applied **to the Mixes-tab thumbnails only** — clicking a mix
+in the app still loads every part in the default colour. With no `mix-colors.json` (or an
+empty one) every thumbnail falls back to the default part colour, matching the live app.
+That file is authored with an internal-only tool that is not part of this repo.
 
 ## Local Run
 
