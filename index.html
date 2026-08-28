@@ -78,6 +78,85 @@
         </div>
       </div>
 
+      <div id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
+        <div id="settings-card">
+          <button id="settings-close" class="ar-close" type="button" aria-label="Close settings">
+            <span class="material-icons">close</span>
+          </button>
+          <h2 id="settings-title">Settings</h2>
+
+          <div class="settings-section">
+            <span class="settings-section-title">Preferred Slicer</span>
+            <!-- aria-checked/aria-disabled and the note text are all set by
+                 updateSlicerUi() in app.js based on PRUSA_SLICER_LIVE — see
+                 scripts/slicer-preference.js. Markup here is just the shell. -->
+            <div class="settings-switch" role="radiogroup" aria-label="Preferred Slicer">
+              <button type="button" class="settings-switch-option" data-slicer="prusa" role="radio" aria-checked="false">
+                <img class="slicer-logo-img" src="./assets/icons/prusaslicer-logo.png" alt="" aria-hidden="true">
+                <span>PrusaSlicer</span>
+                <span class="settings-item-note" data-role="slicer-note"></span>
+              </button>
+              <button type="button" class="settings-switch-option" data-slicer="orca" role="radio" aria-checked="true">
+                <img class="slicer-logo-img" src="./assets/icons/orcaslicer-logo.png" alt="" aria-hidden="true">
+                <span>OrcaSlicer</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <span class="settings-section-title">Camera</span>
+            <!-- aria-checked kept in sync by updateProjectionUi() in app.js. -->
+            <div class="settings-switch" role="radiogroup" aria-label="Camera projection">
+              <button type="button" class="settings-switch-option" data-projection="perspective" role="radio" aria-checked="true">
+                <span class="material-icons">videocam</span>
+                <span>Perspective</span>
+              </button>
+              <button type="button" class="settings-switch-option" data-projection="orthographic" role="radio" aria-checked="false">
+                <span class="material-icons">crop_din</span>
+                <span>Orthographic</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <span class="settings-section-title">Downloads</span>
+            <!-- Sets the format the primary Download button (bottom toolbar)
+                 uses — a preference, not an action, same idea as Preferred
+                 Slicer. aria-checked kept in sync by updateDownloadFormatUi(). -->
+            <div class="settings-switch" role="radiogroup" aria-label="Preferred download format">
+              <button type="button" class="settings-switch-option" data-format="stl" role="radio" aria-checked="true">
+                <span>STL</span>
+              </button>
+              <button type="button" class="settings-switch-option" data-format="glb" role="radio" aria-checked="false">
+                <span>GLB</span>
+              </button>
+              <button type="button" class="settings-switch-option" data-format="step" role="radio" aria-checked="false">
+                <span>STEP</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <span class="settings-section-title">Help</span>
+            <button type="button" class="settings-action-btn" id="startTourBtn">
+              <span class="material-icons">school</span>
+              <span>Quick Guide</span>
+            </button>
+          </div>
+
+          <!-- Bump the version string by hand when it's worth telling people
+               apart, e.g. after a deploy — nothing here reads it programmatically. -->
+          <div class="settings-footer">
+            <img src="./assets/hp%20robots%20customizer.svg" alt="" class="settings-footer-logo" aria-hidden="true">
+            <div class="settings-footer-text">
+              <div class="settings-footer-title">HP Robots Customizer <span class="settings-footer-version">v2026.08</span></div>
+              <p class="settings-footer-desc">Standalone 3D configurator for the Otto robot kit, built with Three.js.</p>
+              <p class="settings-footer-copyright">© <a href="mailto:kokinda.patrik@gmail.com">Patrik Kokinda</a> for HP Robots</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Minimal floating control shown while hovering a part directly on the model
            (desktop, non-touch — see setupModelHoverPopup in app.js). data-part on each
            button is filled in dynamically to match whichever part is currently hovered,
@@ -92,7 +171,9 @@
           <span class="material-icons">chevron_right</span>
         </button>
         <span class="model-hover-popup-divider" aria-hidden="true"></span>
-        <button type="button" class="model-hover-popup-icon" data-role="print" title="Print part" aria-label="Open in OrcaSlicer">
+        <!-- title/aria-label/icon are placeholders — syncPrintButtonBranding() in
+             app.js overwrites all three to match the preferred slicer on load. -->
+        <button type="button" class="model-hover-popup-icon" data-role="print" title="Send to PrusaSlicer" aria-label="Send to PrusaSlicer">
           <span class="material-icons">print</span>
         </button>
         <button type="button" class="model-hover-popup-icon" data-role="download-part" title="Download STL" aria-label="Download STL">
@@ -160,23 +241,9 @@
       </div>
 
       <div id="info-container" class="u-glass" role="group" aria-label="Viewer actions">
-        <button id="infoBtn" class="btn btn--lg" title="Info" aria-haspopup="dialog" aria-expanded="false">
-          <span class="material-icons">info</span>
-        </button>
-        <div id="info-tooltip" role="dialog" aria-label="About Customizer">
-          HP Robot Customizer standalone<br>
-          <a href="#" id="startTourLink">Quick tour</a>
-        </div>
-
         <div id="action-buttons">
           <button id="fullscreenBtn" class="btn btn--lg" title="Fullscreen" aria-label="Toggle fullscreen">
             <span class="material-icons">fullscreen</span>
-          </button>
-          <button id="resetBtn" class="btn btn--lg" title="Reset View" aria-label="Reset camera">
-            <span class="material-icons">refresh</span>
-          </button>
-          <button id="projectionBtn" class="btn btn--lg" title="Switch to orthographic view" aria-label="Switch to orthographic view" aria-pressed="false">
-            <span class="material-icons">videocam</span>
           </button>
           <button id="factoryResetBtn" class="btn btn--lg action-desktop-cluster" title="Reset Build" aria-label="Reset build to default">
             <span class="material-icons">restart_alt</span>
@@ -190,18 +257,9 @@
           <button id="arBtn" class="btn btn--lg" title="View in AR / on your phone" aria-label="View this build in AR or on your phone">
             <span class="material-icons">view_in_ar</span>
           </button>
-          <div id="download-group" class="action-desktop-cluster" role="group" aria-label="Downloads">
-            <button id="download-primary" class="btn btn--lg" title="Download STL" aria-label="Download STL">
-              <span class="material-icons">download</span>
-            </button>
-            <button id="download-toggle" class="btn btn--lg" title="More formats" aria-haspopup="menu" aria-expanded="false" aria-controls="download-menu">
-              <span class="material-icons">arrow_drop_down</span>
-            </button>
-            <div id="download-menu" role="menu" aria-label="Download options">
-              <button id="downloadGlbBtn" role="menuitem">Download GLB files</button>
-              <button id="downloadStepBtn" role="menuitem">Download STEP files</button>
-            </div>
-          </div>
+          <button id="download-primary" class="btn btn--lg action-desktop-cluster" title="Download STL" aria-label="Download STL">
+            <span class="material-icons">download</span>
+          </button>
           <div id="more-group" class="action-mobile-cluster" role="group" aria-label="More actions">
             <button id="more-toggle" class="btn btn--lg" title="More actions" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">
               <span class="material-icons">more_horiz</span>
@@ -225,24 +283,15 @@
               </button>
             </div>
           </div>
-          <!-- Hidden until hprobots.com is on PrusaSlicer's printables.com-only allowlist; OrcaSlicer's
-               direct link works fine and needs no picker, so there's nothing to choose in the meantime. -->
-          <div id="slicer-group" class="action-desktop-cluster" role="group" aria-label="Preferred slicer" hidden>
-            <button id="slicer-toggle" class="btn btn--lg" title="Preferred slicer" aria-haspopup="menu" aria-expanded="false" aria-controls="slicer-menu">
-              <span class="slicer-badge" id="slicer-badge-current" data-slicer="orca" aria-hidden="true">O</span>
-              <span class="material-icons caret">arrow_drop_down</span>
-            </button>
-            <div id="slicer-menu" role="menu" aria-label="Slicer options">
-              <button type="button" class="slicer-menu-item" data-slicer="orca" role="menuitemradio" aria-checked="true">
-                <span class="slicer-badge" data-slicer="orca" aria-hidden="true">O</span>
-                <span>OrcaSlicer</span>
-              </button>
-              <button type="button" class="slicer-menu-item" data-slicer="prusa" role="menuitemradio" aria-checked="false">
-                <span class="slicer-badge" data-slicer="prusa" aria-hidden="true">P</span>
-                <span>PrusaSlicer</span>
-              </button>
-            </div>
-          </div>
+          <!-- General settings entry point (see #settings-overlay) — Preferred
+               Slicer, Camera, GLB/STEP downloads, and the Quick Guide all live
+               there instead of each growing this toolbar one icon at a time.
+               Desktop-only: [data-role="print"] itself is hidden on touch (a
+               phone has no slicer app to send anything to), and #more-menu
+               above already covers GLB/STEP downloads for touch devices. -->
+          <button id="settingsToggle" class="btn btn--lg action-desktop-cluster" title="Settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-overlay">
+            <span class="material-icons">settings</span>
+          </button>
         </div>
         <span class="combo-chip" id="comboChip">Combos: —</span>
       </div>

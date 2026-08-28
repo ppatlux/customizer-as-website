@@ -1272,162 +1272,100 @@ html.vt-fallback.vt-leaving body{
   align-items:center;
   gap:10px;
 }
-#info-tooltip{
-  display:none;
-  position:absolute;
-  bottom:calc(100% + 10px);
-  left:8px;
-  background:var(--glass-strong);
-  color:var(--text);
-  padding:10px 12px;
-  border-radius:12px;
-  border:1px solid var(--stroke-strong);
-  box-shadow:var(--shadow);
-  font-size:12px;
-  white-space:nowrap;
-  z-index:var(--z-floating);
-  animation:fadePop var(--transition-fast) ease-out both;
+/* One block per setting group — see .settings-section usage in index.html
+   for the full list (Preferred Slicer, Camera, Downloads, Help). Add more
+   groups here later instead of growing the toolbar itself. */
+.settings-section{ padding:10px 0; }
+.settings-section + .settings-section{ border-top:1px solid var(--stroke); margin-top:4px; }
+.settings-section-title{
+  display:block;
+  padding:0 2px 6px;
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--muted);
 }
-#info-tooltip a{
-  color:var(--hpro-navy);
-  font-weight:700;
-  text-decoration:none;
-}
-#info-tooltip a:hover{
-  text-decoration:underline;
-}
-
-/* Yellow is hprobots' color for the "create"/3D-print side of the product —
-   the export cluster is the most literal 3D-printing action in the whole
-   toolbar, so it gets the brand fill instead of the neutral glass buttons
-   everything else uses. */
-#download-group{
+.settings-action-btn{
   display:flex;
-  position:relative;
-  width:96px;
-  height:var(--control-h);
-  border-radius:12px;
-  overflow:visible;
-  border:1px solid color-mix(in srgb, var(--brand) 55%, var(--stroke));
-  background:color-mix(in srgb, var(--brand) 22%, var(--glass-bg));
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);
-  user-select:none;
-}
-#download-primary, #download-toggle{
-  border:none;
-  outline:none;
-  background:transparent;
-  color:var(--hpro-navy);
-  cursor:pointer;
-  transition:background var(--transition);
-}
-#download-primary{ flex:1; border-radius:11px 0 0 11px; }
-#download-toggle{
-  width:40px;
-  border-left:1px solid color-mix(in srgb, var(--brand) 55%, var(--stroke));
-  border-radius:0 11px 11px 0;
-}
-#download-group:hover :where(#download-primary,#download-toggle){ background:color-mix(in srgb, var(--brand) 16%, transparent); }
-#download-menu{
-  display:none;
-  position:absolute;
-  bottom:calc(100% + 10px);
-  right:0;
-  min-width:200px;
-  max-width:92vw;
-  background:var(--glass-strong);
-  border:1px solid var(--stroke-strong);
-  border-radius:12px;
-  box-shadow:var(--shadow-lg);
-  overflow:hidden;
-  z-index:var(--z-max);
-  animation:menuPop var(--transition-fast) ease-out both;
-}
-#download-menu button{
+  align-items:center;
+  gap:10px;
   width:100%;
   padding:10px 12px;
   background:transparent;
   border:none;
+  border-radius:10px;
   text-align:left;
   cursor:pointer;
   font-size:13px;
   color:var(--text);
   transition:background var(--transition);
 }
-#download-menu button:hover{ background:var(--glass-hover); }
+.settings-action-btn:hover{ background:var(--glass-hover); }
+.settings-action-btn .material-icons{ font-size:18px; color:var(--muted); }
 
-#slicer-group{
+/* Segmented-control "switch" for a binary or short-list preference (Preferred
+   Slicer, Camera, Downloads) — every option is always visible at once and the
+   active one is highlighted, instead of a vertical list of checkable rows. */
+.settings-switch{
   display:flex;
-  position:relative;
-  height:var(--control-h);
-  border-radius:12px;
-  overflow:visible;
-  border:1px solid var(--stroke);
+  gap:3px;
+  padding:3px;
   background:var(--glass-bg);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);
-  user-select:none;
-}
-#slicer-group[hidden]{ display:none; }
-#slicer-toggle{
-  display:flex;
-  align-items:center;
-  gap:4px;
-  padding:0 10px;
-  height:100%;
-  border:none;
-  outline:none;
-  background:transparent;
-  border-radius:11px;
-  cursor:pointer;
-  transition:background var(--transition);
-  color:var(--text);
-}
-#slicer-group:hover #slicer-toggle{ background:var(--glass-hover); }
-#slicer-toggle .caret{ font-size:18px; }
-#slicer-menu{
-  display:none;
-  position:absolute;
-  bottom:calc(100% + 10px);
-  right:0;
-  min-width:180px;
-  max-width:92vw;
-  background:var(--glass-strong);
-  border:1px solid var(--stroke-strong);
+  border:1px solid var(--stroke);
   border-radius:12px;
-  box-shadow:var(--shadow-lg);
-  overflow:hidden;
-  z-index:var(--z-max);
-  animation:menuPop var(--transition-fast) ease-out both;
 }
-.slicer-menu-item{
+.settings-switch-option{
+  flex:1;
   display:flex;
-  align-items:center;
-  gap:8px;
-  width:100%;
-  padding:10px 12px;
-  background:transparent;
-  border:none;
-  text-align:left;
-  cursor:pointer;
-  font-size:13px;
-  color:var(--text);
-  transition:background var(--transition);
-}
-.slicer-menu-item:hover{ background:var(--glass-hover); }
-.slicer-menu-item[aria-checked="true"]{ background:var(--glass-hover); }
-.slicer-badge{
-  display:inline-flex;
+  flex-direction:column;
   align-items:center;
   justify-content:center;
-  width:18px;
-  height:18px;
-  border-radius:50%;
-  font:800 10px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  color:#fff;
+  gap:4px;
+  min-width:0;
+  padding:9px 8px;
+  background:transparent;
+  border:none;
+  border-radius:9px;
+  cursor:pointer;
+  font-size:12.5px;
+  font-weight:600;
+  color:var(--muted);
+  transition:background var(--transition), color var(--transition), box-shadow var(--transition);
+}
+.settings-switch-option span:not(.settings-item-note){
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:100%;
+}
+.settings-switch-option .material-icons{ font-size:18px; }
+.settings-switch-option:hover{ background:var(--glass-hover); }
+.settings-switch-option[aria-checked="true"]{
+  background:var(--glass-strong);
+  color:var(--text);
+  box-shadow:var(--shadow);
+}
+/* Preview state for PrusaSlicer while PRUSA_SLICER_LIVE is false (see
+   slicer-preference.js and updateSlicerUi in app.js) — visible so people know
+   it's coming, but inert until the flag flips. */
+.settings-switch-option[aria-disabled="true"]{
+  cursor:not-allowed;
+  opacity:.55;
+}
+.settings-switch-option[aria-disabled="true"]:hover{ background:transparent; }
+.settings-item-note{
+  font-size:10px;
+  font-weight:700;
+  font-style:italic;
+  color:var(--muted);
   flex-shrink:0;
 }
-.slicer-badge[data-slicer="orca"]{ background:#0F9E9E; }
-.slicer-badge[data-slicer="prusa"]{ background:#FF6A13; }
+.slicer-logo-img{
+  width:18px;
+  height:18px;
+  object-fit:contain;
+  flex-shrink:0;
+}
 
 /* Mobile-only overflow menu (Factory Reset + Downloads). Hidden on pointer:fine
    devices, where those actions have their own dedicated buttons instead. */
@@ -1669,7 +1607,8 @@ html.vt-fallback.vt-leaving body{
 .mobile-sheet{ display:none; }
 
 #consent-overlay,
-#ar-overlay{
+#ar-overlay,
+#settings-overlay{
   position:absolute;
   inset:0;
   display:none;
@@ -1683,17 +1622,70 @@ html.vt-fallback.vt-leaving body{
   pointer-events:auto;
 }
 #consent-overlay.show,
-#ar-overlay.show{
+#ar-overlay.show,
+#settings-overlay.show{
   display:flex;
 }
 
 #consent-card,
-#ar-card{
+#ar-card,
+#settings-card{
   border-radius:16px;
   border:1px solid var(--stroke-strong);
   background:var(--glass-strong);
   box-shadow:var(--shadow-lg);
 }
+
+#settings-card{
+  position:relative;
+  width:min(460px, 92vw);
+  padding:calc(20px + env(safe-area-inset-top, 0px)) 20px calc(18px + env(safe-area-inset-bottom, 0px));
+  max-height:85vh;
+  overflow-y:auto;
+}
+#settings-title{
+  margin:0 0 4px 0;
+  font:700 16px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+
+.settings-footer{
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px solid var(--stroke);
+}
+.settings-footer-logo{
+  width:32px;
+  height:32px;
+  object-fit:contain;
+  flex-shrink:0;
+  border-radius:8px;
+}
+.settings-footer-text{ min-width:0; }
+.settings-footer-title{
+  font:700 13px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+.settings-footer-version{
+  font-weight:600;
+  color:var(--muted);
+}
+.settings-footer-desc,
+.settings-footer-copyright{
+  margin:3px 0 0;
+  font-size:11.5px;
+  line-height:1.4;
+  color:var(--muted);
+}
+.settings-footer-copyright a{
+  color:inherit;
+  text-decoration:underline;
+  text-decoration-color:var(--stroke-strong);
+}
+.settings-footer-copyright a:hover{ color:var(--text); }
 
 /* Minimal floating control shown while hovering a part directly on the model
    (see showModelHoverPopup in app.js) — prev/next, print, download, same as
@@ -2226,8 +2218,8 @@ body.hp-lock-scroll{
   box-shadow:0 0 0 6px color-mix(in srgb, var(--brand) 18%, transparent);
 }
 
-:where(.btn, .toggle-btn, #download-primary, #download-toggle, #download-menu button, .rotate-btn, .tour-btn){ outline:none; }
-:where(.btn, .toggle-btn, #download-primary, #download-toggle, #download-menu button, .rotate-btn, .tour-btn):focus-visible{ box-shadow:var(--focus-ring); }
+:where(.btn, .toggle-btn, .settings-switch-option, .settings-action-btn, .rotate-btn, .tour-btn){ outline:none; }
+:where(.btn, .toggle-btn, .settings-switch-option, .settings-action-btn, .rotate-btn, .tour-btn):focus-visible{ box-shadow:var(--focus-ring); }
 
 :root{ --viewer-h:100vh; }
 @supports (height: 100dvh){
@@ -2276,16 +2268,10 @@ body.hp-lock-scroll{
   .color-picker-hue{ height:20px; }
   .color-picker-hue-thumb{ width:22px; height:22px; }
 
-  /* The step-by-step tooltip tour is designed around desktop-sized anchored
-     popovers and doesn't adapt well to the mobile sheet's layout — app.js
-     also refuses to start it here (startTour/shouldAutoStartTour), this just
-     removes the now-dead entry point. */
-  #startTourLink{ display:none; }
-
   /* Sending to a desktop slicer app (OrcaSlicer/PrusaSlicer) is meaningless on a
      phone with no slicer installed — drop those controls instead of showing
-     buttons that can never do anything here. */
-  #slicer-group,
+     buttons that can never do anything here. #settingsToggle itself is
+     already covered by .action-desktop-cluster below. */
   [data-role="print"]{
     display:none !important;
   }
@@ -2550,7 +2536,7 @@ body.hp-lock-scroll{
 
 @media (prefers-reduced-motion: reduce){
   *{ animation:none !important; transition:none !important; }
-  #consent-overlay, #ar-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+  #consent-overlay, #ar-overlay, #settings-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
 }
 
 /* Shared chrome that also exists on engrave.html with the same view-transition-name:

@@ -21,16 +21,29 @@ For each `.glb` listed in `scripts/asset-manifest.js`, also place matching `.ste
 ## Send to Slicer
 
 The per-part "Print" buttons in `index.html` open the part directly with a bare
-`orcaslicer://open?file=<url>` link — no local setup needed, same as the original WordPress
-version. OrcaSlicer only, for now: PrusaSlicer's own `prusaslicer://` handler only accepts
-download URLs from a short, manually reviewed allowlist (currently printables.com,
-thingiverse.com, cults3d.com) and rejects everything else, including files hosted here (see
-[PrusaSlicer#13752](https://github.com/prusa3d/PrusaSlicer/issues/13752), closed "not planned").
-The only real fix is asking Prusa to add `hprobots.com` to that allowlist after their security
-review — until that happens (or is confirmed a dead end), the slicer picker (`#slicer-group` in
-`index.html`) is hidden and the Print button always targets OrcaSlicer. To bring PrusaSlicer back
-here: un-hide `#slicer-group`, then in `scripts/app.js`'s `role === 'print'` handler branch on
-`getPreferredSlicer()` again (fall back to a plain STEP download when it's `'prusa'`).
+`prusaslicer://open?file=<url>` or `orcaslicer://open?file=<url>` link — no local setup needed,
+same as the original WordPress version. Which scheme is used depends on the "Preferred Slicer"
+choice in the Settings modal (`#settings-overlay` in `index.html`, gear icon in the bottom
+toolbar — also home to the Camera projection toggle, GLB/STEP downloads, and the Quick Guide
+launcher; see `.settings-section` in `app.css` for adding more groups there later), backed by
+`scripts/slicer-preference.js`.
+
+**PrusaSlicer is NOT actually live yet.** Its `prusaslicer://` handler only accepts download URLs
+from a short, manually reviewed allowlist. `hprobots.com` was rejected from it (see
+[PrusaSlicer#13752](https://github.com/prusa3d/PrusaSlicer/issues/13752), closed "not planned"),
+but Prusa has since agreed to add it after a direct request — the change ships in a future
+PrusaSlicer release (ETA a month or two out as of writing), not immediately. Until it ships,
+`prusaslicer://` links from this domain 404 for anyone on the current PrusaSlicer release.
+OrcaSlicer's `orcaslicer://` has no such allowlist and works regardless.
+
+This is gated behind one flag, `PRUSA_SLICER_LIVE` in `scripts/slicer-preference.js`, currently
+`false`. Everything downstream of it (`getPreferredSlicer()`, the Settings menu's PrusaSlicer
+option, the `role === 'print'` branch in `scripts/app.js`) already funnels through that flag, so
+**this whole feature is safe to commit, merge, and deploy right now alongside unrelated work** —
+while the flag is `false`, behavior is identical to the old OrcaSlicer-only build: Print always
+uses OrcaSlicer, and PrusaSlicer shows up in the Settings menu only as a disabled "coming soon"
+preview. Flipping `PRUSA_SLICER_LIVE` to `true` and redeploying is the entire "go live" step once
+the PrusaSlicer release is confirmed out — no other changes needed.
 
 The engraving tool (`engrave.html`) only offers a plain "Download STL" button — no local setup,
 no custom protocol, no helper scripts. Send the downloaded file to your slicer manually.

@@ -2,7 +2,33 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ASSET_MANIFEST } from './asset-manifest.js';
-import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer } from './slicer-preference.js';
+import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer, PRUSA_SLICER_LIVE } from './slicer-preference.js';
+
+// Used by syncPrintButtonBranding() — declared up here (not next to that
+// function) because bootstrap() calls into it synchronously at module-eval
+// time via setupSettingsMenu(), before the rest of the file below this point
+// has run; a const declared further down would still be in its temporal
+// dead zone at that point and throw.
+const SLICER_LOGO_SRC = {
+  prusa: './assets/icons/prusaslicer-logo.png',
+  orca: './assets/icons/orcaslicer-logo.png'
+};
+
+// Preferred format for the primary Download button (bottom toolbar) — set
+// from the Downloads switch in the Settings modal. Same TDZ reasoning as
+// SLICER_LOGO_SRC above for why this lives up here.
+const DOWNLOAD_FORMAT_STORAGE_KEY = 'hprobot:preferredDownloadFormat';
+const DOWNLOAD_FORMAT_LABELS = { stl: 'STL', glb: 'GLB', step: 'STEP' };
+
+function getPreferredDownloadFormat() {
+  const stored = window.localStorage.getItem(DOWNLOAD_FORMAT_STORAGE_KEY);
+  return DOWNLOAD_FORMAT_LABELS[stored] ? stored : 'stl';
+}
+
+function setPreferredDownloadFormat(format) {
+  if (!DOWNLOAD_FORMAT_LABELS[format]) return;
+  window.localStorage.setItem(DOWNLOAD_FORMAT_STORAGE_KEY, format);
+}
 
 const COLOR_OPTIONS = ['#231F20', '#549EF7', '#00D072', '#FFBD3B', '#A89EFA', '#CE4A4A', '#E6E6E6', '#FFFFFF'];
 // Default part color — must stay one of COLOR_OPTIONS' own swatches so a
@@ -118,15 +144,11 @@ const container = document.getElementById('viewer-container');
 const toastStack = document.getElementById('toastStack');
 const skeleton = document.getElementById('skeleton');
 const appLoader = document.getElementById('app-loader');
-const infoBtn = document.getElementById('infoBtn');
-const infoTip = document.getElementById('info-tooltip');
 const presetMenu = document.getElementById('preset-menu');
 const presetToggle = document.getElementById('preset-toggle');
 const presetButtons = Array.from(document.querySelectorAll('.preset-option[data-preset]'));
 const presetLabelEl = document.getElementById('preset-active-label');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
-const resetBtn = document.getElementById('resetBtn');
-const projectionBtn = document.getElementById('projectionBtn');
 const visibilityModeBtn = document.getElementById('visibilityModeBtn');
 const factoryResetBtn = document.getElementById('factoryResetBtn');
 const randomizeBtn = document.getElementById('randomizeBtn');
@@ -145,20 +167,17 @@ const variantGridClose = document.getElementById('variant-grid-close');
 const variantGridTitle = document.getElementById('variant-grid-title');
 const variantGridBody = document.getElementById('variant-grid-body');
 const exitMaxBtn = document.getElementById('exit-maximize');
-const dlMenu = document.getElementById('download-menu');
 const dlPrimary = document.getElementById('download-primary');
-const dlToggle = document.getElementById('download-toggle');
-const dlGlbBtn = document.getElementById('downloadGlbBtn');
-const dlStepBtn = document.getElementById('downloadStepBtn');
 const moreToggle = document.getElementById('more-toggle');
 const moreMenu = document.getElementById('more-menu');
 const moreFactoryResetBtn = document.getElementById('moreFactoryResetBtn');
 const moreDownloadStlBtn = document.getElementById('moreDownloadStlBtn');
 const moreDownloadGlbBtn = document.getElementById('moreDownloadGlbBtn');
 const moreDownloadStepBtn = document.getElementById('moreDownloadStepBtn');
-const slicerToggle = document.getElementById('slicer-toggle');
-const slicerMenu = document.getElementById('slicer-menu');
-const slicerBadgeCurrent = document.getElementById('slicer-badge-current');
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsOverlay = document.getElementById('settings-overlay');
+const settingsClose = document.getElementById('settings-close');
+const startTourBtn = document.getElementById('startTourBtn');
 const essBtn = document.getElementById('show-essential');
 const advBtn = document.getElementById('show-advanced');
 const essPanel = document.getElementById('panel-essential');
@@ -325,6 +344,47 @@ const GHOST_EDGE_COLOR_PEAK = new THREE.Color(0xbcdcff);
 // synchronously, before a `const` declared further down the file would have
 // left its temporal dead zone.
 const ghostAnimNodes = new Set();
+
+// EdgesGeometry(node.geometry, 30) is a real computation -- it walks every
+// triangle to find and dedupe sharp edges -- and re-running it from scratch
+// on every single V-mode entry (previously: fresh THREE.EdgesGeometry each
+// time, disposed again on every exit) was the actual cause of "V feels slow":
+// with several hidden parts each carrying multiple meshes, that's the same
+// expensive computation redone synchronously on every press. Caching per
+// source geometry means it's only ever computed once per mesh for as long as
+// that geometry object exists (a variant swap loads new geometry, a fresh
+// cache miss, which is correct) -- every V-press after the first for a given
+// part is then just cheap traversal + object creation, no geometry math.
+const ghostEdgesGeometryCache = new WeakMap();
+function getGhostEdgesGeometry(geometry) {
+  let edges = ghostEdgesGeometryCache.get(geometry);
+  if (!edges) {
+    edges = new THREE.EdgesGeometry(geometry, 30);
+    ghostEdgesGeometryCache.set(geometry, edges);
+  }
+  return edges;
+}
+
+// Warms ghostEdgesGeometryCache for a just-loaded model in the background, so
+// the *first* V-press of a session is fast too, not just the second one --
+// otherwise that expensive EdgesGeometry computation only ever happens lazily,
+// the first time each part actually gets ghosted. Called once per part right
+// after loadModel() finishes (see the GLTFLoader callback), covering every
+// part regardless of its current visibility, since any part can be hidden
+// (and therefore need a ghost) later via its own eye icon, not just the ones
+// that start hidden. requestIdleCallback keeps this off the critical path —
+// it runs in gaps between frames rather than competing with the load/render
+// work that's actually visible to the user; Safari has no requestIdleCallback,
+// hence the setTimeout fallback.
+function scheduleGhostEdgesPreload(model) {
+  const run = () => {
+    model.traverse((node) => {
+      if (node.isMesh) getGhostEdgesGeometry(node.geometry);
+    });
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 2000 });
+  else setTimeout(run, 150);
+}
 
 let activePresetKey = 'starter';
 let isApplyingPreset = false;
@@ -524,7 +584,9 @@ function renderPartSection(part) {
         <button class="btn btn--sm btn--ghost" id="${part.key}-visibility" data-role="visibility" data-part="${part.key}" aria-label="Toggle visibility for ${part.label}">
           <span class="material-icons">visibility</span>
         </button>
-        <button class="btn btn--sm btn--ghost" data-role="print" data-part="${part.key}" title="Print part" aria-label="Open ${part.label} in OrcaSlicer">
+        <!-- title/aria-label/icon are placeholders — syncPrintButtonBranding() overwrites
+             all three to match the preferred slicer on load. -->
+        <button class="btn btn--sm btn--ghost" data-role="print" data-part="${part.key}" title="Send to PrusaSlicer" aria-label="Send ${part.label} to PrusaSlicer">
           <span class="material-icons">print</span>
         </button>
         <button class="btn btn--sm btn--ghost" data-role="download-part" data-part="${part.key}" title="Download STL" aria-label="Download ${part.label} STL file">
@@ -557,13 +619,12 @@ function bootstrap() {
 
   setupResize();
   setupConsentPopup();
-  setupInfo();
   setupFullscreen();
   setupPresetMenu();
   setupPanels();
   setupDownloadMenu();
   setupMoreMenu();
-  setupSlicerMenu();
+  setupSettingsMenu();
   setupPaletteWiring();
   setupColorPickerDrag();
   setupColorPickerHexInput();
@@ -690,7 +751,7 @@ function showConsentPopup() {
     if (consentCheckbox) consentCheckbox.checked = false;
     if (consentConfirm) consentConfirm.disabled = true;
     reallyClosePalette();
-    closeDlMenu();
+    closeSettingsMenu();
     closeMoreMenu();
     closePresetMenu();
     consentOverlay.classList.add('show');
@@ -702,62 +763,6 @@ function hideConsentPopup() {
   consentOverlay.classList.remove('show');
   consentResolve = null;
   consentReject = null;
-}
-
-function setupInfo() {
-  let tipTimeout = null;
-
-  function showInfoTip() {
-    mountFloatingPopup(infoTip);
-    infoTip.style.display = 'block';
-    positionFloatingPopup(infoTip, infoBtn.getBoundingClientRect(), 'left');
-    infoBtn.setAttribute('aria-expanded', 'true');
-  }
-
-  function hideInfoTip() {
-    infoTip.style.display = 'none';
-    infoBtn.setAttribute('aria-expanded', 'false');
-  }
-
-  infoBtn.addEventListener('mouseenter', () => {
-    clearTimeout(tipTimeout);
-    showInfoTip();
-  });
-  infoBtn.addEventListener('mouseleave', () => {
-    tipTimeout = setTimeout(hideInfoTip, 180);
-  });
-  infoTip.addEventListener('mouseenter', () => clearTimeout(tipTimeout));
-  infoTip.addEventListener('mouseleave', hideInfoTip);
-
-  // On desktop, clicking the info button jumps straight into the guided
-  // tour -- the hover tooltip (with its own "Quick tour" link) is still
-  // there for anyone who just wants the one-line "what is this" text
-  // without launching anything. Touch devices have no hover and the tour
-  // never runs there (see startTour), so tapping just toggles the tip,
-  // same as before.
-  infoBtn.addEventListener('click', (event) => {
-    event.stopPropagation();
-    clearTimeout(tipTimeout);
-    if (isTouchLikeDevice()) {
-      if (infoTip.style.display === 'block') hideInfoTip();
-      else showInfoTip();
-      return;
-    }
-    hideInfoTip();
-    startTour(true);
-  });
-  document.addEventListener('click', (event) => {
-    if (event.target.closest('#info-container')) return;
-    // Reparented to the top-level host while open (see mountFloatingPopup),
-    // so it's no longer a descendant of #info-container — needs its own check.
-    if (event.target.closest('#info-tooltip')) return;
-    hideInfoTip();
-  });
-
-  document.getElementById('startTourLink')?.addEventListener('click', (event) => {
-    event.preventDefault();
-    startTour(true);
-  });
 }
 
 function setupFullscreen() {
@@ -792,7 +797,7 @@ function setupFullscreen() {
   function enterMaximize() {
     if (__isMaximized) return;
     reallyClosePalette();
-    closeDlMenu();
+    closeSettingsMenu();
     closeMoreMenu();
     closePresetMenu();
     __scrollYBeforeMax = window.scrollY || 0;
@@ -830,7 +835,7 @@ function setupFullscreen() {
   exitMaxBtn?.addEventListener('click', exitMaximize);
   document.addEventListener('fullscreenchange', () => {
     reallyClosePalette();
-    closeDlMenu();
+    closeSettingsMenu();
     closeMoreMenu();
     closePresetMenu();
     updateFullscreenUI();
@@ -1017,45 +1022,23 @@ function setupMobileSheet() {
     // a common trigger for mobile browsers to cancel the gesture
     // (touchcancel instead of touchend) instead of completing it, silently
     // dropping the tap.
-    if (event.target.closest('.color-palette, .variant-grid-panel, #info-tooltip, #more-menu')) return;
+    if (event.target.closest('.color-palette, .variant-grid-panel, #more-menu')) return;
     setMobileSheetState('peek');
   });
 
   setMobileSheetState('peek');
 }
 
+// GLB/STEP downloads are wired in setupSettingsMenu() now — they moved into
+// the Settings modal alongside the rest of the Downloads section.
 function setupDownloadMenu() {
   dlPrimary.addEventListener('click', (event) => {
     event.preventDefault();
     downloadSelectionStl();
   });
-
-  dlToggle.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (dlMenu.style.display === 'block') closeDlMenu();
-    else openDlMenu();
-  });
-
-  dlGlbBtn.addEventListener('click', (event) => {
-    event.preventDefault();
-    downloadSelection('glb');
-    closeDlMenu();
-  });
-
-  dlStepBtn.addEventListener('click', (event) => {
-    event.preventDefault();
-    downloadSelection('step');
-    closeDlMenu();
-  });
-
-  document.addEventListener('click', (event) => {
-    if (event.target.closest('#download-group')) return;
-    closeDlMenu();
-  });
 }
 
-// Mobile-only overflow menu standing in for factoryResetBtn + #download-group,
+// Mobile-only overflow menu standing in for factoryResetBtn + #download-primary,
 // which are hidden on touch devices (see .action-desktop-cluster in app.css).
 // Reuses the exact same underlying actions, just behind one combined button.
 function setupMoreMenu() {
@@ -1107,51 +1090,145 @@ function closeMoreMenu() {
   moreToggle.setAttribute('aria-expanded', 'false');
 }
 
-function setupSlicerMenu() {
-  updateSlicerUi();
+// A proper modal (not an anchored dropdown) since it now holds several
+// unrelated groups of controls — Preferred Slicer, Camera, Downloads, Help —
+// see .settings-section in app.css for how to add more groups here later
+// without growing the toolbar itself. Same open/close pattern as #ar-overlay.
+function setupSettingsMenu() {
+  if (!settingsToggle || !settingsOverlay) return;
 
-  slicerToggle.addEventListener('click', (event) => {
+  updateSlicerUi();
+  updateProjectionUi();
+  updateDownloadFormatUi();
+
+  settingsToggle.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (slicerMenu.style.display === 'block') closeSlicerMenu();
-    else openSlicerMenu();
+    openSettingsMenu();
   });
 
-  slicerMenu.querySelectorAll('.slicer-menu-item').forEach((item) => {
+  settingsClose?.addEventListener('click', closeSettingsMenu);
+  settingsOverlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeSettingsMenu();
+  });
+  // Click on the dimmed backdrop itself (not the card, not anything inside
+  // it) closes the modal, same as clicking outside any other popover here.
+  settingsOverlay.addEventListener('click', (event) => {
+    if (event.target === settingsOverlay) closeSettingsMenu();
+  });
+
+  settingsOverlay.querySelectorAll('.settings-switch-option[data-slicer]').forEach((item) => {
     item.addEventListener('click', (event) => {
       event.preventDefault();
+      if (item.getAttribute('aria-disabled') === 'true') return;
       setPreferredSlicer(item.dataset.slicer);
       updateSlicerUi();
-      closeSlicerMenu();
     });
   });
 
-  document.addEventListener('click', (event) => {
-    if (event.target.closest('#slicer-group')) return;
-    closeSlicerMenu();
+  settingsOverlay.querySelectorAll('.settings-switch-option[data-projection]').forEach((item) => {
+    item.addEventListener('click', (event) => {
+      event.preventDefault();
+      setProjection(item.dataset.projection);
+    });
+  });
+
+  settingsOverlay.querySelectorAll('.settings-switch-option[data-format]').forEach((item) => {
+    item.addEventListener('click', (event) => {
+      event.preventDefault();
+      setPreferredDownloadFormat(item.dataset.format);
+      updateDownloadFormatUi();
+    });
+  });
+
+  startTourBtn?.addEventListener('click', () => {
+    closeSettingsMenu();
+    startTour(true);
   });
 }
 
-function openSlicerMenu() {
-  slicerMenu.style.display = 'block';
-  slicerToggle.setAttribute('aria-expanded', 'true');
+function openSettingsMenu() {
+  settingsOverlay.classList.add('show');
+  settingsToggle.setAttribute('aria-expanded', 'true');
+  settingsClose?.focus();
 }
 
-function closeSlicerMenu() {
-  slicerMenu.style.display = 'none';
-  slicerToggle.setAttribute('aria-expanded', 'false');
+function closeSettingsMenu() {
+  if (!settingsOverlay) return;
+  settingsOverlay.classList.remove('show');
+  settingsToggle?.setAttribute('aria-expanded', 'false');
 }
 
 function updateSlicerUi() {
   const slicer = getPreferredSlicer();
   const label = SLICER_LABELS[slicer];
-  slicerBadgeCurrent.textContent = slicer === 'prusa' ? 'P' : 'O';
-  slicerBadgeCurrent.dataset.slicer = slicer;
-  slicerToggle.title = `Preferred slicer: ${label}`;
-  slicerToggle.setAttribute('aria-label', `Preferred slicer: ${label}`);
 
-  slicerMenu.querySelectorAll('.slicer-menu-item').forEach((item) => {
+  document.querySelectorAll('.settings-switch-option[data-slicer]').forEach((item) => {
     item.setAttribute('aria-checked', String(item.dataset.slicer === slicer));
+
+    // PrusaSlicer previews as a disabled "coming soon" option until
+    // PRUSA_SLICER_LIVE flips on (see slicer-preference.js) — everything
+    // else about this menu is already fully live.
+    const isLockedPrusa = item.dataset.slicer === 'prusa' && !PRUSA_SLICER_LIVE;
+    if (isLockedPrusa) {
+      item.setAttribute('aria-disabled', 'true');
+      item.title = 'Coming soon — waiting on a PrusaSlicer update';
+    } else {
+      item.removeAttribute('aria-disabled');
+      item.removeAttribute('title');
+    }
+    const note = item.querySelector('[data-role="slicer-note"]');
+    if (note) note.textContent = isLockedPrusa ? 'Soon' : '';
+  });
+
+  if (settingsToggle) {
+    settingsToggle.title = `Settings — preferred slicer: ${label}`;
+    settingsToggle.setAttribute('aria-label', `Settings — preferred slicer: ${label}`);
+  }
+
+  syncPrintButtonBranding(slicer, label);
+}
+
+function updateProjectionUi() {
+  const mode = camera.isPerspectiveCamera ? 'perspective' : 'orthographic';
+  document.querySelectorAll('.settings-switch-option[data-projection]').forEach((item) => {
+    item.setAttribute('aria-checked', String(item.dataset.projection === mode));
+  });
+}
+
+// Sets which format the primary Download button (bottom toolbar) uses — a
+// preference, same idea as Preferred Slicer, not an action. Mobile's
+// #more-menu keeps its own separate explicit STL/GLB/STEP buttons regardless
+// of this, since there's no single "primary" download button there to be
+// smart about.
+function updateDownloadFormatUi() {
+  const format = getPreferredDownloadFormat();
+  const label = DOWNLOAD_FORMAT_LABELS[format];
+
+  document.querySelectorAll('.settings-switch-option[data-format]').forEach((item) => {
+    item.setAttribute('aria-checked', String(item.dataset.format === format));
+  });
+
+  if (dlPrimary) {
+    dlPrimary.title = `Download ${label}`;
+    dlPrimary.setAttribute('aria-label', `Download ${label}`);
+  }
+}
+
+// Every [data-role="print"] button (each part's row, plus the on-model hover
+// popup) shows the currently preferred slicer's real logo instead of a
+// generic print icon, so "Send to X" stays correct wherever the button
+// appears — called once at bootstrap and again any time the preference
+// changes. Logo assets: assets/icons/{prusaslicer,orcaslicer}-logo.png (see
+// SLICER_LOGO_SRC near the top of the file).
+function syncPrintButtonBranding(slicer = getPreferredSlicer(), label = SLICER_LABELS[slicer]) {
+  const icon = `<img class="slicer-logo-img" src="${SLICER_LOGO_SRC[slicer]}" alt="" aria-hidden="true">`;
+
+  document.querySelectorAll('[data-role="print"]').forEach((btn) => {
+    const part = btn.dataset.part;
+    btn.innerHTML = icon;
+    btn.title = `Send to ${label}`;
+    btn.setAttribute('aria-label', part ? `Send ${getPartDisplayName(part)} to ${label}` : `Send to ${label}`);
   });
 }
 
@@ -2682,16 +2759,19 @@ function setupGlobalClickHandler() {
         url = stepUrls[0];
       }
 
-      // OrcaSlicer only, for now: its orcaslicer://open handler fetches the URL itself and
-      // has no partner-site allowlist, so this direct link works with zero local setup.
-      // PrusaSlicer's own prusaslicer://open handler only accepts download URLs from a
-      // short reviewed allowlist (printables.com, thingiverse.com, cults3d.com), so a link
-      // to a file hosted here is always rejected until hprobots.com gets added to it — the
-      // slicer picker (#slicer-group) is hidden until then; re-enable it and branch on
-      // getPreferredSlicer() again once that happens.
+      // getPreferredSlicer() can only return 'prusa' once PRUSA_SLICER_LIVE is
+      // true (see slicer-preference.js) — until then this always resolves to
+      // 'orca', so this branch is safe to ship in any build. PrusaSlicer's
+      // prusaslicer://open handler only accepts download URLs from a short
+      // reviewed allowlist; hprobots.com has been approved for addition, but
+      // it only takes effect once Prusa actually ships the release containing
+      // it. OrcaSlicer's orcaslicer://open has no such allowlist and always
+      // works regardless.
+      const preferredSlicer = getPreferredSlicer();
+      const scheme = preferredSlicer === 'prusa' ? 'prusaslicer' : 'orcaslicer';
       const fullUrl = new URL(url, window.location.href).href;
       const link = document.createElement('a');
-      link.href = `orcaslicer://open?file=${encodeURIComponent(fullUrl)}`;
+      link.href = `${scheme}://open?file=${encodeURIComponent(fullUrl)}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -2809,15 +2889,6 @@ function closePresetMenu() {
   presetToggle.setAttribute('aria-expanded', 'false');
 }
 
-function openDlMenu() {
-  dlMenu.style.display = 'block';
-  dlToggle.setAttribute('aria-expanded', 'true');
-}
-
-function closeDlMenu() {
-  dlMenu.style.display = 'none';
-  dlToggle.setAttribute('aria-expanded', 'false');
-}
 
 function markCustomPreset() {
   if (isApplyingPreset) return;
@@ -3911,7 +3982,7 @@ function setGhostHighlight(part, ghosted) {
           polygonOffsetUnits: -4
         });
         const edges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(node.geometry, 30),
+          getGhostEdgesGeometry(node.geometry),
           new THREE.LineBasicMaterial({ color: GHOST_EDGE_COLOR_BASE.getHex(), transparent: true, opacity: 0 })
         );
         node.add(edges);
@@ -3976,7 +4047,11 @@ function updateGhostAnimation(now) {
           delete node.userData.preGhostMaterial;
         }
         node.remove(edges);
-        edges.geometry.dispose();
+        // Not edges.geometry.dispose() -- that geometry is cached in
+        // ghostEdgesGeometryCache and reused the next time this mesh ghosts
+        // (see getGhostEdgesGeometry), so disposing it here would just force
+        // the expensive EdgesGeometry computation to redo itself on the very
+        // next V-press. Only the cheap per-instance material actually dies.
         edges.material.dispose();
         delete node.userData.ghostEdges;
         delete node.userData.ghostPhase;
@@ -4211,6 +4286,7 @@ function loadModel(part, animatePop = false) {
         });
         loadedMods[part] = model;
         if (partVis[part]) scene.add(model);
+        scheduleGhostEdgesPreload(model);
         applyColor(part);
         updateVariantCounter(part);
         updateComboChip();
@@ -4440,8 +4516,8 @@ function restorePalette(palette) {
   openPaletteOriginalParent = null;
 }
 
-// #info-tooltip and #more-menu are simple CSS-anchored popovers (position:absolute
-// relative to their trigger) that work fine on desktop, but on mobile their trigger
+// #more-menu is a simple CSS-anchored popover (position:absolute relative to
+// its trigger) that works fine on desktop, but on mobile its trigger
 // (#info-container) lives inside .mobile-sheet, which needs overflow:hidden for its
 // own rounded-corner/scroll containment — clipping the popover invisible regardless
 // of z-index. Reparenting to the top-level host and switching to fixed, JS-computed
@@ -4560,9 +4636,9 @@ function startTour(force = false) {
     { target: '#top-controls [data-role="next"]', dock: 'parts', essential: true, title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
     { target: '#top-visibility', dock: 'parts', essential: true, title: 'Visibility', body: 'Temporarily hide or show a single part to see how it affects the build.' },
     { target: '#visibilityModeBtn', dock: 'parts', title: 'Hide / show parts', body: 'Preview several hidden parts at once -- they turn into clickable blue ghosts you can tap to toggle. Press V anytime to jump straight into this mode.' },
-    { target: '#top-controls [data-role="print"]', dock: 'parts', essential: true, title: 'Direct 3D Print', body: 'Open the current part directly in your slicer using the orcaslicer:// link.' },
-    { target: '#download-group', title: 'Export', body: 'Download STL instantly, or open the menu for GLB and STEP.' },
-    { target: '#projectionBtn', title: 'Perspective / Orthographic', body: 'Switch the camera between a realistic perspective view and a flat, true-to-scale orthographic one.' }
+    { target: '#top-controls [data-role="print"]', dock: 'parts', essential: true, title: 'Direct 3D Print', body: 'Open the current part directly in your preferred slicer — pick PrusaSlicer or OrcaSlicer in Settings.' },
+    { target: '#download-primary', title: 'Export', body: 'Download STL instantly, or open Settings for GLB and STEP.' },
+    { target: '#settingsToggle', title: 'Settings', body: 'Preferred slicer, camera projection, GLB/STEP downloads, and this guide all live here.' }
   ];
 
   const tip = document.createElement('div');
@@ -4724,11 +4800,6 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-resetBtn.addEventListener('click', () => {
-  controls.reset();
-  toast('View reset', 'ok', 900);
-});
-
 // Swaps the active camera between perspective and orthographic, matching
 // the new camera's apparent zoom/framing to the old one's so the switch
 // reads as a projection change, not a jump-cut to a different shot.
@@ -4760,15 +4831,17 @@ function toggleProjection(silent = false) {
   controls.saveState();
 
   const nowPerspective = camera.isPerspectiveCamera;
-  projectionBtn.innerHTML = `<span class="material-icons">${nowPerspective ? 'videocam' : 'crop_din'}</span>`;
-  const label = nowPerspective ? 'Switch to orthographic view' : 'Switch to perspective view';
-  projectionBtn.title = label;
-  projectionBtn.setAttribute('aria-label', label);
-  projectionBtn.setAttribute('aria-pressed', String(!nowPerspective));
+  updateProjectionUi();
   if (!silent) toast(nowPerspective ? 'Perspective view' : 'Orthographic view', 'ok', 900);
 }
 
-projectionBtn.addEventListener('click', toggleProjection);
+// Only flips the camera if `mode` differs from what's active — called from
+// the Camera radio items in the Settings modal (see setupSettingsMenu).
+function setProjection(mode) {
+  const nowMode = camera.isPerspectiveCamera ? 'perspective' : 'orthographic';
+  if (mode === nowMode) return;
+  toggleProjection();
+}
 
 factoryResetBtn.addEventListener('click', () => {
   resetToFactory();
