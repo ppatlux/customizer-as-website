@@ -282,7 +282,12 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.45));
 
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(500, 500),
-  new THREE.ShadowMaterial({ opacity: 0.1 })
+  // depthWrite:false — it's a transparent shadow-catcher, it should never
+  // occlude anything via the depth buffer. Left on, this 500x500 plane at
+  // y=0 slices a hard horizontal line through every V-mode ghost preview
+  // that dips below the floor ("a plane cutting the hidden models").
+  // Shadows are rendered in a separate pass and are unaffected.
+  new THREE.ShadowMaterial({ opacity: 0.1, depthWrite: false })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -364,6 +369,15 @@ const ghostAnimNodes = new Set();
 // that geometry object exists (a variant swap loads new geometry, a fresh
 // cache miss, which is correct) -- every V-press after the first for a given
 // part is then just cheap traversal + object creation, no geometry math.
+//
+// Computed lazily, only the first time a given part is actually ghosted. An
+// earlier version also warmed this cache eagerly for every part right after
+// loadModel() finished (scheduleGhostEdgesPreload), but once the model assets
+// grew to multi-megabyte, multi-mesh GLBs that turned into a multi-hundred-ms
+// synchronous EdgesGeometry pass on every single part switch -- for parts the
+// user might never ghost -- which pinned the main thread and made switching
+// parts lag badly. Lazy means that cost is paid once, on demand, by the one
+// action that needs it (entering V-mode with that part hidden).
 const ghostEdgesGeometryCache = new WeakMap();
 function getGhostEdgesGeometry(geometry) {
   let edges = ghostEdgesGeometryCache.get(geometry);
@@ -372,27 +386,6 @@ function getGhostEdgesGeometry(geometry) {
     ghostEdgesGeometryCache.set(geometry, edges);
   }
   return edges;
-}
-
-// Warms ghostEdgesGeometryCache for a just-loaded model in the background, so
-// the *first* V-press of a session is fast too, not just the second one --
-// otherwise that expensive EdgesGeometry computation only ever happens lazily,
-// the first time each part actually gets ghosted. Called once per part right
-// after loadModel() finishes (see the GLTFLoader callback), covering every
-// part regardless of its current visibility, since any part can be hidden
-// (and therefore need a ghost) later via its own eye icon, not just the ones
-// that start hidden. requestIdleCallback keeps this off the critical path —
-// it runs in gaps between frames rather than competing with the load/render
-// work that's actually visible to the user; Safari has no requestIdleCallback,
-// hence the setTimeout fallback.
-function scheduleGhostEdgesPreload(model) {
-  const run = () => {
-    model.traverse((node) => {
-      if (node.isMesh) getGhostEdgesGeometry(node.geometry);
-    });
-  };
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 2000 });
-  else setTimeout(run, 150);
 }
 
 let activePresetKey = 'starter';
@@ -3979,14 +3972,13 @@ function setGhostHighlight(part, ghosted) {
           transparent: true,
           opacity: 0,
           depthWrite: false,
-          // Tinkercad-style hidden-part previews are meant to be X-ray: visible
-          // straight through whatever opaque geometry happens to sit in front
-          // of them (an outer shell, another visible part, the ground). With
-          // depthTest left on (the default), any such opaque surface between
-          // the camera and the ghost silently clipped it along that surface's
-          // own silhouette -- reading as "a flat plane cutting the hidden 3D
-          // models" that came and went with viewing angle, since it only
-          // happened wherever something opaque was actually in the way.
+          // depthTest off on the FILL only: the soft translucent volume reads
+          // straight through whatever opaque geometry is in front of it (outer
+          // shell, another part) instead of getting a hard silhouette cut
+          // where that surface's edge crosses it. The crisp edge outline
+          // below keeps depthTest ON so it stays occluded by visible parts --
+          // so a hidden part shows as a faint glow through the shell without
+          // its bright pulsing wireframe bleeding over the top of everything.
           depthTest: false,
           side: THREE.DoubleSide,
           // Some hidden parts (e.g. Bumper's mounting plate) sit almost flush
@@ -4001,7 +3993,7 @@ function setGhostHighlight(part, ghosted) {
         });
         const edges = new THREE.LineSegments(
           getGhostEdgesGeometry(node.geometry),
-          new THREE.LineBasicMaterial({ color: GHOST_EDGE_COLOR_BASE.getHex(), transparent: true, opacity: 0, depthTest: false })
+          new THREE.LineBasicMaterial({ color: GHOST_EDGE_COLOR_BASE.getHex(), transparent: true, opacity: 0 })
         );
         node.add(edges);
         node.userData.ghostEdges = edges;
@@ -4304,7 +4296,6 @@ function loadModel(part, animatePop = false) {
         });
         loadedMods[part] = model;
         if (partVis[part]) scene.add(model);
-        scheduleGhostEdgesPreload(model);
         applyColor(part);
         updateVariantCounter(part);
         updateComboChip();
