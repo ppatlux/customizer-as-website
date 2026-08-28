@@ -5,6 +5,9 @@ import { ASSET_MANIFEST } from './asset-manifest.js';
 import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer } from './slicer-preference.js';
 
 const COLOR_OPTIONS = ['#231F20', '#549EF7', '#00D072', '#FFBD3B', '#A89EFA', '#CE4A4A', '#E6E6E6', '#FFFFFF'];
+// Default part color — must stay one of COLOR_OPTIONS' own swatches so a
+// freshly loaded/reset part visually matches a selectable palette entry.
+const DEFAULT_PART_COLOR = '#E6E6E6';
 // Pseudo part-key for the global "paint any piece" tool (#globalPaintBtn) —
 // not a real entry in modelSets/loadedMods. Bucket mode keys off this the
 // same way it keys off a real part string; see getPaintHit/setBucketMode for
@@ -227,6 +230,12 @@ if (isTouchLikeDevice()) {
   controls.saveState();
 }
 
+// Orthographic is the default projection -- switches the active camera right
+// after its initial framing is set above, reusing toggleProjection's own
+// perspective->ortho math so the default view matches whatever framing was
+// just computed (desktop vs. touch) instead of duplicating it here.
+toggleProjection(true);
+
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
 keyLight.position.set(100, 200, 100);
 keyLight.castShadow = true;
@@ -262,6 +271,12 @@ const modelCols = {};
 // variant's mesh #3 would be meaningless (or wrong) applied to another's.
 const modelMeshCols = {};
 const partVis = {};
+// True only while Motion is hidden *by enforceBottomMotionExclusion itself*
+// (an F1/Boat bottom), as opposed to the user having turned it off on
+// purpose. Lets that function restore Motion automatically once the
+// conflicting bottom is swapped away (randomize, prev/next, presets) instead
+// of leaving it stuck hidden forever — see enforceBottomMotionExclusion.
+let wheelsAutoHiddenByBottom = false;
 const activePops = new Map();
 const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const occludedParts = new Set(['middle', 'bumper', 'tail', 'bottom', 'wheels']);
@@ -358,7 +373,7 @@ let colorHistory = [];
 
 for (const part of Object.keys(modelSets)) {
   currentIdx[part] = 0;
-  modelCols[part] = new THREE.Color('#d9d9d9');
+  modelCols[part] = new THREE.Color(DEFAULT_PART_COLOR);
   partVis[part] = !ADVANCED_DEFAULTS.has(part);
 }
 partVis.spacer = false;
@@ -2594,6 +2609,12 @@ function setupGlobalClickHandler() {
     if (role === 'visibility') {
       partVis[part] = !partVis[part];
       el.innerHTML = `<span class="material-icons">${partVis[part] ? 'visibility' : 'visibility_off'}</span>`;
+      // The user just made an explicit visibility call on Motion themselves --
+      // enforceBottomMotionExclusion() below will immediately re-hide it if
+      // the bottom still conflicts (bottom always wins), but that's a fresh
+      // auto-hide, not a leftover one; clear the stale flag either way so it
+      // doesn't get restored later based on a decision that's no longer current.
+      if (part === 'wheels') wheelsAutoHiddenByBottom = false;
 
       if (part === 'spacer') {
         if (partVis.spacer) {
@@ -2725,7 +2746,18 @@ function navigateWithFade(url) {
   window.setTimeout(() => window.location.assign(url), 180);
 }
 
+// Caps how many toasts can be stacked up on screen at once -- rapid repeat
+// clicks on something like the randomize button used to queue one toast per
+// click with nothing capping the pile-up, so a burst of clicks left a wall
+// of them stacked on screen long after the clicking stopped. Dropping the
+// oldest as a new one arrives keeps the stack readable no matter how fast
+// they come in, without changing timing/behavior for the normal case.
+const TOAST_MAX_VISIBLE = 3;
+
 function toast(message, type = 'ok', ms = 2000) {
+  while (toastStack.children.length >= TOAST_MAX_VISIBLE) {
+    toastStack.firstElementChild.remove();
+  }
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.innerHTML = `<span class="material-icons">${type === 'ok' ? 'check_circle' : type === 'warn' ? 'warning' : 'error'}</span><div>${message}</div>`;
@@ -2897,8 +2929,8 @@ function applySavedState(saved) {
 
   if (saved.modelCols) {
     for (const part of Object.keys(saved.modelCols)) {
-      if (!modelCols[part]) modelCols[part] = new THREE.Color('#d9d9d9');
-      modelCols[part].set(saved.modelCols[part] || '#d9d9d9');
+      if (!modelCols[part]) modelCols[part] = new THREE.Color(DEFAULT_PART_COLOR);
+      modelCols[part].set(saved.modelCols[part] || DEFAULT_PART_COLOR);
     }
   }
 
@@ -3670,7 +3702,7 @@ function enforceArmsBumperExclusion(partJustEnabled) {
 // change that could touch Hat's visibility or Top's variant/visibility.
 const HAT_REQUIRED_TOP_FILE = 'Top_Hats.glb';
 
-function enforceHatRequiresTopHats() {
+function enforceHatRequiresTopHats(silent = false) {
   if (!partVis.hat || !partVis.top) return;
   const requiredIdx = modelSets.top.findIndex((url) => url.endsWith(`/${HAT_REQUIRED_TOP_FILE}`));
   if (requiredIdx === -1 || currentIdx.top === requiredIdx) return;
@@ -3678,15 +3710,17 @@ function enforceHatRequiresTopHats() {
   currentIdx.top = requiredIdx;
   loadModel('top', true);
   updateVariantCounter('top');
-  toast('Top switched to "Hats" — the only top compatible with a hat.', 'warn', 2400);
+  if (!silent) toast('Top switched to "Hats" — the only top compatible with a hat.', 'warn', 2400);
 }
 
-// The `part|file` identity for whatever variant of `part` is currently
-// selected, in the same "manifest key + filename" shape tools/compat-checker.js
-// uses as its pair keys — the two never need to agree on anything more than
-// that shared string format.
-function partFileKey(part) {
-  const url = modelSets[part]?.[currentIdx[part] ?? 0];
+// The `part|file` identity for a variant of `part`, in the same "manifest
+// key + filename" shape tools/compat-checker.js uses as its pair keys — the
+// two never need to agree on anything more than that shared string format.
+// Defaults to whatever's currently selected, but randomizeBuild also calls
+// this with a candidate index it hasn't committed to yet, to test a pick
+// against the compatibility map before accepting it.
+function partFileKey(part, idx = currentIdx[part] ?? 0) {
+  const url = modelSets[part]?.[idx];
   if (!url) return null;
   return `${part}|${url.split('/').pop()}`;
 }
@@ -3742,7 +3776,7 @@ function findConflictFor(part) {
       const other = getOtherConflictingPart(part);
       if (other && partVis[other]) return { otherPart: other, hidden: true };
     }
-    if (part === 'wheels' && partVis.bottom && bottomIsF1Variant()) {
+    if (part === 'wheels' && partVis.bottom && (bottomIsF1Variant() || bottomIsBoatVariant())) {
       return { otherPart: 'bottom', hidden: true };
     }
   }
@@ -3997,21 +4031,49 @@ function bottomIsF1Variant() {
   return /bottom_f1/i.test(url);
 }
 
-// The F1 bottom's mount doesn't fit any Motion/wheel variant. Unlike
+function bottomIsBoatVariant() {
+  const url = modelSets.bottom?.[currentIdx.bottom] || '';
+  return /bottom_boat/i.test(url);
+}
+
+// The F1 and Boat bottoms' mounts don't fit any Motion/wheel variant. Unlike
 // arms/bumper (either one can knock out the other, whichever was touched
 // last), this conflict is one-directional and variant-conditional: Bottom
 // always wins, Motion is the one that gets hidden — so call this after ANY
 // change that could touch bottom's variant/visibility OR wheels' visibility
 // (it's a cheap, idempotent check; harmless to call when nothing changed).
 function enforceBottomMotionExclusion() {
-  if (!partVis.bottom || !bottomIsF1Variant() || !partVis.wheels) return;
+  const isF1 = bottomIsF1Variant();
+  const isBoat = !isF1 && bottomIsBoatVariant();
+  const hasConflict = partVis.bottom && (isF1 || isBoat);
 
-  partVis.wheels = false;
-  const wheelsBtn = document.getElementById('wheels-visibility');
-  if (wheelsBtn) wheelsBtn.innerHTML = '<span class="material-icons">visibility_off</span>';
-  if (loadedMods.wheels) loadedMods.wheels.visible = false;
-  updateComboChip();
-  toast('Motion hidden — not compatible with the F1 bottom.', 'warn', 2200);
+  if (hasConflict && partVis.wheels) {
+    partVis.wheels = false;
+    wheelsAutoHiddenByBottom = true;
+    const wheelsBtn = document.getElementById('wheels-visibility');
+    if (wheelsBtn) wheelsBtn.innerHTML = '<span class="material-icons">visibility_off</span>';
+    if (loadedMods.wheels) loadedMods.wheels.visible = false;
+    updateComboChip();
+    toast(`Motion hidden — not compatible with the ${isF1 ? 'F1' : 'Boat'} bottom.`, 'warn', 2200);
+    return;
+  }
+
+  // Conflict cleared (bottom swapped to something compatible) and Motion is
+  // still hidden only because we hid it, not because the user chose to hide
+  // it themselves -- bring it back rather than leaving it stuck off.
+  if (!hasConflict && wheelsAutoHiddenByBottom) {
+    wheelsAutoHiddenByBottom = false;
+    partVis.wheels = true;
+    const wheelsBtn = document.getElementById('wheels-visibility');
+    if (wheelsBtn) wheelsBtn.innerHTML = '<span class="material-icons">visibility</span>';
+    if (loadedMods.wheels) {
+      loadedMods.wheels.visible = true;
+      if (!loadedMods.wheels.parent) scene.add(loadedMods.wheels);
+    } else {
+      loadModel('wheels', true);
+    }
+    updateComboChip();
+  }
 }
 
 function enablePart(part, withToast = true) {
@@ -4152,6 +4214,13 @@ function loadModel(part, animatePop = false) {
         applyColor(part);
         updateVariantCounter(part);
         updateComboChip();
+        // setConflictHighlight tints the actual loaded mesh, so a conflict
+        // computed earlier (e.g. right after randomize fired loadModel for
+        // several parts at once) couldn't have been applied to THIS mesh yet
+        // -- it didn't exist. Re-check now that it's actually the one in the
+        // scene, or a real clash silently renders as if everything's fine
+        // until something else happens to call refreshConflictBadges again.
+        refreshConflictBadges();
         if (animatePop && partVis[part]) {
           activePops.delete(part);
           triggerPartPop(part, model);
@@ -4238,7 +4307,7 @@ function resetToFactory() {
   loadModel('wheels');
 
   for (const part of Object.keys(modelSets)) {
-    modelCols[part].set('#d9d9d9');
+    modelCols[part].set(DEFAULT_PART_COLOR);
     delete modelMeshCols[part];
     applyColor(part);
     updateBucketResetVisibility(part);
@@ -4663,7 +4732,7 @@ resetBtn.addEventListener('click', () => {
 // Swaps the active camera between perspective and orthographic, matching
 // the new camera's apparent zoom/framing to the old one's so the switch
 // reads as a projection change, not a jump-cut to a different shot.
-function toggleProjection() {
+function toggleProjection(silent = false) {
   const switchingToOrtho = camera.isPerspectiveCamera;
   const next = switchingToOrtho ? orthographicCamera : perspectiveCamera;
   const dir = camera.position.clone().sub(controls.target).normalize();
@@ -4696,7 +4765,7 @@ function toggleProjection() {
   projectionBtn.title = label;
   projectionBtn.setAttribute('aria-label', label);
   projectionBtn.setAttribute('aria-pressed', String(!nowPerspective));
-  toast(nowPerspective ? 'Perspective view' : 'Orthographic view', 'ok', 900);
+  if (!silent) toast(nowPerspective ? 'Perspective view' : 'Orthographic view', 'ok', 900);
 }
 
 projectionBtn.addEventListener('click', toggleProjection);
@@ -4705,14 +4774,102 @@ factoryResetBtn.addEventListener('click', () => {
   resetToFactory();
 });
 
+// How many times to re-roll a single part's index during the initial greedy
+// pass before giving up and accepting whatever it landed on. The
+// compatibility map is sparse (a few hundred flagged pairs out of many
+// thousands of possible ones), so a handful of retries clears most clashes
+// immediately; the repair pass below (see randomizeBtn's click handler)
+// mops up whatever this ordering-blind pass couldn't see coming.
+const RANDOMIZE_RETRY_LIMIT = 40;
+
+// Does candidate index `idx` of `part` clash with any *other* currently
+// chosen, visible part in `chosenIdx`? Shared by both the initial greedy
+// pass and the repair pass below.
+function candidateClashes(part, idx, parts, chosenIdx) {
+  // Mirrors findConflictFor: a clash only exists once BOTH sides are
+  // visible -- a hidden part's variant is never actually a live conflict,
+  // no matter what it's parked on.
+  if (!partVis[part]) return false;
+  const key = partFileKey(part, idx);
+  const incompatibleWith = key && compatibilityMap.get(key);
+  if (!incompatibleWith) return false;
+  return parts.some((other) => {
+    if (other === part || !partVis[other] || chosenIdx[other] == null) return false;
+    const otherKey = partFileKey(other, chosenIdx[other]);
+    return otherKey && incompatibleWith.has(otherKey);
+  });
+}
+
 randomizeBtn.addEventListener('click', () => {
-  for (const part of Object.keys(modelSets)) {
-    if (!modelSets[part].length) continue;
-    currentIdx[part] = Math.floor(Math.random() * modelSets[part].length);
+  const parts = Object.keys(modelSets).filter((part) => modelSets[part].length);
+  const chosenIdx = {};
+
+  // Pass 1: greedily pick each part's variant left-to-right so it doesn't
+  // land on a pairing the compatibility map (tools/compat-checker.html)
+  // already flagged as incompatible with another part chosen so far -- the
+  // point is to not hand back a combo that's just going to show up red,
+  // rather than rolling one and then explaining why it's wrong.
+  for (const part of parts) {
+    const count = modelSets[part].length;
+    let idx = Math.floor(Math.random() * count);
+    if (compatibilityMap) {
+      for (let attempt = 0; attempt < RANDOMIZE_RETRY_LIMIT && candidateClashes(part, idx, parts, chosenIdx); attempt++) {
+        idx = Math.floor(Math.random() * count);
+      }
+    }
+    chosenIdx[part] = idx;
+  }
+
+  // Pass 2: repair whatever pass 1 couldn't see coming -- it only ever
+  // checks a part against picks made *before* it, so a part processed early
+  // (e.g. "middle") can still end up on a variant that blocks every single
+  // option of a part processed later (e.g. one middle variant that clashes
+  // with all 13 face variants), and no amount of re-rolling the later part
+  // alone would ever fix that. This repeatedly finds a still-conflicting
+  // pair and re-rolls a random side of it against an exhaustive shuffle of
+  // its own options (part variant counts are small, so this is cheap),
+  // which can also fix the earlier part instead when that's the one at fault.
+  if (compatibilityMap) {
+    for (let iter = 0; iter < 80; iter++) {
+      let conflictA = null;
+      let conflictB = null;
+      outer: for (let i = 0; i < parts.length && !conflictA; i++) {
+        for (let j = i + 1; j < parts.length; j++) {
+          if (candidateClashes(parts[i], chosenIdx[parts[i]], [parts[j]], chosenIdx)) {
+            conflictA = parts[i];
+            conflictB = parts[j];
+            break outer;
+          }
+        }
+      }
+      if (!conflictA) break; // nothing left to repair
+
+      const sideToFix = Math.random() < 0.5 ? conflictA : conflictB;
+      const count = modelSets[sideToFix].length;
+      const order = Array.from({ length: count }, (_, i) => i).sort(() => Math.random() - 0.5);
+      const fixed = order.find((candidateIdx) => !candidateClashes(sideToFix, candidateIdx, parts, chosenIdx));
+      if (fixed !== undefined) chosenIdx[sideToFix] = fixed;
+      // If nothing resolves it, leave both as-is and let the next iteration
+      // try a different pair (or the same one, the other side) -- a handful
+      // of genuinely irreconcilable options run out this loop harmlessly,
+      // same as before: the badge shows the honest, still-real conflict.
+    }
+  }
+
+  for (const part of parts) {
+    currentIdx[part] = chosenIdx[part];
     loadModel(part, true);
   }
+  // Bottom-vs-Motion and Hat-requires-Top-Hats are hard business rules, not
+  // geometry-map entries (see their own comments) -- the greedy pass above
+  // can't see them, so they still get enforced/coerced as a fallback here,
+  // same as every other path that changes parts. Hat-requires-Top-Hats stays
+  // silent here specifically: with Hat already on, rolling a Top other than
+  // "Hats" is the expected, common case on almost every randomize, not a
+  // surprise worth a toast every single time -- unlike the same coercion
+  // firing from a deliberate, one-off manual action elsewhere.
   enforceBottomMotionExclusion();
-  enforceHatRequiresTopHats();
+  enforceHatRequiresTopHats(true);
   refreshConflictBadges();
   markCustomPreset();
   toast('Randomized!', 'ok', 900);

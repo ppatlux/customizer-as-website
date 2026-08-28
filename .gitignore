@@ -2,3 +2,8 @@ exports/
 .dbg/
 .DS_Store
 Thumbs.db
+LICENSE
+backup/
+tools/compat-checker.html
+tools/compat-checker.css
+tools/compat-checker.js

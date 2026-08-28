@@ -85,6 +85,19 @@ body{
      (canvas overrides this with touch-action:none). Still allows normal
      panning/scrolling. */
   touch-action:manipulation;
+  /* App-wide, not just on individual controls (see the scattered user-select:none
+     rules below) -- dragging to orbit the model or drag-select a color swatch
+     was also sweeping up text selection highlight on whatever label/panel text
+     the drag passed over. Inputs opt back in below since their own text still
+     needs to be selectable/editable. */
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+}
+
+input, textarea{
+  -webkit-user-select:text;
+  user-select:text;
 }
 
 /* Fallback crossfade for browsers without cross-document View Transitions support.
