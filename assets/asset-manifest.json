@@ -1,15 +1,18 @@
 {
   "hat": [
-    { "file": "hat_Mister.glb", "folder": "hat", "source": "https://hprobots.com/wp-content/uploads/2025/07/hat_1.glb" },
     { "file": "Hat_Leprechaun.glb", "folder": "hat", "source": "https://hprobots.com/wp-content/uploads/2025/07/hat_2.glb" },
     { "file": "Hat_Viking.glb", "folder": "hat", "source": "https://hprobots.com/wp-content/uploads/2025/07/hat_3.glb" },
     { "file": "Hat_Dragonborn.glb", "folder": "hat", "source": "" },
     { "file": "Spoiler_F1.glb", "folder": "hat", "source": "https://hprobots.com/wp-content/uploads/2025/10/Spoiler_F1.glb" },
     { "file": "Hat_Round.glb", "folder": "hat", "source": "" },
     { "file": "Hat_Flat.glb", "folder": "hat", "source": "" },
+    { "file": "Hat_Bavarian.glb", "folder": "hat", "source": "" },
+    { "file": "Hat_Gladiator.glb", "folder": "hat", "source": "" },
+    { "file": "Hat_Pika ears.glb", "folder": "hat", "source": "" },
     { "file": "Hat_Pumpkin.glb", "folder": "hat", "source": "" },
     { "file": "Hat_SumoBand.glb", "folder": "hat", "source": "" },
     { "file": "Hat_Prusa.glb", "folder": "hat", "source": "" },
+    { "file": "Hat_Mister.glb", "folder": "hat", "source": "" },
     { "file": "Hat_dome.glb", "folder": "hat", "source": "" },
     { "file": "Hat_Magic.glb", "folder": "hat", "source": "" },
     { "file": "Hat_Lego.glb", "folder": "hat", "source": "" },
@@ -46,7 +49,8 @@
     { "file": "Top_lights_NOlogo.glb", "folder": "top", "source": "https://hprobots.com/wp-content/uploads/2025/10/Toplights_NOlogo.glb" },
     { "file": "Top_Race.glb", "folder": "top", "source": "" },
     { "file": "Top_Motor.glb", "folder": "top", "source": "" },
-    { "file": "Top_MP3sensor.glb", "folder": "top", "source": "" }
+    { "file": "Top_MP3sensor.glb", "folder": "top", "source": "" },
+    { "file": "Top_Beacon.glb", "folder": "top", "source": "" }
   ],
   "middle": [
     { "file": "Middle-starter.glb", "folder": "middle", "source": "https://hprobots.com/wp-content/uploads/2025/08/Middle-starter.glb" },
@@ -68,6 +72,8 @@
     { "file": "Face_Eyebrows.glb", "folder": "face", "source": "https://hprobots.com/wp-content/uploads/2025/10/FaceUS_eyebrows.glb" },
     { "file": "Face_Angry.glb", "folder": "face", "source": "https://hprobots.com/wp-content/uploads/2025/10/FaceUS_eyebrows_angry.glb" },
     { "file": "Face_Duck.glb", "folder": "face", "source": "" },
+    { "file": "Face_Pika.glb", "folder": "face", "source": "" },
+    { "file": "Face_Mustache.glb", "folder": "face", "source": "" },
     { "file": "Face_Pumpkin.glb", "folder": "face", "source": "https://hprobots.com/wp-content/uploads/2025/10/FaceUS_Pumpkin.glb" },
     { "file": "FaceUSOLED.glb", "folder": "face", "source": "https://hprobots.com/wp-content/uploads/2025/10/FaceUSOLED.glb" },
     { "file": "Face_F1.glb", "folder": "face", "source": "https://hprobots.com/wp-content/uploads/2025/10/FaceUSF1_v1.glb" },
