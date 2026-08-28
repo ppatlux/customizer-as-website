@@ -4,6 +4,19 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ASSET_MANIFEST } from './asset-manifest.js';
 import { PRESETS as presets, normalizeMixPartColor } from './presets.js';
 import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer, PRUSA_SLICER_LIVE } from './slicer-preference.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+
+// Accelerated raycasting for every Mesh. The paint-bucket / hover hit-test
+// (getPaintHit) casts up to ~30 rays per pointer sample against every visible
+// part; without a BVH each of those is O(triangles) once the ray enters a
+// mesh's bounding box, which on the heavier multi-megabyte GLBs made simply
+// moving the cursor over the model drop frames. A per-geometry BVH (built once
+// in loadModel) turns each ray into a ~log(triangles) tree descent instead.
+// acceleratedRaycast falls back to the stock path for any geometry without a
+// boundsTree, so this is safe even before/if one is missing.
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 // Used by syncPrintButtonBranding() — declared up here (not next to that
 // function) because bootstrap() calls into it synchronously at module-eval
@@ -203,7 +216,10 @@ loader.setCrossOrigin('anonymous');
 const scene = new THREE.Scene();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(window.devicePixelRatio || 1);
+// Cap at 2: above that the fragment count (this scene is fill-rate bound — big
+// translucent parts, a full-frame shadow pass) climbs faster than the visible
+// sharpness gain, and some of the heavier GLBs already push frame time.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setClearColor(0xffffff, 0);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
@@ -273,7 +289,11 @@ toggleProjection(true);
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
 keyLight.position.set(100, 200, 100);
 keyLight.castShadow = true;
-keyLight.shadow.mapSize.set(2048, 2048);
+// 1024 rather than 2048: shadowMap.autoUpdate is on, so the full shadow pass
+// (every high-poly caster, re-rendered) runs every frame even while just
+// orbiting. Halving the map's dimensions quarters that pass's cost for a
+// barely-perceptible softness change on a single soft ground shadow.
+keyLight.shadow.mapSize.set(1024, 1024);
 scene.add(keyLight);
 
 const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
@@ -1896,6 +1916,11 @@ function setupBucketTool() {
   // grid (see the click handler below).
   let pendingPaintHoverEvent = null;
   renderer.domElement.addEventListener('pointermove', (event) => {
+    // A move with a button held is an orbit/pan drag, not a hover — the user
+    // isn't aiming at anything to pick. Skipping the (raycast-heavy) hover
+    // hit-test here is what keeps dragging *over* the model smooth; dragging
+    // over empty canvas was already fine because every ray missed cheaply.
+    if (event.buttons !== 0) { pendingPaintHoverEvent = null; return; }
     pendingPaintHoverEvent = event;
   });
 
@@ -4310,7 +4335,12 @@ function loadModel(part, animatePop = false) {
         settleInitialLoad();
         if (loadGeneration[part] !== myGeneration) return; // superseded by a newer request for this part
 
-        if (loadedMods[part]) scene.remove(loadedMods[part]);
+        if (loadedMods[part]) {
+          scene.remove(loadedMods[part]);
+          loadedMods[part].traverse((node) => {
+            if (node.isMesh) node.geometry?.disposeBoundsTree?.();
+          });
+        }
         const model = gltf.scene;
         let yOffset = MODEL_Y_OFFSET;
         if (partVis.spacer && ['bottom', 'wheels', 'arms', 'bumper'].includes(part)) {
@@ -4338,6 +4368,10 @@ function loadModel(part, animatePop = false) {
             // hover), not just the thumbnail renderer that first hit this.
             node.geometry.computeBoundingSphere();
             node.geometry.computeBoundingBox();
+            // BVH for fast hover/paint raycasts (see the prototype patch near
+            // the top of the file). Built once here; disposed when this part's
+            // model is replaced by the next loadModel for it.
+            node.geometry.computeBoundsTree();
           }
         });
         loadedMods[part] = model;
