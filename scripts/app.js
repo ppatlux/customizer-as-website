@@ -220,6 +220,15 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(9, 23, -3);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
+// Without a floor, scrolling to zoom in (perspective mode) dollies the
+// camera arbitrarily close to -- or inside -- the model, at which point
+// camera.near (0.1) starts slicing through nearby geometry: a hard, flat,
+// angle-dependent cut ("a plane cutting the hidden 3D models") that's most
+// obvious on hidden-part ghost previews, since their translucency makes the
+// jagged near-plane edge visible instead of just hidden behind an opaque
+// surface. 20 keeps the camera safely outside the robot's own bounds (it's
+// roughly 100-150 units across) while still allowing a close-up look.
+controls.minDistance = 20;
 controls.update();
 controls.saveState();
 
@@ -3970,6 +3979,15 @@ function setGhostHighlight(part, ghosted) {
           transparent: true,
           opacity: 0,
           depthWrite: false,
+          // Tinkercad-style hidden-part previews are meant to be X-ray: visible
+          // straight through whatever opaque geometry happens to sit in front
+          // of them (an outer shell, another visible part, the ground). With
+          // depthTest left on (the default), any such opaque surface between
+          // the camera and the ghost silently clipped it along that surface's
+          // own silhouette -- reading as "a flat plane cutting the hidden 3D
+          // models" that came and went with viewing angle, since it only
+          // happened wherever something opaque was actually in the way.
+          depthTest: false,
           side: THREE.DoubleSide,
           // Some hidden parts (e.g. Bumper's mounting plate) sit almost flush
           // against another part's own surface -- two transparent triangles
@@ -3983,7 +4001,7 @@ function setGhostHighlight(part, ghosted) {
         });
         const edges = new THREE.LineSegments(
           getGhostEdgesGeometry(node.geometry),
-          new THREE.LineBasicMaterial({ color: GHOST_EDGE_COLOR_BASE.getHex(), transparent: true, opacity: 0 })
+          new THREE.LineBasicMaterial({ color: GHOST_EDGE_COLOR_BASE.getHex(), transparent: true, opacity: 0, depthTest: false })
         );
         node.add(edges);
         node.userData.ghostEdges = edges;
