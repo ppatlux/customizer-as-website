@@ -440,14 +440,29 @@
         </button>
       </div>
 
-      <!-- Mobile-only (pointer:coarse) bottom sheet. On touch devices app.js moves the
-           real #info-container and both .model-controls panels in here (not copies) so
-           every existing control keeps working unchanged; empty and unused on desktop. -->
-      <div id="mobile-sheet" class="mobile-sheet" data-state="peek">
+      <!-- Mobile-only (pointer:coarse) bottom sheet — the touch counterpart of the
+           desktop .right-dock. On touch devices app.js moves the real #info-container,
+           #controls-toggle, #panel-essential and #preset-carousel in here (not copies)
+           so every existing control keeps working unchanged; empty and unused on
+           desktop. data-tab (mixes|parts) follows the last thing the user touched:
+           applying a mix -> "mixes", changing a part -> "parts" (see setMobileSheetTab
+           / setMobileSheetState). -->
+      <div id="mobile-sheet" class="mobile-sheet" data-state="peek" data-tab="mixes">
         <button id="mobile-sheet-handle" class="mobile-sheet-handle" type="button" aria-expanded="false" aria-controls="mobile-sheet-list" aria-label="Expand build controls">
           <span class="mobile-sheet-grip" aria-hidden="true"></span>
         </button>
-        <div id="mobile-sheet-list" class="mobile-sheet-list"></div>
+        <div id="mobile-sheet-tabs" class="mobile-sheet-tabs" role="tablist" aria-label="Build sections">
+          <button type="button" id="mobile-tab-mixes" class="mobile-sheet-tab active" role="tab" aria-selected="true" aria-controls="mobile-sheet-mixes">
+            <span class="material-icons" aria-hidden="true">auto_awesome</span><span>Mixes</span>
+          </button>
+          <button type="button" id="mobile-tab-parts" class="mobile-sheet-tab" role="tab" aria-selected="false" aria-controls="mobile-sheet-list">
+            <span class="material-icons" aria-hidden="true">tune</span><span>Parts</span>
+          </button>
+        </div>
+        <!-- app.js appends #preset-carousel here (Mixes tab). Swipe = native
+             horizontal scroll-snap; tap a card = applyPreset. -->
+        <div id="mobile-sheet-mixes" class="mobile-sheet-mixes" role="tabpanel" aria-label="Ready-made mixes"></div>
+        <div id="mobile-sheet-list" class="mobile-sheet-list" role="tabpanel" aria-label="Part controls"></div>
         <div id="mobile-sheet-actions" class="mobile-sheet-actions"></div>
       </div>
     </div>

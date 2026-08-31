@@ -692,6 +692,9 @@ function bootstrap() {
     updateAllCounters();
     updateComboChip();
     saveStateToLocal();
+    // A restored build's "last interaction" was per-part tweaking, not a mix —
+    // land the sheet on the Parts tab rather than its Mixes default.
+    if (mobileLayoutActive) setMobileSheetTab('parts');
     if (restoredFromShareLink) toast('Loaded shared build', 'ok', 1800);
   } else {
     // No saved/shared state: applyPreset() already loads every part it
@@ -948,12 +951,34 @@ function switchToPartPanel(part) {
   if (panel === 'advanced' && !advBtn.classList.contains('active')) showAdvancedPanel();
 }
 
+// Switches the mobile sheet between its two pages (mixes carousel / part list),
+// mirroring the desktop right-dock tabs. Kept as its own function so the
+// "follow the last interaction" callers (applyPreset -> mixes, any part change
+// -> parts) can drive it without duplicating the aria/class bookkeeping.
+function setMobileSheetTab(tab) {
+  if (!mobileSheetEl || mobileSheetEl.dataset.tab === tab) return;
+  mobileSheetEl.dataset.tab = tab;
+  const mixesTab = document.getElementById('mobile-tab-mixes');
+  const partsTab = document.getElementById('mobile-tab-parts');
+  mixesTab?.classList.toggle('active', tab === 'mixes');
+  partsTab?.classList.toggle('active', tab === 'parts');
+  mixesTab?.setAttribute('aria-selected', String(tab === 'mixes'));
+  partsTab?.setAttribute('aria-selected', String(tab === 'parts'));
+}
+
 // focusPart: which part's row peek should land on. Omit for "top of list"
 // (e.g. opening the sheet fresh); pass a part key after interacting with it
 // (variant/color change) so peek keeps showing that same part instead of
 // always jumping back to the first one.
 function setMobileSheetState(state, focusPart) {
   if (!mobileSheetEl) return;
+  // A part interaction (variant/color/visibility) always passes focusPart —
+  // make sure the Parts page is the one showing so the change is visible.
+  if (focusPart) setMobileSheetTab('parts');
+  // Expanding the sheet brings up the full part list — the docked on-model
+  // stepper would just float over it, so dismiss it (same idea as a contextual
+  // bar closing when you open the full panel it's a shortcut into).
+  if (state === 'expanded') hideModelHoverPopupNow();
   const listHost = document.getElementById('mobile-sheet-list');
   const row = focusPart ? document.getElementById(`${focusPart}-controls`) : null;
 
@@ -1000,13 +1025,31 @@ function setupMobileSheet() {
   mobileSheetHandleEl = document.getElementById('mobile-sheet-handle');
   const listHost = document.getElementById('mobile-sheet-list');
   const actionsHost = document.getElementById('mobile-sheet-actions');
+  const mixesHost = document.getElementById('mobile-sheet-mixes');
   const infoContainerEl = document.getElementById('info-container');
+  const controlsToggle = document.getElementById('controls-toggle');
+  const presetCarousel = document.getElementById('preset-carousel');
 
-  if (!mobileSheetEl || !mobileSheetHandleEl || !listHost || !actionsHost || !infoContainerEl) return;
+  if (!mobileSheetEl || !mobileSheetHandleEl || !listHost || !actionsHost || !mixesHost || !infoContainerEl) return;
 
   mobileLayoutActive = true;
+  // Parts tab: the Essential/Advanced switch sits above the scrolling part list
+  // it controls (same nesting the desktop right-dock uses) — as a sibling of
+  // the list, not inside it, so it stays put while the list scrolls.
+  if (controlsToggle) mobileSheetEl.insertBefore(controlsToggle, listHost);
   listHost.appendChild(essPanel);
+  // Mixes tab: the same carousel the desktop dock builds, just reparented and
+  // restyled as a horizontal swipe strip (see the coarse CSS block).
+  if (presetCarousel) mixesHost.appendChild(presetCarousel);
   actionsHost.appendChild(infoContainerEl);
+
+  // Same builder the desktop dock uses. Cards render immediately (grey thumb
+  // box + title); the 3D thumbnails fill in async and are cached after the
+  // first pass, same as on desktop.
+  renderPresetCarousel();
+
+  document.getElementById('mobile-tab-mixes')?.addEventListener('click', () => setMobileSheetTab('mixes'));
+  document.getElementById('mobile-tab-parts')?.addEventListener('click', () => setMobileSheetTab('parts'));
 
   let dragStartY = null;
   let dragMoved = false;
@@ -1056,7 +1099,7 @@ function setupMobileSheet() {
     // a common trigger for mobile browsers to cancel the gesture
     // (touchcancel instead of touchend) instead of completing it, silently
     // dropping the tap.
-    if (event.target.closest('.color-palette, .variant-grid-panel, #more-menu')) return;
+    if (event.target.closest('.color-palette, .variant-grid-panel, #more-menu, #model-hover-popup')) return;
     setMobileSheetState('peek');
   });
 
@@ -1724,7 +1767,15 @@ function showModelHoverPopup(part, clientX, clientY) {
   });
   const nameEl = popup.querySelector('[data-role="hover-popup-name"]');
   if (nameEl) nameEl.textContent = getPartDisplayName(part);
-  positionModelHoverPopup(clientX, clientY);
+  if (isTouchLikeDevice()) {
+    // Phone: the popup docks at a fixed spot above the sheet via CSS — clear
+    // any inline left/top a prior desktop-style call may have left behind so
+    // the stylesheet wins.
+    popup.style.left = '';
+    popup.style.top = '';
+  } else {
+    positionModelHoverPopup(clientX, clientY);
+  }
   popup.classList.add('open');
 }
 
@@ -2087,12 +2138,12 @@ function setupBucketTool() {
     // A drag that orbited/panned the camera isn't a pick. Long-press already
     // consumed this one as a piece reset.
     if (pointerDidDrag || longPressHandled) return;
-    // True when this click came from a finger/pen on a device running the
-    // DESKTOP layout (a tablet in landscape) — that's the only place the
-    // on-model quick-control popup exists to be summoned. In the <=1024px
-    // mobile-sheet layout the popup is CSS-hidden, so touch taps there must
-    // keep the original "tap a piece -> open its variant grid" behaviour.
-    const tapInput = (lastPointerType === 'touch' || lastPointerType === 'pen') && !isTouchLikeDevice();
+    // True when this click came from a finger/pen. Both layouts now show the
+    // on-model quick-control popup on a tap (first tap = popup / variant
+    // stepper, tap again or its "all variants" button = the full grid) — on
+    // the desktop layout it floats by the part, on phones it docks above the
+    // sheet (see .model-hover-popup.open in the coarse CSS block).
+    const tapInput = lastPointerType === 'touch' || lastPointerType === 'pen';
     const hit = getPaintHit(event.clientX, event.clientY);
 
     // Visibility-edit mode takes over the click entirely -- toggle whatever
@@ -4689,6 +4740,12 @@ function applyPreset(key, showToast = true) {
     syncPresetButtons(key);
     if (showToast) toast(`${preset.label} preset loaded`, 'ok', 1200);
     saveStateToLocal();
+    // Last interaction was picking a mix — keep the sheet on the Mixes page and
+    // collapsed so the result is front and centre.
+    if (mobileLayoutActive) {
+      setMobileSheetTab('mixes');
+      setMobileSheetState('peek');
+    }
   } finally {
     isApplyingPreset = false;
   }

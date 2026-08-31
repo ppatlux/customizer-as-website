@@ -285,12 +285,10 @@ html.vt-fallback.vt-leaving body{
   }
 }
 
-/* Desktop picks a mix from the new .right-dock carousel instead (see
-   setupRightDockTabs) -- this pill + its dropdown stay for touch only. */
+/* Never shown any more: desktop picks a mix from the .right-dock carousel,
+   phones from the Mixes tab in the bottom sheet (setupMobileSheet reparents
+   #preset-carousel in there). The #preset-toggle dropdown has no home left. */
 .preset-toggle{ display:none; }
-@media (pointer: coarse) and (max-width: 1024px){
-  .preset-toggle{ display:inline-flex; }
-}
 
 .preset-toggle{
   align-items:center;
@@ -1718,7 +1716,19 @@ html.touch-capable .vis-banner-exit--tap{ display:inline; }
   display:flex;
 }
 @media (pointer: coarse) and (max-width: 1024px){
-  .model-hover-popup{ display:none !important; }
+  /* On phones the popup is the primary way to step a part's variants without
+     opening the whole sheet — dock it as a fixed contextual bar centred just
+     above the sheet's peek height (a familiar "tap a thing, a bar/card appears
+     near the bottom" pattern) rather than floating at the tap point. The JS
+     skips its inline left/top positioning here, so plain CSS wins. */
+  .model-hover-popup.open{
+    position:fixed;
+    left:50%;
+    right:auto;
+    transform:translateX(-50%);
+    bottom:calc(24px + env(safe-area-inset-bottom, 0px) + var(--sheet-peek-h, 140px) + 12px);
+    max-width:calc(100vw - 24px);
+  }
 }
 .model-hover-popup-arrow{
   display:flex;
@@ -2304,7 +2314,7 @@ body.hp-lock-scroll{
    laptops matching pointer:coarse at full desktop width — see the
    .left-tools rule above for the full explanation. */
 @media (pointer: coarse) and (max-width: 1024px){
-  :root{ --control-h: 48px; }
+  :root{ --control-h: 48px; --sheet-peek-h: 200px; }
   .btn--sm{ width:40px; height:40px; }
   .toggle-btn{ padding:0 18px; }
   .color-swatch{ width:36px; height:36px; }
@@ -2357,11 +2367,11 @@ body.hp-lock-scroll{
     bottom:calc(24px + env(safe-area-inset-bottom, 0px));
     z-index:var(--z-sheet);
     /* Peek height (the collapsed default below — [data-state="expanded"]
-       overrides it). Needs to fit one full .model-section row (~103px:
-       two 40px control rows + padding + gap) under the 24px handle, or
-       whichever part setMobileSheetState() just scrolled to the top after
-       an interaction gets its bottom row of buttons clipped. */
-    height:140px;
+       overrides it). Under the 24px handle it fits the tab bar (~46px) plus one
+       row of the active page — one full .model-section (~103px) on Parts, or one
+       .preset-card on Mixes (~120px). Also drives where the on-model popup docks
+       (see .model-hover-popup.open in the coarse block), so it's a token. */
+    height:var(--sheet-peek-h);
     background:var(--glass-strong);
     border:1px solid var(--stroke);
     border-radius:var(--radius-xl);
@@ -2498,6 +2508,99 @@ body.hp-lock-scroll{
     white-space:nowrap;
     margin-left:0;
   }
+
+  /* ---- Sheet tab bar (Mixes / Parts) — the touch counterpart of the desktop
+     .right-dock-tabs. data-tab on #mobile-sheet decides which page shows and
+     follows the last interaction (see setMobileSheetTab). ---- */
+  .mobile-sheet-tabs{
+    flex:none;
+    display:flex;
+    gap:6px;
+    padding:0 12px 8px;
+  }
+  .mobile-sheet-tab{
+    flex:1 1 0;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    height:38px;
+    border:1px solid var(--stroke);
+    border-radius:999px;
+    background:var(--glass-bg);
+    color:var(--muted);
+    font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+    cursor:pointer;
+  }
+  .mobile-sheet-tab .material-icons{ font-size:18px; }
+  .mobile-sheet-tab.active{
+    background:var(--hpro-yellow);
+    border-color:var(--hpro-navy);
+    color:var(--hpro-navy);
+  }
+
+  /* Exactly one page visible at a time. The Essential/Advanced switch only
+     shows on the Parts tab AND only once expanded — in peek the part row you
+     just touched should be right under the tabs, not pushed down by a control
+     you don't need at a glance. */
+  .mobile-sheet[data-tab="mixes"] > .mobile-sheet-list,
+  .mobile-sheet[data-tab="mixes"] > #controls-toggle,
+  .mobile-sheet[data-state="peek"] > #controls-toggle,
+  .mobile-sheet[data-tab="parts"] > .mobile-sheet-mixes{
+    display:none;
+  }
+
+  /* Mixes page: horizontal swipe strip of the same .preset-card cells the
+     desktop dock builds. Native scroll-snap = the familiar "flick through a
+     row of cards" gesture. */
+  .mobile-sheet-mixes{
+    flex:1;
+    min-height:0;
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    padding:2px 12px 10px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch;
+  }
+  .mobile-sheet-mixes .preset-card{
+    flex:0 0 auto;
+    width:108px;
+    padding:6px;
+    gap:4px;
+    scroll-snap-align:start;
+  }
+  /* Thumb + title only in the swipe strip — the description is dropped for height. */
+  .mobile-sheet-mixes .preset-card-desc{ display:none; }
+
+  /* Expanded: the strip becomes a full gallery (all mixes at once), the same
+     idea as the desktop dock's 2-col grid. Peek stays a one-row swipe. */
+  .mobile-sheet[data-state="expanded"] .mobile-sheet-mixes{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    align-content:start;
+    overflow-x:hidden;
+    overflow-y:auto;
+    scroll-snap-type:none;
+  }
+  .mobile-sheet[data-state="expanded"] .mobile-sheet-mixes .preset-card{ width:auto; }
+  .mobile-sheet[data-state="expanded"] .mobile-sheet-mixes .preset-card-desc{ display:block; }
+
+  /* Essential/Advanced switch, now a full-width segmented control sitting
+     between the tab bar and the part list (reparented out of its floating
+     top-right spot by setupMobileSheet). */
+  .mobile-sheet > #controls-toggle{
+    flex:none;
+    position:static;
+    inset:auto;
+    transform:none;
+    width:auto;
+    display:flex;
+    margin:0 12px 8px;
+  }
+  .mobile-sheet > #controls-toggle .toggle-btn{ flex:1 1 0; }
 }
 
 @media (max-width: 1024px), (max-height: 720px){
