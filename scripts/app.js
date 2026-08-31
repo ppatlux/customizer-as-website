@@ -537,7 +537,7 @@ function renderGlobalPaintPalette() {
         <span class="material-icons">restart_alt</span>
         <span data-role="global-reset-label">Reset all</span>
       </button>
-      <p class="bucket-hint">Click any piece on the model to paint it. Right-click a painted piece to reset just that one.</p>
+      <p class="bucket-hint">${isTouchCapable() ? 'Tap' : 'Click'} any piece on the model to paint it. ${isTouchCapable() ? 'Long-press' : 'Right-click'} a painted piece to reset just that one.</p>
     </div>
   `;
   // colorHistory itself isn't loaded yet at this point (see the pickerHSV
@@ -582,7 +582,7 @@ function renderPartSection(part) {
       </button>
     </div>
     <p class="bucket-hint u-hidden" data-role="bucket-hint" data-part="${part.key}">
-      Click a piece to paint it. Right-click a painted piece to reset just that one.
+      ${isTouchCapable() ? 'Tap' : 'Click'} a piece to paint it. ${isTouchCapable() ? 'Long-press' : 'Right-click'} a painted piece to reset just that one.
     </p>
   `;
 
@@ -1757,13 +1757,44 @@ function hideModelHoverPopupNow() {
 function setupModelHoverPopup() {
   const popup = document.getElementById('model-hover-popup');
   if (!popup) return;
+  // The hover-intent bridge (pointer crossing open space to reach the popup's
+  // buttons without it vanishing) is a mouse concern only — wired always, since
+  // a touch-capable 2-in-1 still gets used with a mouse, but the leave-to-hide
+  // is gated to real mouse/pen leaves. On touch the popup is summoned by a tap
+  // and stays pinned until explicitly dismissed (close button / empty-canvas
+  // tap — see setupBucketTool).
   popup.addEventListener('pointerenter', () => {
     if (hoverPopupHideTimer) {
       clearTimeout(hoverPopupHideTimer);
       hoverPopupHideTimer = null;
     }
   });
-  popup.addEventListener('pointerleave', scheduleHideModelHoverPopup);
+  popup.addEventListener('pointerleave', (event) => {
+    if (event.pointerType === 'touch') return;
+    scheduleHideModelHoverPopup();
+  });
+
+  // Touch-only controls: hover devices reach the full variant grid by clicking
+  // the piece itself, but on touch that tap summons this popup instead, so it
+  // carries its own "all variants" and "close" affordances (see index.html).
+  popup.querySelector('[data-role="browse"]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const part = hoverPopupPart;
+    if (!part) return;
+    // Snapshot the rect now — hideModelHoverPopupNow() sets display:none, after
+    // which getBoundingClientRect() would be all zeros and the grid would
+    // anchor to the top-left corner.
+    const rect = popup.getBoundingClientRect();
+    hideModelHoverPopupNow();
+    if (openVariantGridPart === part) closeVariantGrid();
+    else openVariantGrid(part, { getBoundingClientRect: () => rect });
+  });
+  popup.querySelector('[data-role="hover-popup-close"]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    hideModelHoverPopupNow();
+  });
 }
 
 // Toggles "paint pieces" mode on/off for `part` (pass null to turn it off).
@@ -1920,7 +1951,10 @@ function setupBucketTool() {
     // isn't aiming at anything to pick. Skipping the (raycast-heavy) hover
     // hit-test here is what keeps dragging *over* the model smooth; dragging
     // over empty canvas was already fine because every ray missed cheaply.
-    if (event.buttons !== 0) { pendingPaintHoverEvent = null; return; }
+    // Touch moves are never a hover either (there's no resting pointer) — the
+    // on-model popup is tap-summoned and pinned on touch, so a stray move
+    // must not drive its show/hide. Mouse/pen on the same device still hover.
+    if (event.buttons !== 0 || event.pointerType === 'touch') { pendingPaintHoverEvent = null; return; }
     pendingPaintHoverEvent = event;
   });
 
@@ -1951,21 +1985,105 @@ function setupBucketTool() {
       renderer.domElement.style.cursor = hit ? 'pointer' : '';
     } else if (!bucketModePart) {
       renderer.domElement.style.cursor = hit ? 'pointer' : '';
+      // Only reached for mouse/pen now (touch moves bail in the listener
+      // above), so this stays the plain hover-driven show/hide.
       if (hit) showModelHoverPopup(hit.part, event.clientX, event.clientY);
       else scheduleHideModelHoverPopup();
     }
   };
 
-  renderer.domElement.addEventListener('pointerleave', () => {
+  renderer.domElement.addEventListener('pointerleave', (event) => {
     pendingPaintHoverEvent = null;
     clearPaintHover();
+    // pointerleave fires on every touchend — on touch that would dismiss a
+    // popup the user just tapped to open. Touch dismissal is the popup's close
+    // button or a tap on empty canvas (see the click listener below).
+    if (event.pointerType === 'touch') return;
     if (!bucketModePart) {
       renderer.domElement.style.cursor = '';
       scheduleHideModelHoverPopup();
     }
   });
 
+  // --- Tap vs. orbit-drag discrimination + long-press (touch's right-click) ---
+  // A one-finger drag orbits the camera; browsers only suppress the synthetic
+  // click after a generous move, so without this a sloppy tap mid-orbit could
+  // paint a piece or open a grid. The same tracking arms a long-press that
+  // stands in for the right-click piece-reset on touch.
+  const TAP_MOVE_TOL = 10; // px of travel still counted as a tap, not a drag
+  const LONG_PRESS_MS = 500;
+  let pointerDownPt = null;
+  let pointerDidDrag = false;
+  let longPressHandled = false;
+  let longPressTimer = null;
+  // pointerType of the interaction that produced the pending click. The tap-
+  // first flow (popup before grid) and long-press reset are chosen off what
+  // was ACTUALLY used, not just what the device could do — a mouse on a
+  // touch-capable 2-in-1 keeps the direct click-to-grid and hover popup.
+  let lastPointerType = '';
+  const clearLongPress = () => {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  };
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    pointerDownPt = { x: event.clientX, y: event.clientY };
+    pointerDidDrag = false;
+    longPressHandled = false;
+    lastPointerType = event.pointerType;
+    clearLongPress();
+    // Mouse keeps the real contextmenu handler further down; only arm the
+    // long-press fallback for non-mouse pointers.
+    if (bucketModePart && event.pointerType !== 'mouse') {
+      const at = pointerDownPt;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        if (pointerDidDrag) return;
+        // Once the press is long enough to read as "reset", consume the
+        // click either way — a near-miss onto an unpainted piece shouldn't
+        // fall through and paint it. Nothing to reset just means "no-op,
+        // tap again".
+        longPressHandled = true;
+        if (resetPieceAt(at.x, at.y)) toast('Piece color reset', 'ok', 1400);
+      }, LONG_PRESS_MS);
+    }
+  });
+  renderer.domElement.addEventListener('pointermove', (event) => {
+    if (!pointerDownPt) return;
+    if (Math.hypot(event.clientX - pointerDownPt.x, event.clientY - pointerDownPt.y) > TAP_MOVE_TOL) {
+      pointerDidDrag = true;
+      clearLongPress();
+    }
+  });
+  renderer.domElement.addEventListener('pointerup', clearLongPress);
+  renderer.domElement.addEventListener('pointercancel', () => {
+    clearLongPress();
+    pointerDownPt = null;
+    pointerDidDrag = false;
+  });
+
+  // Shared by the mouse contextmenu handler and the touch long-press above:
+  // clears the per-piece paint override under the given screen point, if any.
+  // Returns whether it actually reset something.
+  function resetPieceAt(clientX, clientY) {
+    if (!bucketModePart) return false;
+    const hit = getPaintHit(clientX, clientY);
+    if (!hit || hit.mesh.userData.meshIndex == null) return false;
+    const overrides = getMeshOverrides(hit.part);
+    if (!overrides || !(hit.mesh.userData.meshIndex in overrides)) return false;
+    delete overrides[hit.mesh.userData.meshIndex];
+    applyColor(hit.part);
+    updateBucketResetVisibility(hit.part);
+    updateGlobalResetVisibility();
+    markCustomPreset();
+    return true;
+  }
+
   renderer.domElement.addEventListener('click', (event) => {
+    // A drag that orbited/panned the camera isn't a pick. Long-press already
+    // consumed this one as a piece reset.
+    if (pointerDidDrag || longPressHandled) return;
+    // True when this click came from a finger/pen, not a mouse — drives the
+    // tap-first variant flow and popup dismissal below.
+    const tapInput = lastPointerType === 'touch' || lastPointerType === 'pen';
     const hit = getPaintHit(event.clientX, event.clientY);
 
     // Visibility-edit mode takes over the click entirely -- toggle whatever
@@ -1983,7 +2101,12 @@ function setupBucketTool() {
       // deliberately excludes clicks on this canvas entirely, since it can't
       // tell a miss from the exact click that just opened one; closing on a
       // miss is this handler's job instead.
-      if (!bucketModePart && openVariantGridPart) closeVariantGrid();
+      if (!bucketModePart) {
+        // On touch a tap on empty canvas is also how the pinned quick-control
+        // popup gets dismissed (no pointer to leave the model).
+        if (tapInput) hideModelHoverPopupNow();
+        if (openVariantGridPart) closeVariantGrid();
+      }
       return;
     }
 
@@ -2000,6 +2123,24 @@ function setupBucketTool() {
       return;
     }
 
+    const anchorRect = { left: event.clientX, right: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 };
+
+    // Touch has no hover, so the quick prev/next stepper (the on-model popup)
+    // would never have surfaced — a bare tap summons it instead of jumping
+    // straight to the full grid. First tap on a piece shows the popup; a
+    // second tap on that same piece (or the popup's own "all variants"
+    // button) opens the grid. Mouse keeps the original one-click-to-grid.
+    if (tapInput) {
+      if (hoverPopupPart === hit.part) {
+        hideModelHoverPopupNow();
+        openVariantGrid(hit.part, { getBoundingClientRect: () => anchorRect });
+        return;
+      }
+      if (openVariantGridPart) closeVariantGrid();
+      showModelHoverPopup(hit.part, event.clientX, event.clientY);
+      return;
+    }
+
     // Not painting — clicking a piece browses its variants instead, exactly
     // like clicking its row's name does. Anchored to the click point itself
     // rather than any specific DOM element, since there isn't one here.
@@ -2008,22 +2149,22 @@ function setupBucketTool() {
       return;
     }
     hideModelHoverPopupNow();
-    const anchorRect = { left: event.clientX, right: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 };
     openVariantGrid(hit.part, { getBoundingClientRect: () => anchorRect });
   });
 
+  // Mouse right-click resets one painted piece; the touch equivalent is the
+  // long-press wired in the pointerdown handler above (both call resetPieceAt).
+  // While in paint mode the browser context menu is always suppressed over the
+  // canvas — right-click is repurposed here, and on touch platforms that fire
+  // contextmenu on long-press (Chrome Android) this also stops the OS menu from
+  // popping up alongside the long-press reset the timer already performed.
   renderer.domElement.addEventListener('contextmenu', (event) => {
     if (!bucketModePart) return;
-    const hit = getPaintHit(event.clientX, event.clientY);
-    if (!hit || hit.mesh.userData.meshIndex == null) return;
-    const overrides = getMeshOverrides(hit.part);
-    if (!overrides || !(hit.mesh.userData.meshIndex in overrides)) return;
     event.preventDefault();
-    delete overrides[hit.mesh.userData.meshIndex];
-    applyColor(hit.part);
-    updateBucketResetVisibility(hit.part);
-    updateGlobalResetVisibility();
-    markCustomPreset();
+    resetPieceAt(event.clientX, event.clientY);
+    // Swallow the click some touch browsers still synthesise after a long-press
+    // — without this it would re-paint the piece the reset just cleared.
+    longPressHandled = true;
   });
 }
 
@@ -3169,9 +3310,10 @@ function tryRestoreFromUrl() {
 async function copyShareLink() {
   const url = getShareUrl();
 
-  // On a phone the native share sheet (Messages/WhatsApp/email/...) is the
-  // expected action for a share tap, not a silent clipboard copy.
-  if (isTouchLikeDevice() && navigator.share) {
+  // On any touch device the native share sheet (Messages/WhatsApp/email/...)
+  // is the expected action for a share tap, not a silent clipboard copy —
+  // tablets in the desktop layout included, not just phones.
+  if (isTouchCapable() && navigator.share) {
     try {
       await navigator.share({ title: 'HP Robot Customizer', text: 'Check out my robot build', url });
       return;
@@ -3210,6 +3352,23 @@ async function copyShareLink() {
 function isTouchLikeDevice() {
   try { return window.matchMedia('(pointer: coarse) and (max-width: 1024px)').matches; } catch { return false; }
 }
+
+// Broader than isTouchLikeDevice(): true for ANY device without a fine pointer,
+// regardless of screen size — so it also covers tablets in landscape that keep
+// the desktop layout (>1024px) but still can't hover, right-click or type. Used
+// for the touch fallbacks of otherwise desktop-only interactions (the on-model
+// quick-control popup, right-click piece reset, keyboard hints). The
+// `touch-capable` class on <html> is the CSS-side mirror, set early in
+// index.html's head; this keeps it live if the primary pointer changes (a 2-in-1
+// being docked/undocked). Mirrors the (any-pointer: coarse) query in app.css.
+function isTouchCapable() {
+  try { return window.matchMedia('(any-pointer: coarse)').matches; } catch { return false; }
+}
+try {
+  window.matchMedia('(any-pointer: coarse)').addEventListener('change', (e) => {
+    document.documentElement.classList.toggle('touch-capable', e.matches);
+  });
+} catch {}
 
 let modelViewerLoadPromise = null;
 function ensureModelViewerLoaded() {
@@ -4684,7 +4843,11 @@ function reallyClosePalette() {
 }
 
 function shouldAutoStartTour() {
-  if (isTouchLikeDevice()) return false; // its step-by-step tooltip layout doesn't fit the mobile sheet well
+  // Never auto-nag on touch: the phone layout can't fit the step tooltips, and
+  // on a tablet the tour's wording ("hover a part", keyboard shortcuts) doesn't
+  // match how you actually drive it. The manual "Quick Guide" button still runs
+  // it on tablets for anyone who wants it (see startTour).
+  if (isTouchCapable()) return false;
   try {
     const state = JSON.parse(localStorage.getItem(TOUR_STATE_KEY) || '{}');
     if (state.never === true) return false;

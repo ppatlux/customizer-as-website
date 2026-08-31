@@ -16,6 +16,18 @@
     if (!('startViewTransition' in document)) {
       document.documentElement.classList.add('vt-fallback');
     }
+    // Touch-capability is separate from "is this a small phone". A tablet in
+    // landscape (iPad Pro/Air, larger Android slates) is wide enough to keep
+    // the full desktop layout, but still has no mouse hover, no right-click and
+    // no keyboard — so hover popups, right-click resets, keyboard shortcuts and
+    // title tooltips all need a touch path there. Set the class here (not in
+    // app.js) so CSS that keys off it paints correctly on the first frame; the
+    // module keeps it in sync if the primary pointer changes (2-in-1 docking).
+    try {
+      if (window.matchMedia('(any-pointer: coarse)').matches) {
+        document.documentElement.classList.add('touch-capable');
+      }
+    } catch (e) {}
   </script>
 </head>
 <body>
@@ -31,9 +43,9 @@
       <div id="skeleton" class="u-hidden" aria-hidden="true"></div>
       <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
       <div id="visibility-edit-banner" class="u-hidden" role="status" aria-live="polite">
-        <span>Select shapes to hide or show them. Press</span>
-        <kbd>V</kbd>
-        <span>to exit</span>
+        <span>Select shapes to hide or show them.</span>
+        <span class="vis-banner-exit vis-banner-exit--key">Press <kbd>V</kbd> to exit</span>
+        <span class="vis-banner-exit vis-banner-exit--tap">Tap <b>Hide / show parts</b> again to exit</span>
       </div>
       <div id="visibility-edit-vignette" aria-hidden="true"></div>
       <div id="paint-mode-vignette" aria-hidden="true"></div>
@@ -171,6 +183,13 @@
           <span class="material-icons">chevron_right</span>
         </button>
         <span class="model-hover-popup-divider" aria-hidden="true"></span>
+        <!-- Touch-only: hover devices get the same "click a piece" -> full
+             variant grid path, but a touch tap on a piece summons this popup
+             instead (see the canvas click handler in app.js), so it needs its
+             own explicit way into the grid. -->
+        <button type="button" class="model-hover-popup-icon model-hover-popup-touch" data-role="browse" title="All variants" aria-label="Show all variants">
+          <span class="material-icons">grid_view</span>
+        </button>
         <!-- title/aria-label/icon are placeholders — syncPrintButtonBranding() in
              app.js overwrites all three to match the preferred slicer on load. -->
         <button type="button" class="model-hover-popup-icon" data-role="print" title="Send to PrusaSlicer" aria-label="Send to PrusaSlicer">
@@ -178,6 +197,12 @@
         </button>
         <button type="button" class="model-hover-popup-icon" data-role="download-part" title="Download STL" aria-label="Download STL">
           <span class="material-icons">file_download</span>
+        </button>
+        <!-- Touch-only: with no pointer to move away, the popup has no natural
+             dismissal — a tap on empty canvas also closes it, but an explicit
+             control is clearer. -->
+        <button type="button" class="model-hover-popup-icon model-hover-popup-touch" data-role="hover-popup-close" title="Close" aria-label="Close quick controls">
+          <span class="material-icons">close</span>
         </button>
       </div>
 
