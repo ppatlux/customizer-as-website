@@ -692,9 +692,6 @@ function bootstrap() {
     updateAllCounters();
     updateComboChip();
     saveStateToLocal();
-    // A restored build's "last interaction" was per-part tweaking, not a mix —
-    // land the sheet on the Parts tab rather than its Mixes default.
-    if (mobileLayoutActive) setMobileSheetTab('parts');
     if (restoredFromShareLink) toast('Loaded shared build', 'ok', 1800);
   } else {
     // No saved/shared state: applyPreset() already loads every part it
@@ -947,6 +944,8 @@ function showAdvancedPanel() {
 // isn't needed: Advanced already includes every essential part too, so
 // picking one while on Advanced has nothing to jump to.
 function switchToPartPanel(part) {
+  // Phones show every part on the Parts tab all the time — nothing to switch to.
+  if (mobileLayoutActive) return;
   const panel = PART_META.find((meta) => meta.key === part)?.panel;
   if (panel === 'advanced' && !advBtn.classList.contains('active')) showAdvancedPanel();
 }
@@ -1027,21 +1026,32 @@ function setupMobileSheet() {
   const actionsHost = document.getElementById('mobile-sheet-actions');
   const mixesHost = document.getElementById('mobile-sheet-mixes');
   const infoContainerEl = document.getElementById('info-container');
-  const controlsToggle = document.getElementById('controls-toggle');
   const presetCarousel = document.getElementById('preset-carousel');
 
   if (!mobileSheetEl || !mobileSheetHandleEl || !listHost || !actionsHost || !mixesHost || !infoContainerEl) return;
 
   mobileLayoutActive = true;
-  // Parts tab: the Essential/Advanced switch sits above the scrolling part list
-  // it controls (same nesting the desktop right-dock uses) — as a sibling of
-  // the list, not inside it, so it stays put while the list scrolls.
-  if (controlsToggle) mobileSheetEl.insertBefore(controlsToggle, listHost);
+  // Parts tab shows every part, always — no Essential/Advanced split on phones
+  // (#controls-toggle is CSS-hidden here). The list is short enough to scroll.
+  essPanel.classList.remove('hide-advanced');
   listHost.appendChild(essPanel);
   // Mixes tab: the same carousel the desktop dock builds, just reparented and
   // restyled as a horizontal swipe strip (see the coarse CSS block).
   if (presetCarousel) mixesHost.appendChild(presetCarousel);
   actionsHost.appendChild(infoContainerEl);
+
+  // The two GLOBAL model modes live in the desktop #left-tools column, which is
+  // hidden on touch — reparent their controls into the phone top bar. Both
+  // already work by tap on the model (see the canvas click handler: bucketMode
+  // paints any piece, visibilityEditMode toggles any part); this just surfaces
+  // the entry points. #global-paint-panel brings its own colour picker with it.
+  const mobileTools = document.getElementById('mobile-tools');
+  const globalPaintPanel = document.getElementById('global-paint-panel');
+  const visModeBtn = document.getElementById('visibilityModeBtn');
+  if (mobileTools) {
+    if (visModeBtn) mobileTools.appendChild(visModeBtn);
+    if (globalPaintPanel) mobileTools.appendChild(globalPaintPanel);
+  }
 
   // Same builder the desktop dock uses. Cards render immediately (grey thumb
   // box + title); the 3D thumbnails fill in async and are cached after the
@@ -1730,12 +1740,11 @@ function clearPaintHover() {
   paintHoverMesh = null;
 }
 
-// Minimal floating control (#model-hover-popup) shown while hovering a part
-// directly on the model — prev/next, print, download, same as that part's
-// row on the right, just contextual instead of needing to go find the row.
+// Minimal contextual control (#model-hover-popup) shown on the model itself —
+// prev/next variant, browse-all, print, download for the hovered/tapped part.
 // Reuses setupGlobalClickHandler's existing role handling verbatim (see the
-// data-role attributes in index.html); this only ever touches which part
-// each button currently targets and where the popup sits on screen.
+// data-role attributes in index.html); this only sets which part each button
+// targets and where the popup sits on screen.
 //
 // Uses a "hover intent" delay rather than hiding the instant the pointer
 // leaves the model, since the pointer has to cross open space to reach the

@@ -200,11 +200,13 @@
         </div>
       </div>
 
-      <!-- Minimal floating control shown while hovering a part directly on the model
-           (desktop, non-touch — see setupModelHoverPopup in app.js). data-part on each
-           button is filled in dynamically to match whichever part is currently hovered,
-           so these reuse setupGlobalClickHandler's existing prev/next/print/download-part
-           handling verbatim — no separate logic needed here. -->
+      <!-- Contextual control for one part, shown on the model itself: on hover
+           (mouse) it floats by the part; on touch a tap summons it and it docks
+           above the sheet (see setupModelHoverPopup / showModelHoverPopup).
+           data-part on each control is filled in dynamically to match the
+           hovered/tapped part, so they reuse setupGlobalClickHandler's
+           prev/next/visibility/download-part and setupPaletteWiring's color-pill
+           handling verbatim — no separate logic here. -->
       <div id="model-hover-popup" class="model-hover-popup" role="group" aria-label="Quick part controls">
         <button type="button" class="model-hover-popup-arrow" data-role="prev" aria-label="Previous variant">
           <span class="material-icons">chevron_left</span>
@@ -297,6 +299,12 @@
           </button>
         </div>
       </div>
+
+      <!-- Phone-only top bar for the two GLOBAL model modes. setupMobileSheet()
+           reparents #visibilityModeBtn and #global-paint-panel (button + its
+           colour picker) in here from the desktop #left-tools column, which is
+           display:none on touch. Empty / unused on desktop. -->
+      <div id="mobile-tools" class="mobile-tools" aria-label="Paint and hide/show modes"></div>
 
       <!-- Desktop reparents this into .right-dock's Parts page at bootstrap
            (see setupRightDockTabs), nested alongside the #panel-essential list
@@ -468,20 +476,20 @@
     </div>
   </main>
 
-  <!-- Phone-only portrait lock. Pure CSS — @media (pointer:coarse) and (max-width:1024px)
-       and (orientation:landscape) shows it, no JS involved, so it can't fall out of sync
-       with the actual rotation. The max-width guard matters: pointer:coarse alone also
-       matches touchscreen 2-in-1 laptops (HP Omnibook X Flip, Surface, Spectre x360...)
-       at full desktop width, since their coarse primary pointer just reflects the presence
-       of a touch digitizer, not actual device size or usage.
-       Sits outside <main> as the last element in the document so it always paints above
-       everything else (including the AR/consent overlays and the variant grid, which also
-       use the max z-index) regardless of what happens to be open when the device is turned. -->
+  <!-- Orientation lock. Pure CSS — the two @media queries in app.css decide
+       when this shows and which message, so it can never fall out of sync with
+       the real rotation. Two cases:
+         • phone in landscape (short viewport)  -> asks for portrait
+         • tablet in portrait (>=768px wide)    -> asks for landscape
+       Sits outside <main> as the last element in the document so it always
+       paints above everything else (AR/consent overlays, variant grid — all at
+       the max z-index) regardless of what's open when the device is turned. -->
   <div id="rotate-overlay" role="alert" aria-live="assertive">
     <div id="rotate-card">
       <span class="material-icons" id="rotate-icon" aria-hidden="true">screen_rotation</span>
       <h2>Rotate Your Device</h2>
-      <p>This customizer is designed for portrait mode. Please rotate your device to continue.</p>
+      <p class="rotate-msg rotate-msg--portrait">This customizer works best in portrait. Please rotate your device to continue.</p>
+      <p class="rotate-msg rotate-msg--landscape">On a tablet this customizer works best in landscape. Please rotate your device to continue.</p>
     </div>
   </div>
 

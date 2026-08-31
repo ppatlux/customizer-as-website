@@ -1612,6 +1612,8 @@ html.touch-capable .vis-banner-exit--tap{ display:inline; }
    Without this, the unstyled #mobile-sheet-handle button (default UA button
    chrome) would render as a stray element on desktop. */
 .mobile-sheet{ display:none; }
+/* Phone-only top bar (see the coarse block); empty and unused on desktop. */
+#mobile-tools{ display:none; }
 
 #consent-overlay,
 #ar-overlay,
@@ -1727,7 +1729,10 @@ html.touch-capable .vis-banner-exit--tap{ display:inline; }
     right:auto;
     transform:translateX(-50%);
     bottom:calc(24px + env(safe-area-inset-bottom, 0px) + var(--sheet-peek-h, 140px) + 12px);
-    max-width:calc(100vw - 24px);
+    max-width:calc(100vw - 20px);
+    /* Very narrow phones: let the bar scroll rather than clip a button. */
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
   }
 }
 .model-hover-popup-arrow{
@@ -1957,11 +1962,12 @@ html.touch-capable .left-tools{
   .variant-check{ animation:none; }
 }
 
-/* Touch-only portrait lock — pure CSS, shown purely by orientation so it can
-   never fall out of sync with the device's actual rotation state. Fixed
-   (not absolute) since it lives outside #viewer-container, and z-index
-   matches the other full-screen overlays but wins ties by being last in the
-   DOM (see the HTML comment at its markup). */
+/* Touch-only orientation lock — pure CSS, driven purely by orientation +
+   viewport size so it can never fall out of sync with the real rotation.
+   Phones are locked to portrait, tablets to landscape (see the two media
+   queries below). Fixed (not absolute) since it lives outside
+   #viewer-container, and z-index matches the other full-screen overlays but
+   wins ties by being last in the DOM (see the HTML comment at its markup). */
 #rotate-overlay{
   display:none;
   position:fixed;
@@ -1972,8 +1978,20 @@ html.touch-capable .left-tools{
   background:var(--canvas);
   z-index:var(--z-max);
 }
-@media (pointer: coarse) and (orientation: landscape) and (max-width: 1024px){
+.rotate-msg{ display:none; }
+/* Phone in landscape — the viewport is SHORT (phones are ~360-450px tall in
+   landscape; tablets are 600px+), so key off max-height, not width. Asks for
+   portrait. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px){
   #rotate-overlay{ display:flex; }
+  .rotate-msg--portrait{ display:block; }
+}
+/* Tablet in portrait — wide enough (>=768px) that this is a tablet, not a
+   phone, and the phone bottom-sheet layout it would get in portrait is wrong
+   for it. Asks for landscape (where it gets the full desktop layout). */
+@media (pointer: coarse) and (orientation: portrait) and (min-width: 768px){
+  #rotate-overlay{ display:flex; }
+  .rotate-msg--landscape{ display:block; }
 }
 #rotate-card{
   display:flex;
@@ -2314,7 +2332,7 @@ body.hp-lock-scroll{
    laptops matching pointer:coarse at full desktop width — see the
    .left-tools rule above for the full explanation. */
 @media (pointer: coarse) and (max-width: 1024px){
-  :root{ --control-h: 48px; --sheet-peek-h: 200px; }
+  :root{ --control-h: 48px; --sheet-peek-h: 206px; }
   .btn--sm{ width:40px; height:40px; }
   .toggle-btn{ padding:0 18px; }
   .color-swatch{ width:36px; height:36px; }
@@ -2516,7 +2534,7 @@ body.hp-lock-scroll{
     flex:none;
     display:flex;
     gap:6px;
-    padding:0 12px 8px;
+    padding:0 12px 6px;
   }
   .mobile-sheet-tab{
     flex:1 1 0;
@@ -2524,7 +2542,7 @@ body.hp-lock-scroll{
     align-items:center;
     justify-content:center;
     gap:6px;
-    height:38px;
+    height:34px;
     border:1px solid var(--stroke);
     border-radius:999px;
     background:var(--glass-bg);
@@ -2539,68 +2557,179 @@ body.hp-lock-scroll{
     color:var(--hpro-navy);
   }
 
-  /* Exactly one page visible at a time. The Essential/Advanced switch only
-     shows on the Parts tab AND only once expanded — in peek the part row you
-     just touched should be right under the tabs, not pushed down by a control
-     you don't need at a glance. */
+  /* No Essential/Advanced split on phones — the Parts tab always shows every
+     part (setupMobileSheet drops .hide-advanced; this is the belt-and-braces
+     guard) and the floating switch is gone entirely. */
+  #controls-toggle{ display:none; }
+  #panel-essential.hide-advanced .model-section[data-panel="advanced"]{ display:flex; }
+
+  /* Exactly one page shows at a time. #mobile-sheet-mixes / #mobile-sheet-list
+     are direct children of #mobile-sheet, so the > combinator is safe. */
   .mobile-sheet[data-tab="mixes"] > .mobile-sheet-list,
-  .mobile-sheet[data-tab="mixes"] > #controls-toggle,
-  .mobile-sheet[data-state="peek"] > #controls-toggle,
   .mobile-sheet[data-tab="parts"] > .mobile-sheet-mixes{
-    display:none;
+    display:none !important;
   }
 
-  /* Mixes page: horizontal swipe strip of the same .preset-card cells the
-     desktop dock builds. Native scroll-snap = the familiar "flick through a
-     row of cards" gesture. */
+  /* #mobile-sheet-mixes is just the tabpanel wrapper — the element that has to
+     be re-laid-out is #preset-carousel INSIDE it, which is the desktop dock's
+     own node (class .preset-carousel = a 2-col grid there) reparented in by
+     setupMobileSheet. Style that, not the wrapper. */
   .mobile-sheet-mixes{
     flex:1;
     min-height:0;
     display:flex;
-    align-items:flex-start;
-    gap:10px;
-    padding:2px 12px 10px;
+  }
+  .mobile-sheet-mixes .preset-carousel{
+    flex:1;
+    min-width:0;
+    min-height:0;
+    margin:0;
+    /* Plain horizontal card strip — first card sits at the left edge (like any
+       app-store / photo row); scroll-snap just keeps swipes landing cleanly on
+       a card boundary. */
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:6px 16px 12px;
+    scroll-padding-left:16px;
     overflow-x:auto;
     overflow-y:hidden;
-    scroll-snap-type:x mandatory;
+    scroll-snap-type:x proximity;
     -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
   }
   .mobile-sheet-mixes .preset-card{
     flex:0 0 auto;
-    width:108px;
-    padding:6px;
-    gap:4px;
+    width:112px;
+    padding:8px;
+    gap:6px;
     scroll-snap-align:start;
+    transition:transform var(--transition), box-shadow var(--transition), border-color var(--transition);
   }
-  /* Thumb + title only in the swipe strip — the description is dropped for height. */
+  /* One-line title so card height stays predictable (some mix names are long). */
+  .mobile-sheet-mixes .preset-card-title{
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
   .mobile-sheet-mixes .preset-card-desc{ display:none; }
+  .mobile-sheet-mixes .preset-card.active{
+    background:color-mix(in srgb, var(--hpro-yellow) 22%, #FFFFFF);
+    box-shadow:0 0 0 2px var(--hpro-navy) inset, var(--shadow-sm);
+  }
 
-  /* Expanded: the strip becomes a full gallery (all mixes at once), the same
-     idea as the desktop dock's 2-col grid. Peek stays a one-row swipe. */
-  .mobile-sheet[data-state="expanded"] .mobile-sheet-mixes{
+  /* Expanded + Mixes: a full gallery grid instead of the one-row strip. Scoped
+     to [data-tab="mixes"] so it can never override the hide rule above on the
+     Parts tab (equal specificity would otherwise let it through by source
+     order). */
+  .mobile-sheet[data-state="expanded"][data-tab="mixes"] .mobile-sheet-mixes .preset-carousel{
     display:grid;
     grid-template-columns:repeat(3, 1fr);
+    gap:10px;
     align-content:start;
+    padding:6px 12px 12px;
     overflow-x:hidden;
     overflow-y:auto;
     scroll-snap-type:none;
   }
-  .mobile-sheet[data-state="expanded"] .mobile-sheet-mixes .preset-card{ width:auto; }
-  .mobile-sheet[data-state="expanded"] .mobile-sheet-mixes .preset-card-desc{ display:block; }
+  .mobile-sheet[data-state="expanded"][data-tab="mixes"] .mobile-sheet-mixes .preset-card{ width:auto; }
+  .mobile-sheet[data-state="expanded"][data-tab="mixes"] .mobile-sheet-mixes .preset-card-title{ white-space:normal; }
+  .mobile-sheet[data-state="expanded"][data-tab="mixes"] .mobile-sheet-mixes .preset-card-desc{ display:block; }
 
-  /* Essential/Advanced switch, now a full-width segmented control sitting
-     between the tab bar and the part list (reparented out of its floating
-     top-right spot by setupMobileSheet). */
-  .mobile-sheet > #controls-toggle{
-    flex:none;
-    position:static;
-    inset:auto;
-    transform:none;
-    width:auto;
+  /* ---- Phone top bar: the two GLOBAL model modes ----
+     #preset-menu is vestigial on phones now (mixes live in the sheet), so the
+     whole top strip is free for these. setupMobileSheet reparents
+     #visibilityModeBtn + #global-paint-panel in here. */
+  #preset-menu{ display:none; }
+
+  #mobile-tools{
+    position:absolute;
+    top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+    right:calc(var(--edge) + env(safe-area-inset-right, 0px));
     display:flex;
-    margin:0 12px 8px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:8px;
+    z-index:var(--z-toolbar);
+    max-width:calc(100vw - 24px);
   }
-  .mobile-sheet > #controls-toggle .toggle-btn{ flex:1 1 0; }
+  #mobile-tools #visibilityModeBtn,
+  #mobile-tools #globalPaintBtn{
+    width:auto;
+    min-height:var(--control-h);
+    padding:0 14px;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    border-radius:999px;
+    border:1px solid var(--stroke);
+    background:var(--glass-strong);
+    box-shadow:var(--shadow-sm);
+    color:var(--text);
+    font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+    white-space:nowrap;
+  }
+  #mobile-tools #visibilityModeBtn .material-icons,
+  #mobile-tools #globalPaintBtn .material-icons{ font-size:18px; }
+  #mobile-tools #globalPaintBtn.active{
+    background:var(--hpro-yellow);
+    border-color:var(--hpro-navy);
+    color:var(--hpro-navy);
+  }
+  #mobile-tools #visibilityModeBtn.active{
+    background:#eaf2fc;
+    border-color:#2f6fd6;
+    color:#2f6fd6;
+  }
+
+  /* #global-paint-panel is now just a positioning context for its button + the
+     colour picker, which drops down only while paint mode is on. */
+  #mobile-tools #global-paint-panel{
+    position:relative;
+    display:block;
+    width:auto;
+    padding:0;
+    background:none;
+    border:none;
+    box-shadow:none;
+    gap:0;
+  }
+  #mobile-tools #global-paint-picker{
+    display:none;
+    position:absolute;
+    top:calc(100% + 8px);
+    right:0;
+    width:auto;
+    padding:10px;
+    background:var(--glass-strong);
+    border:1px solid var(--stroke-strong);
+    border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-lg);
+    z-index:var(--z-floating);
+  }
+  #mobile-tools #globalPaintBtn.active ~ #global-paint-picker{ display:block; }
+  /* Deliberately minimal on phones: the 8 preset swatches, a short "tap the
+     model" hint, and Reset all. The hue/SV wheel, hex entry and recent-colours
+     row are dropped — fiddly on a small touch target and rarely worth it. */
+  #mobile-tools #global-paint-picker .color-picker-advanced,
+  #mobile-tools #global-paint-picker .color-history-row{ display:none; }
+  #mobile-tools #global-paint-picker .color-palette-inline{ gap:8px; }
+  #mobile-tools #global-paint-picker .color-swatch-grid{
+    grid-template-columns:repeat(4, 38px);
+    gap:10px;
+  }
+  #mobile-tools #global-paint-picker .color-swatch{ width:38px; height:38px; }
+  #mobile-tools #global-paint-picker .bucket-hint{
+    margin:0;
+    max-width:172px;
+    font-size:10.5px;
+    line-height:1.35;
+  }
+
+  /* Push the hide/show-mode banner clear of the top bar. */
+  #visibility-edit-banner{
+    top:calc(var(--edge) + var(--control-h) + 14px + env(safe-area-inset-top, 0px));
+  }
 }
 
 @media (max-width: 1024px), (max-height: 720px){
