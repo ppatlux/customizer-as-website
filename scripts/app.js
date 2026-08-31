@@ -78,6 +78,12 @@ const VARIANT_LABEL_OVERRIDES = {
 };
 
 const MODEL_Y_OFFSET = 30;
+// A visible Spacer lengthens the mid-section, so the parts that hang off the
+// lower body drop by this much to stay aligned in the frame. This is the ONE
+// place the amount / affected-parts list lives — see spacerYOffset() and
+// refreshSpacerOffsets().
+const SPACER_DROP = 16;
+const SPACER_AFFECTED_PARTS = ['bottom', 'wheels', 'arms', 'bumper'];
 const STATE_KEY = 'hp_robot_customizer_state';
 const COLOR_HISTORY_KEY = 'hp_robot_color_history';
 const COLOR_HISTORY_MAX = 10;
@@ -2784,8 +2790,10 @@ function toggleVisibilityEditPart(part) {
 
   if (part === 'spacer') {
     if (partVis.spacer) loadModel('spacer');
-    loadModel('bottom');
-    loadModel('wheels');
+    // Reposition the already-loaded lower parts in place — no need to refetch
+    // and re-parse their GLBs just to shift them 16 units (which also skipped
+    // arms/bumper before).
+    refreshSpacerOffsets();
   } else if (loadedMods[part]) {
     if (!loadedMods[part].parent) scene.add(loadedMods[part]);
   } else if (partVis[part]) {
@@ -2901,8 +2909,7 @@ function setupGlobalClickHandler() {
           scene.remove(loadedMods.spacer);
           loadedMods.spacer = null;
         }
-        loadModel('bottom');
-        loadModel('wheels');
+        refreshSpacerOffsets();
       } else if (loadedMods[part]) {
         loadedMods[part].visible = partVis[part];
         // bootstrap() preloads every part up front, including ones that start
@@ -3365,13 +3372,27 @@ function isTouchLikeDevice() {
 // index.html's head; this keeps it live if the primary pointer changes (a 2-in-1
 // being docked/undocked). Mirrors the (any-pointer: coarse) query in app.css.
 function isTouchCapable() {
-  try { return window.matchMedia('(any-pointer: coarse)').matches; } catch { return false; }
+  try {
+    // matchMedia alone under-reports on some tablets / in-app browsers (and in
+    // emulated modes), so OR in the two direct touch signals. Kept in sync with
+    // the same three-way check in index.html's head script.
+    return window.matchMedia('(any-pointer: coarse)').matches
+      || (navigator.maxTouchPoints || 0) > 0
+      || 'ontouchstart' in window;
+  } catch { return false; }
 }
+function syncTouchCapableClass() {
+  document.documentElement.classList.toggle('touch-capable', isTouchCapable());
+}
+syncTouchCapableClass();
 try {
-  window.matchMedia('(any-pointer: coarse)').addEventListener('change', (e) => {
-    document.documentElement.classList.toggle('touch-capable', e.matches);
-  });
+  window.matchMedia('(any-pointer: coarse)').addEventListener('change', syncTouchCapableClass);
 } catch {}
+// Last-resort: the first genuine touch proves the device is touch-capable even
+// if every static signal above missed it.
+window.addEventListener('touchstart', () => {
+  document.documentElement.classList.add('touch-capable');
+}, { once: true, passive: true, capture: true });
 
 let modelViewerLoadPromise = null;
 function ensureModelViewerLoaded() {
@@ -4408,8 +4429,7 @@ function enablePart(part, withToast = true) {
   }
 
   if (part === 'spacer') {
-    loadModel('bottom');
-    loadModel('wheels');
+    refreshSpacerOffsets();
   }
 
   updateComboChip();
@@ -4456,6 +4476,54 @@ function updatePartPops(now) {
   }
 }
 
+// BVH construction (computeBoundsTree) is CPU-heavy and only needed for the
+// hover / paint-bucket raycasts, which never happen in the first moments after
+// a load. Building it inline in the load callback stalled the main thread hard
+// on a tablet when several parts landed at once (part of the "loading screen
+// stays up forever" report). Queue the geometries and build them on idle time
+// instead — acceleratedRaycast falls back to the plain raycast path for any
+// geometry whose tree isn't built yet, so nothing breaks in the gap.
+const bvhBuildQueue = [];
+let bvhDraining = false;
+const requestIdle = window.requestIdleCallback
+  ? window.requestIdleCallback.bind(window)
+  : (cb) => setTimeout(() => cb({ timeRemaining: () => 8, didTimeout: false }), 1);
+function drainBvhQueue(deadline) {
+  bvhDraining = true;
+  while (bvhBuildQueue.length && (deadline.didTimeout || deadline.timeRemaining() > 4)) {
+    const geometry = bvhBuildQueue.shift();
+    try {
+      if (geometry && !geometry.boundsTree && geometry.attributes?.position) {
+        geometry.computeBoundsTree();
+      }
+    } catch (e) { /* a malformed geometry just keeps the slow raycast path */ }
+  }
+  if (bvhBuildQueue.length) requestIdle(drainBvhQueue, { timeout: 2000 });
+  else bvhDraining = false;
+}
+function queueBvhBuild(geometry) {
+  bvhBuildQueue.push(geometry);
+  if (!bvhDraining) requestIdle(drainBvhQueue, { timeout: 2000 });
+}
+
+// Where `part`'s model should sit vertically right now, accounting for whether
+// a Spacer is currently in the build.
+function spacerYOffset(part) {
+  const dropped = partVis.spacer && SPACER_AFFECTED_PARTS.includes(part);
+  return MODEL_Y_OFFSET - (dropped ? SPACER_DROP : 0);
+}
+
+// Re-derive the vertical position of every spacer-affected part that's already
+// loaded. loadModel() only sets position.y at load time, so a part that isn't
+// being reloaded (switching between two mixes that share the same bottom, one
+// with a Spacer and one without) would otherwise keep the stale offset — which
+// is why leaving a Spacer mix used to leave the lower parts sitting too low.
+function refreshSpacerOffsets() {
+  for (const part of SPACER_AFFECTED_PARTS) {
+    if (loadedMods[part]) loadedMods[part].position.y = spacerYOffset(part);
+  }
+}
+
 function loadModel(part, animatePop = false) {
   if (part === 'spacer' && !partVis.spacer) return;
   const urls = getAssetCandidates(part, currentIdx[part], 'glb');
@@ -4477,13 +4545,18 @@ function loadModel(part, animatePop = false) {
   // gets applied; earlier ones are silently discarded.
   const myGeneration = (loadGeneration[part] = (loadGeneration[part] || 0) + 1);
 
-  // Counts every in-flight loadModel() call so the first-paint splash can stay
-  // up until the initial build has actually finished loading, not just until
-  // the page's JS has started running.
-  pendingInitialLoads += 1;
+  // Counts in-flight loadModel() calls so the first-paint splash stays up until
+  // the initial build has actually loaded. Only VISIBLE parts count: the
+  // starter preset also loads hidden advanced parts (hat/arms/bumper) up front,
+  // and making the splash wait for those — including their GLB parse + BVH
+  // build, which is CPU-heavy on a tablet — kept the loading screen up long
+  // after the robot the user can actually see was ready. Hidden parts still
+  // load in the background; they just don't hold the splash.
+  const holdsSplash = !!partVis[part];
+  if (holdsSplash) pendingInitialLoads += 1;
   let settled = false;
   const settleInitialLoad = () => {
-    if (settled) return;
+    if (settled || !holdsSplash) return;
     settled = true;
     pendingInitialLoads = Math.max(0, pendingInitialLoads - 1);
     if (pendingInitialLoads === 0) hideAppLoader();
@@ -4504,11 +4577,7 @@ function loadModel(part, animatePop = false) {
           });
         }
         const model = gltf.scene;
-        let yOffset = MODEL_Y_OFFSET;
-        if (partVis.spacer && ['bottom', 'wheels', 'arms', 'bumper'].includes(part)) {
-          yOffset -= 16;
-        }
-        model.position.y = yOffset;
+        model.position.y = spacerYOffset(part);
         model.visible = partVis[part];
         // meshIndex is assigned in traversal order, deterministic for a given
         // glb — it's how paint overrides (modelMeshCols) target a specific
@@ -4531,9 +4600,10 @@ function loadModel(part, animatePop = false) {
             node.geometry.computeBoundingSphere();
             node.geometry.computeBoundingBox();
             // BVH for fast hover/paint raycasts (see the prototype patch near
-            // the top of the file). Built once here; disposed when this part's
-            // model is replaced by the next loadModel for it.
-            node.geometry.computeBoundsTree();
+            // the top of the file). Built on idle time rather than here — see
+            // queueBvhBuild — so a burst of loads doesn't stall first paint.
+            // Disposed when this part's model is replaced by the next loadModel.
+            queueBvhBuild(node.geometry);
           }
         });
         loadedMods[part] = model;
@@ -4604,6 +4674,11 @@ function applyPreset(key, showToast = true) {
     }
 
     toLoad.forEach((part) => loadModel(part, true));
+    // Parts NOT in toLoad (same variant, already loaded) won't run loadModel's
+    // position pass, so fix their offset here to match this preset's Spacer
+    // state — otherwise a mix without a Spacer inherits the previous mix's
+    // dropped lower body.
+    refreshSpacerOffsets();
     enforceBottomMotionExclusion();
     enforceHatRequiresTopHats();
     refreshConflictBadges();

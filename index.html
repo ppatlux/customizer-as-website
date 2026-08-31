@@ -10,8 +10,37 @@
   <link rel="apple-touch-icon" href="https://hprobots.com/wp-content/uploads/2024/02/cropped-otto_site_identity-180x180.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <!-- Start the biggest module download (three.js, ~600KB) as early as possible
+       instead of waiting for app.js to be fetched, parsed and evaluated first.
+       integrity matches the importmap entry below so this warms the same cache
+       slot the import will use (no double fetch). -->
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js" integrity="sha384-LJXWwbN59doWCYk3H8sqfu+HCDzM24TGLJAVGMJ/xaGxE+Cuz6fm71lj4UT98Mf4" crossorigin="anonymous">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link rel="stylesheet" href="./styles/app.css">
+  <!-- Critical splash styles inlined so the loading screen paints on the very
+       first frame, even before app.css has been fetched — otherwise there's a
+       blank/black gap until the external stylesheet arrives. Kept in sync with
+       the #app-loader rules in styles/app.css. -->
+  <style>
+    html{ background:#FFC83D; }
+    body{ margin:0; }
+    #app-loader{
+      position:fixed; inset:0; z-index:2147483647;
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+      background:#FFC83D;
+      transition:opacity 380ms ease, visibility 380ms ease;
+    }
+    #app-loader.hide{ opacity:0; visibility:hidden; pointer-events:none; }
+    #app-loader-spinner{
+      width:52px; height:52px; border-radius:50%;
+      border:4px solid rgba(37,40,79,0.18); border-top-color:#25284F;
+      animation:app-loader-spin 900ms linear infinite;
+    }
+    #app-loader-logo{ height:32px; width:auto; display:block; }
+    #app-loader-text{ margin:0; font:600 13px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui; color:rgba(37,40,79,0.75); }
+    @keyframes app-loader-spin{ to{ transform:rotate(360deg); } }
+  </style>
   <script>
     if (!('startViewTransition' in document)) {
       document.documentElement.classList.add('vt-fallback');
@@ -24,7 +53,9 @@
     // app.js) so CSS that keys off it paints correctly on the first frame; the
     // module keeps it in sync if the primary pointer changes (2-in-1 docking).
     try {
-      if (window.matchMedia('(any-pointer: coarse)').matches) {
+      if (window.matchMedia('(any-pointer: coarse)').matches
+          || (navigator.maxTouchPoints || 0) > 0
+          || 'ontouchstart' in window) {
         document.documentElement.classList.add('touch-capable');
       }
     } catch (e) {}
