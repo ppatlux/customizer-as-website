@@ -1787,6 +1787,33 @@ html.touch-capable .model-hover-popup-arrow .material-icons{ font-size:22px; }
 html.touch-capable .model-hover-popup-icon .material-icons{ font-size:20px; }
 html.touch-capable .model-hover-popup-name{ font-size:13px; padding:0 6px; }
 
+/* "Send to slicer" is meaningless on any touch device — there's no desktop
+   OrcaSlicer/PrusaSlicer to hand the model to. The <=1024px phone block hides
+   these already; this extends the same to landscape tablets on the desktop
+   layout (the on-model popup's print button, each Parts-row print button) and
+   drops the now-inert Preferred Slicer choice from Settings. */
+html.touch-capable [data-role="print"]{ display:none !important; }
+html.touch-capable #settings-slicer-section{ display:none; }
+
+/* The top offset on both side columns reserves room for the Essential/Advanced
+   switch that used to float there — but on the desktop layout it's reparented
+   into the right dock (see setupRightDockTabs), so the gap is dead space. A
+   tablet's viewport is much shorter than a desktop monitor, and the left
+   column's own content (paint panel + hue/SV picker + two toggles) then runs
+   past the bottom — with overflow:hidden the last button ("Hide / show parts")
+   just gets clipped with no way to reach it. Pull both columns up to the top
+   edge and let the left one scroll. */
+html.touch-capable .left-tools,
+html.touch-capable .right-dock{
+  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+  max-height:calc(100vh - (var(--edge) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  max-height:calc(100svh - (var(--edge) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+}
+html.touch-capable .left-tools{
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+
 /* Anchored popover, same interaction family as .color-palette: appears next to
    the part name that was clicked, rest of the page stays fully interactive,
    and it closes on outside click / Escape / scroll — not a blocking modal. */
