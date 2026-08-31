@@ -2010,7 +2010,7 @@ function setupBucketTool() {
   // click after a generous move, so without this a sloppy tap mid-orbit could
   // paint a piece or open a grid. The same tracking arms a long-press that
   // stands in for the right-click piece-reset on touch.
-  const TAP_MOVE_TOL = 10; // px of travel still counted as a tap, not a drag
+  const TAP_MOVE_TOL = 16; // px of travel still counted as a tap, not a drag (touch-forgiving)
   const LONG_PRESS_MS = 500;
   let pointerDownPt = null;
   let pointerDidDrag = false;
@@ -2081,9 +2081,12 @@ function setupBucketTool() {
     // A drag that orbited/panned the camera isn't a pick. Long-press already
     // consumed this one as a piece reset.
     if (pointerDidDrag || longPressHandled) return;
-    // True when this click came from a finger/pen, not a mouse — drives the
-    // tap-first variant flow and popup dismissal below.
-    const tapInput = lastPointerType === 'touch' || lastPointerType === 'pen';
+    // True when this click came from a finger/pen on a device running the
+    // DESKTOP layout (a tablet in landscape) — that's the only place the
+    // on-model quick-control popup exists to be summoned. In the <=1024px
+    // mobile-sheet layout the popup is CSS-hidden, so touch taps there must
+    // keep the original "tap a piece -> open its variant grid" behaviour.
+    const tapInput = (lastPointerType === 'touch' || lastPointerType === 'pen') && !isTouchLikeDevice();
     const hit = getPaintHit(event.clientX, event.clientY);
 
     // Visibility-edit mode takes over the click entirely -- toggle whatever

@@ -2473,26 +2473,6 @@ body.hp-lock-scroll{
   }
 }
 
-/* Touch devices wide enough to keep the desktop layout (tablets in landscape)
-   never match the phone block above — it's width-gated to 1024px — but their
-   controls still need finger-sized hit targets. Mirror just the sizing rules
-   from that block, keyed off pointer capability alone. Layout is untouched:
-   the dock, left tools and toolbar stay exactly where the desktop layout puts
-   them. */
-html.touch-capable{ --control-h: 48px; }
-html.touch-capable .btn--sm{ width:40px; height:40px; }
-html.touch-capable .toggle-btn{ padding:0 18px; }
-html.touch-capable .color-swatch{ width:36px; height:36px; }
-html.touch-capable .color-palette{ width:224px; }
-html.touch-capable .color-swatch-grid{
-  grid-template-columns:repeat(4, 36px);
-  gap:12px;
-}
-html.touch-capable .color-picker-sv{ height:140px; }
-html.touch-capable .color-picker-sv-thumb{ width:18px; height:18px; }
-html.touch-capable .color-picker-hue{ height:20px; }
-html.touch-capable .color-picker-hue-thumb{ width:22px; height:22px; }
-
 @media (max-width: 1024px), (max-height: 720px){
   :root{ --edge: 12px; }
   .model-controls{
