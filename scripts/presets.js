@@ -35,14 +35,14 @@ export const PRESETS = {
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: false }
   },
   sensor: {
-    label: 'Racing Otto',
-    description: 'Vroom vroooom',
+    label: 'Emote + Sense/Interact',
+    description: 'Hello World!',
     parts: {
-      top: 'Top_Hats.glb', middle: 'Middle-starter.glb', face: 'Face_Angry.glb',
-      bottom: 'Bottom_F1.glb', wheels: 'wheelF1.glb', hat: 'Spoiler_F1.glb',
-      arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
+      top: 'Top_sensor-duo.glb', middle: 'Middle-starter.glb', face: 'FaceUSOLED.glb',
+      bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Race.glb',
+      spacer: 'Spacer_Sensors.glb', bumper: 'bumper_oriented.glb'
     },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: true }
   },
   showtime: {
     label: 'Duck',
@@ -54,15 +54,32 @@ export const PRESETS = {
     },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: true, bumper: false, tail: false, spacer: false }
   },
-  // Label is deliberately generic — the "Pika"/"Pikachu" strings in the part
-  // filenames are internal asset names, but a user-facing preset name would be
-  // a Nintendo trademark, so it's "Thunder Mouse" here.
   thunder: {
     label: 'Thunder Mouse',
     description: 'Zap!',
     parts: {
       top: 'Top_Hats.glb', middle: 'Middle-starter.glb', face: 'Face_Pika.glb',
-      bottom: 'Bottom_Pikachu.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Pika ears.glb',
+      bottom: 'Bottom_Pika.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Pika ears.glb',
+      arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
+    },
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: false, bumper: false, tail: false, spacer: false }
+  },
+    race: {
+    label: 'Racing Otto',
+    description: 'Vroom vroooom',
+    parts: {
+      top: 'Top_Hats.glb', middle: 'Middle-starter.glb', face: 'Face_Angry.glb',
+      bottom: 'Bottom_Race.glb', wheels: 'Wheel_Race.glb', hat: 'Hat_Race.glb',
+      arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
+    },
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
+  },
+    Bricks: {
+    label: 'Bricks',
+    description: 'Click!',
+    parts: {
+      top: 'Top_Bricks.glb', middle: 'Middle_Firefighter.glb', face: 'Face_Mustache.glb',
+      bottom: 'Bottom_Bricks.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Bricks.glb',
       arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
     },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: false, bumper: false, tail: false, spacer: false }

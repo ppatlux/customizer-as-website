@@ -59,7 +59,7 @@ visually confirm or reject the ones it flags. Decisions are written to
 app — a red warning badge appears on both conflicting parts (click either one to toggle a
 translucent red glowing overlay on both, in place, showing the clash), but neither part is
 hidden or changed; the user decides what to do with it. This is deliberately different from the two hand-coded structural
-rules (Arms/Bumper, F1-bottom/Motion), which stay untouched and still auto-hide/auto-switch
+rules (Arms/Bumper, Race-bottom/Motion), which stay untouched and still auto-hide/auto-switch
 since those are physical "can't both be attached" facts rather than soft geometry overlaps.
 
 Open it through the same local server as the main app (see Local Run below), e.g.

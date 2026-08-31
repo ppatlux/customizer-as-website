@@ -1,46 +1,14 @@
 // Local file paths mirror the app's part categories: assets/models/<part-folder>/<file>.
 // `folder` here uses the app's on-screen naming (e.g. "wheels" part -> "motion" folder).
 export const ASSET_MANIFEST = {
-  hat: [
-    
-    { file: 'Hat_Leprechaun.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/07/hat_2.glb' },
-    { file: 'Hat_Viking.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/07/hat_3.glb' },
-    { file: 'Hat_Dragonborn.glb', folder: 'hat', source: '' },
-    { file: 'Spoiler_F1.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Spoiler_F1.glb' },
-    { file: 'Hat_Round.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Flat.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Bavarian.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Gladiator.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Pika ears.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Pumpkin.glb', folder: 'hat', source: '' },
-    { file: 'Hat_SumoBand.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Prusa.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Mister.glb', folder: 'hat', source: '' },
-    { file: 'Hat_dome.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Magic.glb', folder: 'hat', source: '' },
-    { file: 'Hat_lego.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Santa.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Hat_Santa.glb' }
-  ],
-  arms: [
-    { file: 'Arm-angle.glb', folder: 'arms', source: 'https://hprobots.com/wp-content/uploads/2025/08/Arm-angle.glb' },
-    { file: 'wings.glb', folder: 'arms', source: '' },
-    { file: 'Arm-straight.glb', folder: 'arms', source: 'https://hprobots.com/wp-content/uploads/2025/08/Arm-straight.glb' }
-  ],
-  bumper: [
-    { file: 'bumper_oriented.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/bumper_oriented.glb' },
-    { file: 'Bumper_motor_bulldozer.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_rbulldozer.glb' },
-    { file: 'Bumper_F1.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_F1.glb' },
-    { file: 'Bumper_football.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_football.glb' },
-    { file: 'Bumper_motor_collect.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_collect.glb' },
-    { file: 'Bumper_motor_ramp.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_ramp.glb' }
-  ],
-  top: [
+    top: [
     { file: 'Top-HP-logo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-HP-logo.glb' },
     { file: 'Top_Hats.glb', folder: 'top', source: '' },
     { file: 'Top_Duck.glb', folder: 'top', source: '' },
     { file: 'Top-MP3.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-MP3.glb' },
     { file: 'Top-sensor-single.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-sensor-single.glb' },
-    { file: 'Top-sensor-duo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-sensor-duo.glb' },       { file: 'Top_template.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/Top_template.glb' },
+    { file: 'Top-sensor-duo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-sensor-duo.glb' },      
+    { file: 'Top_template.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/Top_template.glb' },
     { file: 'Top_USmatrix.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/TopUSmatrix.glb' },
     { file: 'Top_USline.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/TopUSline.glb' },
     { file: 'Top_OLEDbuttons.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/10/TopOLEDbuttons.glb' },
@@ -54,7 +22,26 @@ export const ASSET_MANIFEST = {
     { file: 'Top_MP3sensor.glb', folder: 'top', source: '' },
     { file: 'Top_Beacon.glb', folder: 'top', source: '' }
   ],
-  middle: [
+  hat: [
+    { file: 'Hat_Leprechaun.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/07/hat_2.glb' },
+    { file: 'Hat_Viking.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/07/hat_3.glb' },
+    { file: 'Hat_Dragonborn.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Race.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Round.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Flat.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Bavarian.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Gladiator.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Pika ears.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Pumpkin.glb', folder: 'hat', source: '' },
+    { file: 'Hat_SumoBand.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Prusa.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Mister.glb', folder: 'hat', source: '' },
+    { file: 'Hat_dome.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Magic.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Bricks.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Santa.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Hat_Santa.glb' }
+  ],
+   middle: [
     { file: 'Middle-starter.glb', folder: 'middle', source: 'https://hprobots.com/wp-content/uploads/2025/08/Middle-starter.glb' },
     { file: 'Middle_NOlogo.glb', folder: 'middle', source: 'https://hprobots.com/wp-content/uploads/2025/10/MiddleNOlogo.glb' },
     { file: 'Middle_Base.glb', folder: 'middle', source: '' },
@@ -78,16 +65,36 @@ export const ASSET_MANIFEST = {
     { file: 'Face_Mustache.glb', folder: 'face', source: '' },
     { file: 'Face_Pumpkin.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUS_Pumpkin.glb' },
     { file: 'FaceUSOLED.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSOLED.glb' },
-    { file: 'Face_F1.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSF1_v1.glb' },
-    { file: 'Face_Chamfer.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSF1_v2.glb' },
+    { file: 'Face_Race.glb', folder: 'face', source: '' },
+    { file: 'Face_Chamfer.glb', folder: 'face', source: '' },
     { file: 'Face_Flat.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceUSflat_v3.glb' },
-    { file: 'FaceSanta.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceSanta.glb' }
+    { file: 'FaceSanta.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/10/FaceSanta.glb' },
+    { file: 'Face_Gladiator.glb', folder: 'face', source: '' }
+  ],
+    spacer: [
+    { file: 'Spacer_A.glb', folder: 'spacer', source: 'https://hprobots.com/wp-content/uploads/2025/10/Middle_spacerA.glb' },
+    { file: 'Spacer_Empty.glb', folder: 'spacer', source: '' },
+    { file: 'Spacer_Sensors.glb', folder: 'spacer', source: '' }
+  ],
+  arms: [
+    { file: 'Arm-angle.glb', folder: 'arms', source: 'https://hprobots.com/wp-content/uploads/2025/08/Arm-angle.glb' },
+    { file: 'wings.glb', folder: 'arms', source: '' },
+    { file: 'Arm-straight.glb', folder: 'arms', source: 'https://hprobots.com/wp-content/uploads/2025/08/Arm-straight.glb' }
+  ],
+  bumper: [
+    { file: 'bumper_oriented.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/bumper_oriented.glb' },
+    { file: 'Bumper_motor_bulldozer.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_rbulldozer.glb' },
+    { file: 'Bumper_Race.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_Race.glb' },
+    { file: 'Bumper_football.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_football.glb' },
+    { file: 'Bumper_motor_collect.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_collect.glb' },
+    { file: 'Bumper_motor_ramp.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_ramp.glb' },
+    { file: 'Bumper_Roller.glb', folder: 'bumper', source: '' },
   ],
   bottom: [
     { file: 'Bottom-starter.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/08/Bottom-starter.glb' },
-    { file: 'Bottom_Pikachu.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bottom_Pikachu.glb' },
+    { file: 'Bottom_Pika.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bottom_Pikachu.glb' },
     { file: 'Bottom_Duck.glb', folder: 'bottom', source: '' },
-    { file: 'Bottom_Lego.glb', folder: 'bottom', source: '' },
+    { file: 'Bottom_Bricks.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Truck.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Base.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Balancing.glb', folder: 'bottom', source: '' },
@@ -95,18 +102,14 @@ export const ASSET_MANIFEST = {
     { file: 'Bottom_Honeycomb.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Biped.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Boat.glb', folder: 'bottom', source: '' },
-    { file: 'Bottom_F1.glb', folder: 'bottom', source: '' },
+    { file: 'Bottom_Race.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_template.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bottom_template.glb' }
   ],
+  //motion
   wheels: [
     { file: 'Wheels-starter.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-starter.glb' },
     { file: 'Wheels-Walk-and-Roll.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-Walk-and-Roll.glb' },
-    { file: 'wheelF1.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/10/wheelF1.glb' }
-  ],
-  spacer: [
-    { file: 'Middle_spacerA.glb', folder: 'spacer', source: 'https://hprobots.com/wp-content/uploads/2025/10/Middle_spacerA.glb' },
-    { file: 'middle_spacer16mm.glb', folder: 'spacer', source: '' },
-    { file: 'middle_spacer_sensors_v2.glb', folder: 'spacer', source: '' }
+    { file: 'Wheel_Race.glb', folder: 'motion', source: '' }
   ],
   tail: []
 };
