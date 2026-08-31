@@ -352,6 +352,17 @@ const occludedParts = new Set(['middle', 'bumper', 'tail', 'bottom', 'wheels']);
 // blocking anything, since the file may not exist for a fresh checkout.
 let compatibilityMap = null;
 
+// Both used by countValidBuilds()/updateComboChip(), which bootstrap() calls
+// synchronously (via applyPreset) at module-eval time -- so, like
+// SLICER_LOGO_SRC and friends at the top of this file, they must be declared
+// up here rather than next to that code further down, or they'd still be in
+// their temporal dead zone when bootstrap runs and throw. countValidBuilds()
+// memo, keyed by visible-part set; cleared when the compatibility map loads.
+let comboCountCache = new Map();
+// Every Hat variant is modelled against Top_Hats.glb's mount, so a visible Hat
+// pins Top to that file (see enforceHatRequiresTopHats).
+const HAT_REQUIRED_TOP_FILE = 'Top_Hats.glb';
+
 // part -> translucent red preview clone currently sitting in the scene (see
 // toggleConflictGhost/refreshConflictBadges below). Declared up here rather
 // than next to those functions because bootstrap() — called near the top of
@@ -1591,7 +1602,10 @@ function setupColorPickerDrag() {
       // In bucket mode this picker is choosing the brush color for the next
       // click on the model, not recoloring the part itself — always true for
       // GLOBAL_PAINT_KEY's picker, which isn't tied to any one part's mode.
-      if (bucketModePart === part || part === GLOBAL_PAINT_KEY) return;
+      if (bucketModePart === part || part === GLOBAL_PAINT_KEY) {
+        maybeAutoStartGlobalPaint(part);
+        return;
+      }
       applyLiveColor(part, hsvToHex(state.h, state.s, state.v));
     };
 
@@ -1644,6 +1658,17 @@ function setupColorPickerHexInput() {
 function setBrushColor(part, hex) {
   pickerHSV[part] = colorToHsv(new THREE.Color(hex));
   renderColorPickerUI(part);
+  maybeAutoStartGlobalPaint(part);
+}
+
+// Choosing a colour in the global "paint any piece" picker is a clear intent
+// to paint — turn the mode on automatically rather than also requiring a press
+// of the button. (A per-part brush already implies that part's paint mode is
+// on, so this only fires for GLOBAL_PAINT_KEY.)
+function maybeAutoStartGlobalPaint(part) {
+  if (part === GLOBAL_PAINT_KEY && bucketModePart !== GLOBAL_PAINT_KEY) {
+    setBucketMode(GLOBAL_PAINT_KEY);
+  }
 }
 
 function getBrushHex(part) {
@@ -2275,7 +2300,13 @@ function setupGlobalPaintTool() {
 
   // "P" mirrors the button itself -- toggles the global paint tool on/off,
   // same as "V" does for visibility-edit mode (see setupVisibilityShortcut).
+  // Escape also leaves paint mode (any variant of it, per-part included), the
+  // same way it leaves visibility-edit mode.
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      if (bucketModePart) setBucketMode(null);
+      return;
+    }
     if (event.key !== 'p' && event.key !== 'P') return;
     if (event.target.matches('input, textarea, [contenteditable]')) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -4069,14 +4100,213 @@ function updateAllCounters() {
   Object.keys(modelSets).forEach(updateVariantCounter);
 }
 
+// ---------------------------------------------------------------------------
+// Combo counting
+//
+// The chip shows how many *distinct, buildable* robots the currently visible
+// parts can make. The old answer was just the product of each visible part's
+// variant count, which badly overcounts: assets/compatibility.json (built by
+// tools/compat-checker.html) flags 140+ specific variant *pairs* as physically
+// incompatible, and two structural rules knock out whole slices of the space
+// (a visible Hat pins Top to Top_Hats.glb; an F1/Boat Bottom rules out every
+// Motion variant). countValidBuilds() returns the exact number of variant
+// assignments -- one per visible part -- that break none of those rules.
+//
+// That's an exact model count of a binary constraint problem. Brute force is
+// out (the raw product runs to ~10^8), but the constraint graph is sparse and
+// this robot is a physical stack, so its treewidth is tiny. Variable
+// elimination -- repeatedly sum out the cheapest part, replacing every factor
+// that mentions it with one factor over its neighbours -- gets the exact count
+// with every intermediate table staying a few thousand rows at worst. The
+// result is memoized on the visible-part set; nothing about the count depends
+// on which variant is currently selected.
+// ---------------------------------------------------------------------------
+// (comboCountCache is declared up near compatibilityMap -- bootstrap() reaches
+// this code before a declaration here would be initialized.)
+
+// Bottom variants whose mount fits no Motion/wheel variant at all --
+// enforceBottomMotionExclusion hides Motion outright for these, so builds
+// pairing them with a visible Motion are unreachable and must not be counted.
+// compatibility.json only lists a subset of these pairs; this is the
+// authoritative test, matched the same way that function checks the live
+// selection (bottomIsF1Variant / bottomIsBoatVariant).
+function bottomFileExcludesWheels(file) {
+  return /bottom_f1/i.test(file) || /bottom_boat/i.test(file);
+}
+
+// Exact count of valid full builds (one variant per currently visible part,
+// no incompatible pair) via variable elimination over the constraint graph.
+function countValidBuilds() {
+  const parts = Object.keys(modelSets).filter(
+    (part) => partVis[part] && (modelSets[part]?.length || 0) > 0
+  );
+  if (!parts.length) return 0;
+
+  const cacheKey = `${compatibilityMap ? 'map' : 'nomap'}:${parts.slice().sort().join(',')}`;
+  if (comboCountCache.has(cacheKey)) return comboCountCache.get(cacheKey);
+
+  // Domain of each part = its variant indices. A visible Hat pins Top to
+  // Top_Hats.glb (enforceHatRequiresTopHats), collapsing Top's domain to one.
+  const domains = {};
+  for (const part of parts) domains[part] = modelSets[part].map((_, i) => i);
+  if (domains.hat && domains.top) {
+    const hatsIdx = modelSets.top.findIndex((url) => url.endsWith(`/${HAT_REQUIRED_TOP_FILE}`));
+    if (hatsIdx !== -1) domains.top = [hatsIdx];
+  }
+
+  // filename -> variant index, per visible part, to resolve compatibility keys.
+  const idxOfFile = {};
+  for (const part of parts) {
+    const m = new Map();
+    modelSets[part].forEach((url, i) => m.set(url.split('/').pop(), i));
+    idxOfFile[part] = m;
+  }
+
+  // Forbidden index pairs, keyed by unordered part pair "pA::pB" (part
+  // names sorted) -> Set("iA,iB"). Sources: the compatibility map, plus the
+  // Bottom/Motion structural rule.
+  const forbidden = new Map();
+  const banPair = (pa, ia, pb, ib) => {
+    const [p1, i1, p2, i2] = pa < pb ? [pa, ia, pb, ib] : [pb, ib, pa, ia];
+    const key = `${p1}::${p2}`;
+    let set = forbidden.get(key);
+    if (!set) forbidden.set(key, (set = new Set()));
+    set.add(`${i1},${i2}`);
+  };
+
+  if (compatibilityMap) {
+    for (const [keyA, incompatible] of compatibilityMap) {
+      const [partA, fileA] = keyA.split('|');
+      if (!domains[partA]) continue;
+      const ia = idxOfFile[partA].get(fileA);
+      if (ia === undefined || !domains[partA].includes(ia)) continue;
+      for (const keyB of incompatible) {
+        const [partB, fileB] = keyB.split('|');
+        if (partB === partA || !domains[partB]) continue;
+        const ib = idxOfFile[partB].get(fileB);
+        if (ib === undefined || !domains[partB].includes(ib)) continue;
+        banPair(partA, ia, partB, ib);
+      }
+    }
+  }
+
+  if (domains.bottom && domains.wheels) {
+    for (const ib of domains.bottom) {
+      if (bottomFileExcludesWheels(modelSets.bottom[ib].split('/').pop())) {
+        for (const iw of domains.wheels) banPair('bottom', ib, 'wheels', iw);
+      }
+    }
+  }
+
+  // --- Variable elimination ---
+  // Factor := { vars: [partName...], rows: Map("i,i,..." -> count) }, indices
+  // in `vars` order. Multiplying joins on shared vars; summing a var out drops
+  // its column and folds duplicate rows together.
+  const multiply = (f1, f2) => {
+    const vars = f1.vars.concat(f2.vars.filter((v) => !f1.vars.includes(v)));
+    const shared = f1.vars.filter((v) => f2.vars.includes(v));
+    const f1SharedPos = shared.map((v) => f1.vars.indexOf(v));
+    const f2SharedPos = shared.map((v) => f2.vars.indexOf(v));
+    const f2RestPos = f2.vars.map((_, i) => i).filter((i) => !f1.vars.includes(f2.vars[i]));
+
+    const f2ByShared = new Map();
+    for (const [k, val] of f2.rows) {
+      const a = k.split(',');
+      const sig = f2SharedPos.map((p) => a[p]).join(',');
+      let arr = f2ByShared.get(sig);
+      if (!arr) f2ByShared.set(sig, (arr = []));
+      arr.push([a, val]);
+    }
+
+    const rows = new Map();
+    for (const [k1, v1] of f1.rows) {
+      const a1 = k1.split(',');
+      const sig = f1SharedPos.map((p) => a1[p]).join(',');
+      const matches = f2ByShared.get(sig);
+      if (!matches) continue;
+      for (const [a2, v2] of matches) {
+        const ck = a1.concat(f2RestPos.map((p) => a2[p])).join(',');
+        rows.set(ck, (rows.get(ck) || 0) + v1 * v2);
+      }
+    }
+    return { vars, rows };
+  };
+
+  const sumOut = (f, v) => {
+    const pos = f.vars.indexOf(v);
+    const vars = f.vars.filter((x) => x !== v);
+    const rows = new Map();
+    for (const [k, val] of f.rows) {
+      const a = k.split(',');
+      a.splice(pos, 1);
+      const nk = a.join(',');
+      rows.set(nk, (rows.get(nk) || 0) + val);
+    }
+    return { vars, rows };
+  };
+
+  let pool = [];
+  // Unary factor per part (every allowed variant counts once).
+  for (const part of parts) {
+    const rows = new Map();
+    for (const i of domains[part]) rows.set(String(i), 1);
+    pool.push({ vars: [part], rows });
+  }
+  // Binary factor per constrained pair: exactly the allowed index pairs.
+  for (const [key, banned] of forbidden) {
+    const [pa, pb] = key.split('::');
+    const rows = new Map();
+    for (const ia of domains[pa]) {
+      for (const ib of domains[pb]) {
+        if (!banned.has(`${ia},${ib}`)) rows.set(`${ia},${ib}`, 1);
+      }
+    }
+    pool.push({ vars: [pa, pb], rows });
+  }
+
+  const remaining = new Set(parts);
+  while (remaining.size) {
+    // Sum out whichever part has the smallest combined factor scope
+    // (min-degree ordering -- keeps the intermediate tables small).
+    let pick = null;
+    let pickScope = Infinity;
+    for (const v of remaining) {
+      const scope = new Set();
+      for (const f of pool) {
+        if (f.vars.includes(v)) f.vars.forEach((x) => scope.add(x));
+      }
+      if (scope.size < pickScope) {
+        pickScope = scope.size;
+        pick = v;
+      }
+    }
+    const involved = pool.filter((f) => f.vars.includes(pick));
+    pool = pool.filter((f) => !f.vars.includes(pick));
+    let acc = involved[0];
+    for (let i = 1; i < involved.length; i++) acc = multiply(acc, involved[i]);
+    pool.push(sumOut(acc, pick));
+    remaining.delete(pick);
+  }
+
+  // Every factor left is a scalar (vars: []). Their product is the answer.
+  let total = 1;
+  for (const f of pool) {
+    let s = 0;
+    for (const val of f.rows.values()) s += val;
+    total *= s;
+  }
+  total = Math.round(total);
+  comboCountCache.set(cacheKey, total);
+  return total;
+}
+
 function updateComboChip() {
   const chip = document.getElementById('comboChip');
   if (!chip) return;
-  const combos = Object.keys(modelSets)
-    .filter((part) => partVis[part] && (modelSets[part]?.length || 0) > 0)
-    .map((part) => modelSets[part].length)
-    .reduce((total, count) => total * count, 1);
+  const combos = countValidBuilds();
   chip.textContent = `Combos: ${combos.toLocaleString()}`;
+  chip.title = 'Distinct buildable robots from the visible parts, after removing '
+    + 'variant pairs flagged incompatible in the compatibility check.';
 }
 
 function getOtherConflictingPart(part) {
@@ -4102,7 +4332,9 @@ function enforceArmsBumperExclusion(partJustEnabled) {
 // force-shows a part the user turned off. Cheap and idempotent like
 // enforceBottomMotionExclusion, so it's called unconditionally after any
 // change that could touch Hat's visibility or Top's variant/visibility.
-const HAT_REQUIRED_TOP_FILE = 'Top_Hats.glb';
+// (HAT_REQUIRED_TOP_FILE is declared up near compatibilityMap -- bootstrap()
+// reaches countValidBuilds(), which also reads it, before a declaration here
+// would be initialized.)
 
 function enforceHatRequiresTopHats(silent = false) {
   if (!partVis.hat || !partVis.top) return;
@@ -4153,7 +4385,9 @@ async function loadCompatibilityMap() {
     // No compatibility data available — leave the map empty.
   }
   compatibilityMap = map;
+  comboCountCache.clear();
   refreshConflictBadges();
+  updateComboChip();
 }
 
 // Answers "does `part` currently conflict with some other part?" across
