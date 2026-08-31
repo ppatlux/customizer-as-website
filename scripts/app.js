@@ -432,6 +432,17 @@ let consentReject = null;
 let tourRunning = false;
 let pendingInitialLoads = 0;
 let appLoaderHidden = false;
+// Work that must not compete with the initial build for the main thread /
+// network / GPU — chiefly the 8 preset-mix thumbnails, each of which loads
+// ~6 GLBs and does an offscreen WebGL render. On desktop that overlap is
+// invisible; on a tablet it's what kept the loading screen up for ages. These
+// run once hideAppLoader() fires (or the 12s splash-timeout does).
+let firstBuildDone = false;
+const afterFirstBuildQueue = [];
+function runAfterFirstBuild(fn) {
+  if (firstBuildDone) { setTimeout(fn, 0); return; }
+  afterFirstBuildQueue.push(fn);
+}
 let mobileLayoutActive = false;
 let mobileSheetEl = null;
 let mobileSheetHandleEl = null;
@@ -2383,8 +2394,12 @@ function renderPresetCarousel() {
     card.addEventListener('click', () => applyPreset(key));
     host.appendChild(card);
 
-    renderPresetThumbnail(key).then((dataUrl) => {
-      if (dataUrl) card.querySelector('.preset-card-thumb').src = dataUrl;
+    // Cards show immediately (grey thumb box + label); the actual 3D thumbnail
+    // render is deferred until the initial build is done — see runAfterFirstBuild.
+    runAfterFirstBuild(() => {
+      renderPresetThumbnail(key).then((dataUrl) => {
+        if (dataUrl) card.querySelector('.preset-card-thumb').src = dataUrl;
+      });
     });
   });
 
@@ -4498,11 +4513,24 @@ function enablePart(part, withToast = true) {
 }
 
 function hideAppLoader() {
-  if (appLoaderHidden || !appLoader) return;
+  if (appLoaderHidden) return;
   appLoaderHidden = true;
-  appLoader.classList.add('hide');
-  appLoader.setAttribute('aria-busy', 'false');
-  setTimeout(() => appLoader.remove(), 450);
+  if (appLoader) {
+    appLoader.classList.add('hide');
+    appLoader.setAttribute('aria-busy', 'false');
+    setTimeout(() => appLoader.remove(), 450);
+  }
+  // Initial build is on screen — now let the deferred heavy work (preset
+  // thumbnails) run. Staggered one per idle slot so 8 offscreen renders don't
+  // land in a single frame and jank the freshly-shown viewer.
+  firstBuildDone = true;
+  const drainNext = () => {
+    const fn = afterFirstBuildQueue.shift();
+    if (!fn) return;
+    try { fn(); } catch (e) { console.warn(e); }
+    if (afterFirstBuildQueue.length) requestIdle(drainNext, { timeout: 4000 });
+  };
+  if (afterFirstBuildQueue.length) requestIdle(drainNext, { timeout: 4000 });
 }
 
 // Elastic overshoot easing — grows past 1.0 then settles back, reads as a
@@ -4550,20 +4578,25 @@ const requestIdle = window.requestIdleCallback
   : (cb) => setTimeout(() => cb({ timeRemaining: () => 8, didTimeout: false }), 1);
 function drainBvhQueue(deadline) {
   bvhDraining = true;
-  while (bvhBuildQueue.length && (deadline.didTimeout || deadline.timeRemaining() > 4)) {
+  // One geometry per idle slot while the first build is still loading (don't
+  // let a didTimeout burst chew a frame); catch up faster once it's on screen.
+  const maxPerSlot = firstBuildDone ? Infinity : 1;
+  let built = 0;
+  while (bvhBuildQueue.length && built < maxPerSlot && (deadline.didTimeout || deadline.timeRemaining() > 4)) {
     const geometry = bvhBuildQueue.shift();
     try {
       if (geometry && !geometry.boundsTree && geometry.attributes?.position) {
         geometry.computeBoundsTree();
       }
     } catch (e) { /* a malformed geometry just keeps the slow raycast path */ }
+    built += 1;
   }
-  if (bvhBuildQueue.length) requestIdle(drainBvhQueue, { timeout: 2000 });
+  if (bvhBuildQueue.length) requestIdle(drainBvhQueue, { timeout: firstBuildDone ? 2000 : 6000 });
   else bvhDraining = false;
 }
 function queueBvhBuild(geometry) {
   bvhBuildQueue.push(geometry);
-  if (!bvhDraining) requestIdle(drainBvhQueue, { timeout: 2000 });
+  if (!bvhDraining) requestIdle(drainBvhQueue, { timeout: firstBuildDone ? 2000 : 6000 });
 }
 
 // Where `part`'s model should sit vertically right now, accounting for whether

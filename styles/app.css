@@ -2671,15 +2671,15 @@ body.hp-lock-scroll{
   }
   #mobile-tools #visibilityModeBtn .material-icons,
   #mobile-tools #globalPaintBtn .material-icons{ font-size:18px; }
-  #mobile-tools #globalPaintBtn.active{
-    background:var(--hpro-yellow);
-    border-color:var(--hpro-navy);
-    color:var(--hpro-navy);
-  }
+  /* Active = gold fill for BOTH, same as desktop (.global-paint-toggle-btn.active
+     / .color-sidebar-toggle-btn.active) — "this mode is on" reads consistently;
+     the yellow-vs-blue mode distinction lives in the screen-edge vignette. */
+  #mobile-tools #globalPaintBtn.active,
   #mobile-tools #visibilityModeBtn.active{
-    background:#eaf2fc;
-    border-color:#2f6fd6;
-    color:#2f6fd6;
+    background:var(--brand);
+    border-color:var(--brand);
+    color:var(--hpro-navy);
+    box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
   }
 
   /* #global-paint-panel is now just a positioning context for its button + the
