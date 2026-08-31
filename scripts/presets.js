@@ -39,18 +39,28 @@ export const PRESETS = {
     description: 'Hello World!',
     parts: {
       top: 'Top_sensor-duo.glb', middle: 'Middle-starter.glb', face: 'FaceUSOLED.glb',
-      bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Race.glb',
-      spacer: 'Spacer_Sensors.glb', bumper: 'bumper_oriented.glb'
+      bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb',
+      spacer: 'Spacer_Empty.glb', bumper: 'bumper_oriented.glb'
     },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: true }
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: true, tail: false, spacer: true }
   },
-  showtime: {
+  bricks: {
+    label: 'Bricks',
+    description: 'Click!',
+    parts: {
+      top: 'Top_Hats.glb', middle: 'Middle_Firefighter.glb', face: 'Face_Mustache.glb',
+      bottom: 'Bottom_Bricks.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Bricks.glb',
+      arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
+    },
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: false, bumper: false, tail: false, spacer: false }
+  },
+  duck: {
     label: 'Duck',
     description: 'Quack!',
     parts: {
       top: 'Top_Duck.glb', middle: 'Middle_NOlogo.glb', face: 'Face_Duck.glb',
-      bottom: 'Bottom_Duck.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Leprechaun.glb',
-      arms: 'wings.glb', bumper: 'bumper_oriented.glb'
+      bottom: 'Bottom_Duck.glb', wheels: 'Wheels-starter.glb',
+      arms: 'wings.glb'
     },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: true, bumper: false, tail: false, spacer: false }
   },
@@ -60,39 +70,46 @@ export const PRESETS = {
     parts: {
       top: 'Top_Hats.glb', middle: 'Middle-starter.glb', face: 'Face_Pika.glb',
       bottom: 'Bottom_Pika.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Pika ears.glb',
-      arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
+      arms: 'Arm-angle.glb', 
     },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: false, bumper: false, tail: false, spacer: false }
   },
-    race: {
-    label: 'Racing Otto',
+  race: {
+    label: 'Racing ',
     description: 'Vroom vroooom',
     parts: {
-      top: 'Top_Hats.glb', middle: 'Middle-starter.glb', face: 'Face_Angry.glb',
-      bottom: 'Bottom_Race.glb', wheels: 'Wheel_Race.glb', hat: 'Hat_Race.glb',
+      top: 'Top_lightsdiffuser.glb', middle: 'Middle-starter.glb', face: 'Face_Eyebrows.glb',
+      bottom: 'Bottom-starter.glb', wheels: 'Wheel_Race.glb', hat: 'Hat_Race.glb', bumper: 'Bumper_Race.glb'
+    },
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: false, bumper: true, tail: false, spacer: false }
+  },
+  fast: {
+    label: 'Fast & Otto',
+    description: 'for family fun',
+    parts: {
+      top: 'Top_Race.glb', middle: 'Middle-starter.glb', face: 'Face_Angry.glb',
+      bottom: 'Bottom_Race.glb', 
       arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
     },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: false, arms: false, bumper: false, tail: false, spacer: false }
   },
-    Bricks: {
-    label: 'Bricks',
-    description: 'Click!',
+  santa: {
+    label: 'Merry Christmas',
+    description: 'Merry Christmas and a Happy New Otto',
     parts: {
-      top: 'Top_Bricks.glb', middle: 'Middle_Firefighter.glb', face: 'Face_Mustache.glb',
-      bottom: 'Bottom_Bricks.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Bricks.glb',
-      arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
+      top: 'Top_Hats.glb', middle: 'Middle_NOlogo.glb', face: 'FaceSanta.glb',
+      bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Santa.glb',
     },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: false, bumper: false, tail: false, spacer: false }
   },
   boat: {
-    label: 'Viking Boat',
+    label: 'Boat',
     description: 'Row row row',
     parts: {
-      top: 'Top-HP-logo.glb', middle: 'Middle_Boat.glb', face: 'Face_Angry.glb',
-      bottom: 'Bottom_Boat.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Leprechaun.glb',
-      arms: 'Arm-angle.glb', bumper: 'bumper_oriented.glb'
+      top: 'Top_Hats.glb', middle: 'Middle_Boat.glb', face: 'Face_Angry.glb',
+      bottom: 'Bottom_Boat.glb', hat: 'Hat_Viking.glb',
     },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: false, arms: false, bumper: false, tail: false, spacer: false }
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
   }
 };
 
