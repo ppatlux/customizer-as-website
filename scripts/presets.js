@@ -38,7 +38,7 @@ export const PRESETS = {
     label: 'Emote + Sense/Interact',
     description: 'Hello World!',
     parts: {
-      top: 'Top_sensor-duo.glb', middle: 'Middle-starter.glb', face: 'FaceUSOLED.glb',
+      top: 'Top-sensor-duo.glb', middle: 'Middle-starter.glb', face: 'FaceUSOLED.glb',
       bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb',
       spacer: 'Spacer_Empty.glb', bumper: 'bumper_oriented.glb'
     },
