@@ -518,6 +518,28 @@ html.vt-fallback.vt-leaving body{
   font:500 11px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   color:var(--muted);
 }
+/* Secondary action on a mix card — only shown once that mix is the applied one
+   (see .preset-card.active) and only when it has colours authored in
+   assets/mix-colors.json (.has-mix-colors, toggled in renderPresetCarousel). */
+.preset-card-copy{
+  display:none;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  margin-top:2px;
+  padding:5px 8px;
+  border:1px solid var(--stroke);
+  border-radius:8px;
+  background:var(--track);
+  color:var(--text);
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), border-color var(--transition);
+}
+.preset-card-copy .material-icons{ font-size:14px; }
+.preset-card-copy:hover{ background:#FFFFFF; border-color:var(--hpro-navy); }
+.preset-card-copy:focus-visible{ outline:2px solid var(--hpro-navy); outline-offset:1px; }
+.preset-card.active.has-mix-colors .preset-card-copy{ display:flex; }
 
 /* Advanced shows every part in the same single scrollable list, essential
    ones included (see showAdvancedPanel) — .hide-advanced just hides the
@@ -2613,6 +2635,10 @@ body.hp-lock-scroll{
     text-overflow:ellipsis;
   }
   .mobile-sheet-mixes .preset-card-desc{ display:none; }
+  /* Keep the one-row peek strip a predictable height — the "Copy colors" button
+     comes back with the rest of the card body once the sheet is expanded (the
+     base .preset-card.active.has-mix-colors rule already shows it there). */
+  .mobile-sheet:not([data-state="expanded"]) .mobile-sheet-mixes .preset-card.active.has-mix-colors .preset-card-copy{ display:none; }
   .mobile-sheet-mixes .preset-card.active{
     background:color-mix(in srgb, var(--hpro-yellow) 22%, #FFFFFF);
     box-shadow:0 0 0 2px var(--hpro-navy) inset, var(--shadow-sm);

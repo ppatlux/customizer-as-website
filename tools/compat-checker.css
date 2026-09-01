@@ -90,12 +90,13 @@ button.bad { border-color: var(--bad); color: var(--bad); }
 .badge.auto_pass { background: rgba(154,163,178,0.15); color: var(--text-dim); }
 .badge.compatible { background: rgba(53,196,106,0.18); color: var(--ok); }
 .badge.incompatible { background: rgba(229,83,75,0.18); color: var(--bad); }
+.badge.spacer-tag { background: rgba(77,163,255,0.16); color: var(--accent); text-transform: none; letter-spacing: 0; }
 
 #viewerPane { display: flex; flex-direction: column; min-height: 0; }
 #viewerHost { flex: 1; min-height: 0; position: relative; }
 #viewerHost canvas { display: block; width: 100%; height: 100%; }
 #pairInfo { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-dim); }
 #pairInfo b { color: var(--text); }
-#decideActions { display: flex; gap: 10px; padding: 0 16px 14px; }
+#decideActions { display: flex; gap: 10px; padding: 0 16px 14px; flex-wrap: wrap; }
 
 .u-hidden { display: none !important; }

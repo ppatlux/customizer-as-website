@@ -350,7 +350,18 @@ const occludedParts = new Set(['middle', 'bumper', 'tail', 'bottom', 'wheels']);
 // tools/compat-checker.html). Stays null until that fetch resolves — every
 // reader below treats null as "no rules yet" and fails open rather than
 // blocking anything, since the file may not exist for a fresh checkout.
+//
+// Two edge sets: `compatibilityMap` is the no-spacer verdicts;
+// `compatibilityMapSpacer` is the same graph but with each spacer-sensitive
+// pair's "+ spacer" verdict applied instead (the Spacer drops bumper / arms /
+// bottom / wheels 16, which clears or creates clashes against face / middle /
+// etc). activeCompatMap() picks the one that matches the current build.
 let compatibilityMap = null;
+let compatibilityMapSpacer = null;
+
+function activeCompatMap() {
+  return partVis.spacer ? compatibilityMapSpacer : compatibilityMap;
+}
 
 // Both used by countValidBuilds()/updateComboChip(), which bootstrap() calls
 // synchronously (via applyPreset) at module-eval time -- so, like
@@ -2421,9 +2432,28 @@ function renderPresetCarousel() {
       <img class="preset-card-thumb" alt="${preset.label} preview">
       <span class="preset-card-title">${preset.label}</span>
       <span class="preset-card-desc">${preset.description}</span>
+      <span class="preset-card-copy" data-role="copy-mix-colors" role="button" tabindex="0"
+        title="Paint the loaded model in this mix's colors">
+        <span class="material-icons" aria-hidden="true">palette</span>Copy colors
+      </span>
     `;
     card.addEventListener('click', () => applyPreset(key));
     host.appendChild(card);
+
+    // Secondary action on the card — nested inside the <button>, so its own
+    // handlers must swallow the event before the card's applyPreset click sees
+    // it. Only visible on the currently-applied card (see .preset-card.active
+    // .preset-card-copy in app.css).
+    const copyControl = card.querySelector('[data-role="copy-mix-colors"]');
+    const doCopyColors = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      applyMixColors(key);
+    };
+    copyControl.addEventListener('click', doCopyColors);
+    copyControl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') doCopyColors(event);
+    });
 
     // Cards show immediately (grey thumb box + label); the actual 3D thumbnail
     // render is deferred until the initial build is done — see runAfterFirstBuild.
@@ -2431,6 +2461,13 @@ function renderPresetCarousel() {
       renderPresetThumbnail(key).then((dataUrl) => {
         if (dataUrl) card.querySelector('.preset-card-thumb').src = dataUrl;
       });
+    });
+
+    // Hide the "Copy colors" control entirely for a mix with nothing authored
+    // in assets/mix-colors.json (mixColors loads async — see mixColorsReady).
+    mixColorsReady.then(() => {
+      const has = !!mixColors[key] && Object.keys(mixColors[key]).length > 0;
+      card.classList.toggle('has-mix-colors', has);
     });
   });
 
@@ -2615,6 +2652,62 @@ function renderPresetThumbnail(key) {
 
   presetThumbPromises[key] = promise;
   return promise;
+}
+
+// "Copy colors" on an already-applied mix card (see renderPresetCarousel).
+// Applying a mix only pins parts / variants / visibility — never colour — so
+// the model loads in the default grey. This repaints the currently-loaded
+// model to match that mix's Mixes-tab thumbnail exactly: every part the preset
+// shows gets its authored base colour from assets/mix-colors.json (or
+// DEFAULT_PART_COLOR when nothing is authored for it), plus any authored
+// per-piece overrides for the variant the mix pins — the same resolution
+// renderPresetThumbnail() uses. Parts the preset doesn't show are left alone.
+function applyMixColors(key) {
+  const preset = presets[key];
+  if (!preset) return;
+
+  mixColorsReady.then(() => {
+    const authored = mixColors[key];
+    if (!authored || !Object.keys(authored).length) {
+      toast('No colors saved for this mix.', 'warn', 1600);
+      return;
+    }
+
+    let painted = 0;
+    for (const part of Object.keys(preset.parts || {})) {
+      if (!preset.visibility?.[part] || !loadedMods[part]) continue;
+
+      const { color, meshes } = normalizeMixPartColor(authored[part]);
+      if (!modelCols[part]) modelCols[part] = new THREE.Color(DEFAULT_PART_COLOR);
+      modelCols[part].set(color || DEFAULT_PART_COLOR);
+
+      // Rebuild this variant's per-piece overrides from the mix alone, so the
+      // result is the mix's look and not a layer on top of whatever the user
+      // had painted. Only touch the override map if there's something to write
+      // or clear — matches getMeshOverrides' "don't leave empty entries" note.
+      const meshEntries = Object.entries(meshes);
+      if (meshEntries.length || getMeshOverrides(part)) {
+        const overrides = getMeshOverrides(part, true);
+        Object.keys(overrides).forEach((meshIdx) => delete overrides[meshIdx]);
+        for (const [meshIdx, hex] of meshEntries) overrides[meshIdx] = hex;
+      }
+
+      applyColor(part);
+      syncPillColor(part);
+      syncColorPickerUI(part);
+      updateBucketResetVisibility(part);
+      painted += 1;
+    }
+
+    if (!painted) {
+      toast('Load this mix first, then copy its colors.', 'warn', 1800);
+      return;
+    }
+
+    updateGlobalResetVisibility();
+    saveStateToLocal();
+    toast(`${preset.label} colors applied`, 'ok', 1200);
+  });
 }
 
 function mountVariantGridPanel() {
@@ -4142,7 +4235,7 @@ function countValidBuilds() {
   );
   if (!parts.length) return 0;
 
-  const cacheKey = `${compatibilityMap ? 'map' : 'nomap'}:${parts.slice().sort().join(',')}`;
+  const cacheKey = `${compatibilityMap ? 'map' : 'nomap'}:${partVis.spacer ? 'sp' : 'nosp'}:${parts.slice().sort().join(',')}`;
   if (comboCountCache.has(cacheKey)) return comboCountCache.get(cacheKey);
 
   // Domain of each part = its variant indices. A visible Hat pins Top to
@@ -4174,8 +4267,9 @@ function countValidBuilds() {
     set.add(`${i1},${i2}`);
   };
 
-  if (compatibilityMap) {
-    for (const [keyA, incompatible] of compatibilityMap) {
+  const compatMap = activeCompatMap();
+  if (compatMap) {
+    for (const [keyA, incompatible] of compatMap) {
       const [partA, fileA] = keyA.split('|');
       if (!domains[partA]) continue;
       const ia = idxOfFile[partA].get(fileA);
@@ -4360,31 +4454,57 @@ function partFileKey(part, idx = currentIdx[part] ?? 0) {
 }
 
 // Loads assets/compatibility.json (written by tools/compat-checker.html) into
-// a bidirectional adjacency map of `part|file` -> Set of incompatible
+// two bidirectional adjacency maps of `part|file` -> Set of incompatible
 // `part|file` keys, keeping only entries a human has actually confirmed
 // ("incompatible" — auto-flagged-but-undecided pairs are not enforced). Fails
 // open on any error: the file may not exist yet for a fresh checkout, and a
 // missing compatibility map should never block a combination.
+//
+// The checker screens spacer-sensitive pairs twice — a plain row and a
+// "<pair> + spacer" row (key suffixed `::spacer`, or `entry.spacer === true`)
+// — each with its own verdict. `noSpacer` takes only the plain verdicts;
+// `withSpacer` starts as a copy of them, then every "+ spacer" verdict
+// overrides its pair there: added if that config is incompatible, removed if
+// the Spacer makes the pair fit.
 async function loadCompatibilityMap() {
-  const map = new Map();
+  const noSpacer = new Map();
+  const withSpacer = new Map();
+  const addEdge = (map, a, b) => {
+    if (!map.has(a)) map.set(a, new Set());
+    if (!map.has(b)) map.set(b, new Set());
+    map.get(a).add(b);
+    map.get(b).add(a);
+  };
+  const removeEdge = (map, a, b) => {
+    map.get(a)?.delete(b);
+    map.get(b)?.delete(a);
+  };
+  const isSpacerRow = (key, entry) => entry.spacer === true || key.endsWith('::spacer');
   try {
     const res = await fetch('./assets/compatibility.json', { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
-      Object.values(json.pairs || {}).forEach((entry) => {
-        if (entry.status !== 'incompatible') return;
+      const entries = Object.entries(json.pairs || {});
+      for (const [key, entry] of entries) {
+        if (isSpacerRow(key, entry) || entry.status !== 'incompatible') continue;
         const a = `${entry.partA}|${entry.fileA}`;
         const b = `${entry.partB}|${entry.fileB}`;
-        if (!map.has(a)) map.set(a, new Set());
-        if (!map.has(b)) map.set(b, new Set());
-        map.get(a).add(b);
-        map.get(b).add(a);
-      });
+        addEdge(noSpacer, a, b);
+        addEdge(withSpacer, a, b);
+      }
+      for (const [key, entry] of entries) {
+        if (!isSpacerRow(key, entry)) continue;
+        const a = `${entry.partA}|${entry.fileA}`;
+        const b = `${entry.partB}|${entry.fileB}`;
+        if (entry.status === 'incompatible') addEdge(withSpacer, a, b);
+        else removeEdge(withSpacer, a, b);
+      }
     }
   } catch {
-    // No compatibility data available — leave the map empty.
+    // No compatibility data available — leave the maps empty.
   }
-  compatibilityMap = map;
+  compatibilityMap = noSpacer;
+  compatibilityMapSpacer = withSpacer;
   comboCountCache.clear();
   refreshConflictBadges();
   updateComboChip();
@@ -4420,9 +4540,10 @@ function findConflictFor(part) {
   // together — a part that's manually turned off isn't clashing with
   // anything regardless of what variant it's parked on, so this branch
   // requires `part` itself to be visible too, not just the other side.
-  if (compatibilityMap && partVis[part]) {
+  const compatMap = activeCompatMap();
+  if (compatMap && partVis[part]) {
     const key = partFileKey(part);
-    const incompatibleWith = key && compatibilityMap.get(key);
+    const incompatibleWith = key && compatMap.get(key);
     if (incompatibleWith) {
       for (const other of Object.keys(modelSets)) {
         if (other === part || !partVis[other]) continue;
@@ -4990,7 +5111,20 @@ function applyPreset(key, showToast = true) {
       partVis[part] = visible;
       const btn = document.getElementById(`${part}-visibility`);
       if (btn) btn.innerHTML = `<span class="material-icons">${visible ? 'visibility' : 'visibility_off'}</span>`;
-      if (loadedMods[part]) loadedMods[part].visible = visible;
+      if (loadedMods[part]) {
+        loadedMods[part].visible = visible;
+        // A part the previous preset preloaded-but-hidden (starter loads
+        // bumper/arms hidden and never scene.add()s them) is already loaded at
+        // the right variant, so it's not in `toLoad` — but it's absent from the
+        // scene graph, and flipping .visible alone won't show it. Attach it now,
+        // the same way enablePart does for a manual toggle. (refreshSpacerOffsets
+        // below re-settles position.y; set it here too to avoid a one-frame jump.)
+        if (visible && !loadedMods[part].parent) {
+          loadedMods[part].position.y = spacerYOffset(part);
+          scene.add(loadedMods[part]);
+          applyColor(part);
+        }
+      }
     }
 
     if (partVis.arms && partVis.bumper) {
@@ -5526,8 +5660,9 @@ function candidateClashes(part, idx, parts, chosenIdx) {
   // visible -- a hidden part's variant is never actually a live conflict,
   // no matter what it's parked on.
   if (!partVis[part]) return false;
+  const compatMap = activeCompatMap();
   const key = partFileKey(part, idx);
-  const incompatibleWith = key && compatibilityMap.get(key);
+  const incompatibleWith = key && compatMap && compatMap.get(key);
   if (!incompatibleWith) return false;
   return parts.some((other) => {
     if (other === part || !partVis[other] || chosenIdx[other] == null) return false;
