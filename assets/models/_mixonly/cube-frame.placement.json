@@ -1,0 +1,43 @@
+{
+  "tool": "model-placer",
+  "savedAt": "2026-09-02T11:19:00.378Z",
+  "source": "cube-frame.stl",
+  "category": "mixonly",
+  "file": "cube-frame.glb",
+  "sourceUnits": 1,
+  "modelYOffset": 30,
+  "editPivot": {
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "importRoot": {
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  }
+}

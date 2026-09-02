@@ -1,0 +1,43 @@
+{
+  "tool": "model-placer",
+  "savedAt": "2026-09-02T11:12:28.894Z",
+  "source": "HP_KnobEncoder_R1 copy.glb",
+  "category": "mixonly",
+  "file": "HP_KnobEncoder_R1_copy.glb",
+  "sourceUnits": 1,
+  "modelYOffset": 30,
+  "editPivot": {
+    "position": [
+      -1.6078836740322267,
+      0,
+      -10.953914116551728
+    ],
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "importRoot": {
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "tool": "model-placer",
+  "savedAt": "2026-09-02T11:11:10.766Z",
+  "source": "top_oled_v3 (2).stl",
+  "category": "mixonly",
+  "file": "top_oled_v3_2_.glb",
+  "sourceUnits": 1,
+  "modelYOffset": 30,
+  "editPivot": {
+    "position": [
+      0,
+      -32.034880099776366,
+      0
+    ],
+    "rotationDeg": [
+      -90,
+      0,
+      -180
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "importRoot": {
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  }
+}

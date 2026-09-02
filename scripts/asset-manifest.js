@@ -1,5 +1,14 @@
 // Local file paths mirror the app's part categories: assets/models/<part-folder>/<file>.
 // `folder` here uses the app's on-screen naming (e.g. "wheels" part -> "motion" folder).
+//
+// `mixonly` is NOT a part category — it's a bag of standalone models used only by
+// ready-made mixes (scripts/presets.js) that list them in an `extras: [...]`
+// array. They never appear as a category, variant, colour swatch, or in the
+// combo count; the app loads them into their own group when such a mix is
+// applied and shows them as authored. Use them for special mixes (consoles,
+// robot arms, …) whose geometry doesn't fit a normal part slot. Files live in
+// assets/models/_mixonly/. tools/model-placer.html authors both the models
+// (Category "mixonly") and the mixes that use them.
 export const ASSET_MANIFEST = {
     top: [
     { file: 'Top-HP-logo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-HP-logo.glb' },
@@ -20,7 +29,7 @@ export const ASSET_MANIFEST = {
     { file: 'Top_Race.glb', folder: 'top', source: '' },
     { file: 'Top_Motor.glb', folder: 'top', source: '' },
     { file: 'Top_MP3sensor.glb', folder: 'top', source: '' },
-    { file: 'Top_Beacon.glb', folder: 'top', source: '' }
+    { file: 'Top_Beacon.glb', folder: 'top', source: '' },
   ],
   hat: [
     { file: 'Hat_Leprechaun.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/07/hat_2.glb' },
@@ -113,5 +122,22 @@ export const ASSET_MANIFEST = {
     { file: 'Wheels-Walk-and-Roll.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-Walk-and-Roll.glb' },
     { file: 'Wheel_Race.glb', folder: 'motion', source: '' }
   ],
-  tail: []
+  tail: [],
+  // Standalone models for special mixes — see the header comment. Referenced by
+  // filename from a preset's `extras: [...]`. Populated by tools/model-placer.
+  mixonly: [
+    { file: 'bottom_extend_pcb_r1_1_.glb', folder: '_mixonly', source: '' },
+    { file: 'top_matrix_double-butttons_v2.glb', folder: '_mixonly', source: '' },
+    { file: 'HP_KnobEncoder_R1.glb', folder: '_mixonly', source: '' },
+    { file: 'bottom_jig1x1_2_.glb', folder: '_mixonly', source: '' },
+    { file: 'top_oled_v3_2_.glb', folder: '_mixonly', source: '' },
+    { file: 'HP_KnobEncoder_R1_copy.glb', folder: '_mixonly', source: '' },
+    { file: 'cube-frame.glb', folder: '_mixonly', source: '' },
+    { file: 'top_pcb_v1.glb', folder: '_mixonly', source: '' },
+    { file: 'Top_lightsdiffuser_cube.glb', folder: '_mixonly', source: '' },
+    { file: 'Top-sensor-single_cube_1.glb', folder: '_mixonly', source: '' },
+    { file: 'Top-sensor-single_cube_2.glb', folder: '_mixonly', source: '' },
+    { file: 'Top-sensor-single_cube_3.glb', folder: '_mixonly', source: '' },
+    { file: 'Top-sensor-single_cube_4.glb', folder: '_mixonly', source: '' }
+  ]
 };

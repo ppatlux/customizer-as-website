@@ -56,6 +56,10 @@ const SAMPLE_RESOLUTION = 18; // samples along the longest axis of the overlap r
 function flattenManifest() {
   const files = [];
   for (const [part, entries] of Object.entries(ASSET_MANIFEST)) {
+    // `mixonly` isn't a build slot (see asset-manifest.js) — its models are
+    // pinned by one ready-made mix and never swapped, so pairwise compat data
+    // for them is dead weight.
+    if (part === 'mixonly') continue;
     for (const entry of entries) {
       files.push({
         part,

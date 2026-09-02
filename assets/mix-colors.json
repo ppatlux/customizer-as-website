@@ -153,5 +153,53 @@
     "wheels": "#231F20",
     "hat": "#FFBD3B",
     "bumper": "#549EF7"
+  },
+  "console": {
+    "HP_KnobEncoder_R1.glb": "#FFBD3B",
+    "bottom_extend_pcb_r1_1_.glb": "#FFBD3B"
+  },
+  "console2": {
+    "top_oled_v3_2_.glb": {
+      "meshes": {
+        "0": "#549EF7"
+      }
+    }
+  },
+  "game": {
+    "top_pcb_v1.glb": {
+      "meshes": {
+        "0": "#549EF7"
+      }
+    },
+    "cube-frame.glb": {
+      "meshes": {
+        "0": "#549EF7"
+      }
+    },
+    "Top_lightsdiffuser_cube.glb": {
+      "meshes": {
+        "0": "#549EF7"
+      }
+    },
+    "Top-sensor-single_cube_1.glb": {
+      "meshes": {
+        "0": "#FFBD3B"
+      }
+    },
+    "Top-sensor-single_cube_2.glb": {
+      "meshes": {
+        "0": "#5E5CF0"
+      }
+    },
+    "Top-sensor-single_cube_4.glb": {
+      "meshes": {
+        "0": "#CE4A4A"
+      }
+    },
+    "Top-sensor-single_cube_3.glb": {
+      "meshes": {
+        "0": "#00D072"
+      }
+    }
   }
 }

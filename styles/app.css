@@ -465,6 +465,157 @@ html.vt-fallback.vt-leaving body{
   overflow:auto;
 }
 
+/* A pure-showcase mix (all parts hidden, geometry entirely in `extras`) has
+   nothing for the per-part panels / colour sidebar to act on — see
+   syncShowcaseMode() in app.js. Grey them out and take them out of the tab
+   order; the pieces are still paint/print/download-able on the model itself. */
+.showcase-locked{
+  opacity:.38;
+  pointer-events:none;
+}
+.showcase-locked *{ pointer-events:none !important; }
+.showcase-note{
+  margin:0 0 10px;
+  padding:8px 10px;
+  border-radius:8px;
+  background:rgba(125,125,135,.14);
+  font-size:12px;
+  line-height:1.4;
+  color:var(--text-dim, #9aa0a6);
+}
+
+/* Per-mix code (showcase mixes): a "Python" toggle that reveals the code with a
+   Copy button. On desktop it's a standalone floating icon button sitting just
+   OUTSIDE the dock, left of the Mixes tab, with a floating dropdown; on mobile
+   it's a pill + panel in the mixes sheet. App light tokens; highlight.js
+   (github light theme) colours the code. */
+.mix-code-panel{ margin:12px 0 4px; }
+
+/* --- desktop: standalone floating button (positioned in JS, see
+   positionMixCodeDock) sitting just left of the dock's Mixes tab --- */
+.mix-code-tab{
+  position:fixed;
+  z-index:var(--z-panels);
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:34px;
+  padding:0 12px;
+  border:1px solid var(--stroke);
+  border-radius:999px;
+  background:var(--glass-bg);
+  color:var(--text);
+  font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  white-space:nowrap;
+  box-shadow:var(--shadow-sm);
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition), border-color var(--transition);
+}
+.mix-code-tab:hover{ background:var(--glass-hover); }
+.mix-code-tab.is-open{ background:var(--track); color:var(--hpro-navy); border-color:var(--track); }
+.mix-code-tab .material-icons{ font-size:17px; color:var(--muted); }
+.mix-code-tab.is-open .material-icons{ color:var(--hpro-navy); }
+
+/* --- desktop: the floating dropdown --- */
+.mix-code-body--float{
+  position:fixed;
+  z-index:var(--z-panels);
+  width:min(440px, 42vw);
+  box-shadow:var(--shadow);
+}
+.mix-code-body--float .mix-code-pre{ max-height:min(56vh, 460px); }
+
+/* --- mobile: pill --- */
+.mix-code-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:8px 14px;
+  border:1px solid var(--stroke);
+  border-radius:999px;
+  background:var(--glass-bg);
+  color:var(--text);
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background var(--transition), border-color var(--transition);
+}
+.mix-code-toggle:hover{ background:var(--glass-hover); }
+.mix-code-toggle .mix-code-lead{ font-size:17px; color:var(--muted); }
+.mix-code-toggle .mix-code-caret{
+  font-size:18px;
+  color:var(--muted);
+  transition:transform var(--transition);
+}
+.mix-code-toggle.is-open .mix-code-caret{ transform:rotate(180deg); }
+
+.mix-code-body{
+  border:1px solid var(--stroke);
+  border-radius:var(--radius);
+  overflow:hidden;
+  background:#fff;
+}
+.mix-code-panel .mix-code-body{ margin-top:10px; }
+.mix-code-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:6px 8px 6px 12px;
+  border-bottom:1px solid var(--stroke);
+  background:var(--glass-hover);
+}
+.mix-code-file{
+  font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color:var(--muted);
+}
+.mix-code-copy{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:5px 10px;
+  border:1px solid var(--stroke);
+  border-radius:8px;
+  background:var(--glass-bg);
+  color:var(--text);
+  font-size:12px;
+  cursor:pointer;
+  transition:background var(--transition), border-color var(--transition), color var(--transition);
+}
+.mix-code-copy:hover{ background:var(--glass-hover); }
+.mix-code-copy .material-icons{ font-size:15px; }
+.mix-code-copy.is-copied{ color:#1a9f5a; border-color:#1a9f5a55; }
+.mix-code-pre{
+  margin:0;
+  max-height:min(50vh, 400px);
+  overflow:auto;
+  font:12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  tab-size:4;
+  scrollbar-width:thin;
+}
+.mix-code-pre > code{ display:block; padding:12px 14px; background:transparent; }
+/* highlightjs-line-numbers.js output */
+.mix-code-pre .hljs-ln{ border-collapse:collapse; }
+.mix-code-pre .hljs-ln td{ padding:0; }
+.mix-code-pre .hljs-ln-numbers{
+  user-select:none;
+  text-align:right;
+  padding-right:12px !important;
+  color:#b9c0cc;
+  border-right:1px solid var(--stroke);
+  width:1%;
+  white-space:nowrap;
+}
+.mix-code-pre .hljs-ln-code{ padding-left:14px !important; }
+.mix-code-hint{
+  margin:0;
+  padding:7px 12px 9px;
+  border-top:1px solid var(--stroke);
+  background:var(--glass-hover);
+  font-size:11px;
+  color:var(--muted);
+}
+
 /* Two-column grid, scrolling vertically -- matches how #panel-essential's own
    part list scrolls on the Parts tab (see .model-controls), fills the dock's
    available height the same way instead of sitting as a short single row

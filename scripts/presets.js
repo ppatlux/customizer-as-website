@@ -13,6 +13,19 @@
 // Presets pin part / variant / visibility only — never colour. Per-mix part
 // colours live separately in assets/mix-colors.json (authored by
 // tools/mix-colorizer.html) and are applied to the preview thumbnails only.
+//
+// A mix may also carry `extras: ['File.glb', …]` — filenames from the
+// `mixonly` list in asset-manifest.js. Those standalone models (consoles,
+// robot arms, …) are shown as authored only while this mix is active, on top
+// of whatever `parts` it makes visible. They're not a part: no variant, no
+// colour swatch, no combo-count contribution. A pure-showcase mix typically
+// sets every `visibility` false and lists its geometry entirely in `extras`.
+//
+// A showcase mix may also carry `codeId: '<name>'` — the customizer then shows
+// a "Code for this mix" panel (under the mix carousel) with
+// assets/mix-code/<name>.py displayed and a Copy button. Only for showcase
+// mixes (all parts hidden). Drop the .py in and set the field; a missing file
+// just hides the panel.
 export const PRESETS = {
   starter: {
     label: 'Basic',
@@ -110,6 +123,31 @@ export const PRESETS = {
       bottom: 'Bottom_Boat.glb', hat: 'Hat_Viking.glb',
     },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
+  },
+
+  console: {
+    label: 'Retro Console',
+    description: 'Beep Boop',
+    parts: {},
+    visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
+    extras: ['bottom_extend_pcb_r1_1_.glb', 'top_matrix_double-butttons_v2.glb', 'HP_KnobEncoder_R1.glb'],
+    codeId: 'console'
+  },
+
+  console2: {
+    label: 'Gaming console',
+    description: 'Pew pew!',
+    parts: {},
+    visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
+    extras: ['top_oled_v3_2_.glb', 'HP_KnobEncoder_R1_copy.glb', 'bottom_jig1x1_2_.glb']
+  },
+
+  game: {
+    label: 'Modular cube',
+    description: 'Simon says!',
+    parts: {},
+    visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
+    extras: ['Top_lightsdiffuser_cube.glb', 'Top-sensor-single_cube_1.glb', 'Top-sensor-single_cube_2.glb', 'Top-sensor-single_cube_3.glb', 'Top-sensor-single_cube_4.glb', 'top_pcb_v1.glb', 'cube-frame.glb']
   }
 };
 

@@ -1,0 +1,43 @@
+{
+  "tool": "model-placer",
+  "savedAt": "2026-09-02T11:03:37.862Z",
+  "source": "bottom_extend_pcb_r1 (1).stl",
+  "category": "mixonly",
+  "file": "bottom_extend_pcb_r1_1_.glb",
+  "sourceUnits": 1,
+  "modelYOffset": 30,
+  "editPivot": {
+    "position": [
+      0,
+      0,
+      -11.999999999999993
+    ],
+    "rotationDeg": [
+      -90,
+      0,
+      -180
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "importRoot": {
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  }
+}

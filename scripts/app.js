@@ -104,21 +104,37 @@ const AR_TINT_OFFSETS = {
   hat: -0.20, arms: 0.11, bumper: -0.11, spacer: 0.17, tail: -0.17
 };
 
+// `mixonly` is NOT a part — it's a bag of standalone models that only appear
+// while a ready-made mix listing them in `extras` is active (see presets.js).
+// Keep it out of every part-keyed map so it never shows as a category, variant,
+// swatch, combo-count factor, etc. Its models are looked up by filename below.
+const PART_MANIFEST = Object.fromEntries(
+  Object.entries(ASSET_MANIFEST).filter(([part]) => part !== 'mixonly')
+);
+
 const localModelSets = Object.fromEntries(
-  Object.entries(ASSET_MANIFEST).map(([part, files]) => [
+  Object.entries(PART_MANIFEST).map(([part, files]) => [
     part,
     files.map((entry) => `./assets/models/${entry.folder}/${entry.file}`)
   ])
 );
 
 const remoteModelSets = Object.fromEntries(
-  Object.entries(ASSET_MANIFEST).map(([part, files]) => [
+  Object.entries(PART_MANIFEST).map(([part, files]) => [
     part,
     files.map((entry) => entry.source)
   ])
 );
 
 const modelSets = localModelSets;
+
+// filename -> local URL for the `mixonly` models. A preset's `extras: [...]`
+// array names files from here; setMixExtras() loads them into mixExtrasGroup
+// when that mix is applied and drops them when another mix is picked. They are
+// shown as authored (own materials, no paint swatch, no visibility row).
+const mixExtraUrls = new Map(
+  (ASSET_MANIFEST.mixonly || []).map((entry) => [entry.file, `./assets/models/${entry.folder}/${entry.file}`])
+);
 
 const stepSets = Object.fromEntries(
   Object.entries(localModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.step'))])
@@ -329,6 +345,21 @@ const currentIdx = {};
 const loadedMods = {};
 const loadGeneration = {};
 const modelCols = {};
+
+// Holds the standalone `mixonly` models for whichever ready-made mix (if any)
+// is active — see setMixExtras() and presets.js `extras`. Lifted by
+// MODEL_Y_OFFSET like every part; children keep their authored transform.
+const mixExtrasGroup = new THREE.Group();
+mixExtrasGroup.position.y = MODEL_Y_OFFSET;
+scene.add(mixExtrasGroup);
+let activeMixExtras = []; // filenames currently in mixExtrasGroup
+let mixExtrasToken = 0;   // guards against out-of-order async loads
+
+// Per-mix code panel state (see renderMixCodePanel, far below). Declared here
+// because syncShowcaseMode() -> renderMixCodePanel() runs during bootstrap(),
+// well before those functions' own spot in the file is evaluated.
+let mixCodeEl = null;
+const mixCodeCache = new Map(); // codeId -> { code, ok }
 // Per-object paint overrides for parts built from multiple meshes (see the
 // "paint pieces" bucket tool). Shape: { [part]: { [variantIndex]: { [meshIndex]: hex } } }.
 // Keyed by variant index (not just part) because mesh layout/order differs
@@ -1818,6 +1849,11 @@ function showModelHoverPopup(part, clientX, clientY) {
   // or off the model entirely.
   if (hoverPopupPart === part) return;
   hoverPopupPart = part;
+  // A mix `extras` piece has no variants — hide the stepper + "all variants",
+  // keep only name / print / download.
+  const isExtra = mixExtraUrls.has(part);
+  popup.querySelectorAll('[data-role="prev"], [data-role="next"], [data-role="browse"], .model-hover-popup-divider')
+    .forEach((el) => el.classList.toggle('u-hidden', isExtra));
   popup.querySelectorAll('[data-role="prev"], [data-role="next"], [data-role="print"], [data-role="download-part"]').forEach((btn) => {
     btn.dataset.part = part;
   });
@@ -2241,6 +2277,16 @@ function setupBucketTool() {
 
     const anchorRect = { left: event.clientX, right: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 };
 
+    // A mix `extras` piece has no variant grid — a click just leaves its
+    // quick-control popup up (print / download). On touch, summon that popup.
+    if (mixExtraUrls.has(hit.part)) {
+      if (tapInput) {
+        if (openVariantGridPart) closeVariantGrid();
+        showModelHoverPopup(hit.part, event.clientX, event.clientY);
+      }
+      return;
+    }
+
     // Touch has no hover, so the quick prev/next stepper (the on-model popup)
     // would never have surfaced — a bare tap summons it instead of jumping
     // straight to the full grid. First tap on a piece shows the popup; a
@@ -2621,7 +2667,7 @@ function renderPresetThumbnail(key) {
       .map(([part, ref]) => ({ part, url: modelSets[part][resolvePresetIndex(part, ref)] }))
       .filter((entry) => entry.url);
 
-    return Promise.all(parts.map(({ part, url }) => loader.loadAsync(url).then((gltf) => {
+    const partLoads = parts.map(({ part, url }) => loader.loadAsync(url).then((gltf) => {
       const { color, meshes } = normalizeMixPartColor(mixColors[key]?.[part]);
       let meshIndex = 0;
       gltf.scene.traverse((node) => {
@@ -2636,7 +2682,30 @@ function renderPresetThumbnail(key) {
         });
       });
       return gltf.scene;
-    })));
+    }));
+
+    // Standalone `extras` models get the same mix-colour treatment as parts,
+    // keyed by filename in assets/mix-colors.json (see tools/mix-colorizer.js).
+    const extraLoads = (preset.extras || [])
+      .filter((f) => mixExtraUrls.has(f))
+      .map((f) => loader.loadAsync(mixExtraUrls.get(f)).then((gltf) => {
+        const { color, meshes } = normalizeMixPartColor(mixColors[key]?.[f]);
+        let meshIndex = 0;
+        gltf.scene.traverse((node) => {
+          if (!node.isMesh) return;
+          const hex = meshes[meshIndex] || color || DEFAULT_PART_COLOR;
+          meshIndex += 1;
+          const materials = Array.isArray(node.material) ? node.material : [node.material];
+          materials.forEach((material) => {
+            if (!material?.color) return;
+            material.color.set(hex);
+            material.needsUpdate = true;
+          });
+        });
+        return gltf.scene;
+      }));
+
+    return Promise.all([...partLoads, ...extraLoads]);
   }).then((models) => {
     const group = new THREE.Group();
     models.forEach((model) => group.add(model));
@@ -2696,6 +2765,23 @@ function applyMixColors(key) {
       syncPillColor(part);
       syncColorPickerUI(part);
       updateBucketResetVisibility(part);
+      painted += 1;
+    }
+
+    // Standalone `extras` — same treatment as a part, keyed by filename
+    // (they're registered in loadedMods/modelCols/modelMeshCols by setMixExtras).
+    for (const file of preset.extras || []) {
+      if (!authored[file] || !loadedMods[file]) continue;
+      const { color, meshes } = normalizeMixPartColor(authored[file]);
+      if (!modelCols[file]) modelCols[file] = new THREE.Color(DEFAULT_PART_COLOR);
+      modelCols[file].set(color || DEFAULT_PART_COLOR);
+      const meshEntries = Object.entries(meshes);
+      if (meshEntries.length || getMeshOverrides(file)) {
+        const overrides = getMeshOverrides(file, true);
+        Object.keys(overrides).forEach((meshIdx) => delete overrides[meshIdx]);
+        for (const [meshIdx, hex] of meshEntries) overrides[meshIdx] = hex;
+      }
+      applyColor(file);
       painted += 1;
     }
 
@@ -2932,6 +3018,8 @@ function setupVisibilityShortcut() {
 
 function enterVisibilityEditMode() {
   if (visibilityEditMode) return;
+  // A pure showcase mix has no parts to show/hide — the V tool is disabled.
+  if (isShowcaseMix()) return;
   // Mutually exclusive with the other click-driven viewport modes -- a
   // click while in this mode always means "toggle visibility", so paint
   // mode and any open variant grid need to get out of the way first.
@@ -3156,14 +3244,24 @@ function setupGlobalClickHandler() {
       // variants — this probes for one and falls back to STEP so nothing
       // breaks today, while automatically switching over the moment matching
       // .stl files exist at the same path as the .step/.glb ones.
-      let url = await firstExistingUrl(getAssetCandidates(part, currentIdx[part], 'stl'));
+      const pIdx = currentIdx[part] ?? 0;
+      const isExtra = mixExtraUrls.has(part);
+      let url = await firstExistingUrl(getAssetCandidates(part, pIdx, 'stl'));
       if (!url) {
-        const stepUrls = getAssetCandidates(part, currentIdx[part], 'step');
-        if (!stepUrls.length) {
-          toast(`No STL or STEP file available for ${part}.`, 'warn', 1800);
+        const stepUrls = getAssetCandidates(part, pIdx, 'step');
+        // A mix `extras` piece is repo-only — verify the STEP actually exists
+        // (model-placer writes a sibling .stl on save; older pieces may have
+        // neither, in which case there's no URL to give a slicer://).
+        url = isExtra ? await firstExistingUrl(stepUrls) : stepUrls[0];
+        if (!url) {
+          try {
+            downloadBlob(await exportPartAsStlBlob(part), `${getPartFileBase(part)}.stl`);
+            toast('No hosted print file yet — STL downloaded. Re-save this piece in Model Placer to send it straight to a slicer.', 'warn', 3200);
+          } catch {
+            toast(`No printable file for ${getPartDisplayName(part)}.`, 'warn', 1800);
+          }
           return;
         }
-        url = stepUrls[0];
       }
 
       // getPreferredSlicer() can only return 'prusa' once PRUSA_SLICER_LIVE is
@@ -3195,15 +3293,17 @@ function setupGlobalClickHandler() {
         // Prefer a hosted STL if one exists at the expected path; otherwise export
         // one on the fly from the model already loaded in the viewer — always
         // available, no dependency on what's been uploaded remotely.
-        const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part], 'stl'));
+        // Prefer a hosted .stl (model-placer writes one for mixonly pieces);
+        // otherwise export from the loaded mesh.
+        const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part] ?? 0, 'stl'));
         const blob = hostedUrl
           ? await (await fetch(hostedUrl)).blob()
           : await exportPartAsStlBlob(part);
-        downloadBlob(blob, `${part}.stl`);
-        toast(`${part} STL downloaded.`, 'ok', 1600);
+        downloadBlob(blob, `${getPartFileBase(part)}.stl`);
+        toast(`${getPartDisplayName(part)} STL downloaded.`, 'ok', 1600);
       } catch (error) {
         console.error(error);
-        toast(`Failed to download ${part}.`, 'err', 2200);
+        toast(`Failed to download ${getPartDisplayName(part)}.`, 'err', 2200);
       }
     }
 
@@ -3302,6 +3402,7 @@ function markCustomPreset() {
   activePresetKey = 'custom';
   setPresetLabel('Custom mix');
   syncPresetButtons('');
+  syncShowcaseMode(); // re-evaluate the part-UI lock for the new (custom) state
   saveStateToLocal();
 }
 
@@ -3338,6 +3439,13 @@ function uniqueUrls(urls) {
 }
 
 function getAssetCandidates(part, idx, format = 'glb') {
+  // A mix `extras` piece: its only home is assets/models/_mixonly/<file>.glb;
+  // a sibling .step / .stl may or may not have been uploaded next to it.
+  if (mixExtraUrls.has(part)) {
+    const ext = format === 'step' ? '.step' : format === 'stl' ? '.stl' : '.glb';
+    return uniqueUrls([mixExtraUrls.get(part).replace(/\.glb$/i, ext)]);
+  }
+
   const localSets = format === 'step' ? stepSets : format === 'stl' ? stlSets : localModelSets;
   const remoteSets = format === 'step' ? remoteStepSets : format === 'stl' ? remoteStlSets : remoteModelSets;
 
@@ -3400,6 +3508,7 @@ function saveStateToLocal() {
     partVis,
     modelCols: Object.fromEntries(Object.entries(modelCols).map(([part, color]) => [part, `#${color.getHexString()}`])),
     modelMeshCols,
+    mixExtras: activeMixExtras,
     presetKey: activePresetKey
   };
 
@@ -3435,9 +3544,14 @@ function applySavedState(saved) {
   // ever) the user navigates back to it.
   if (saved.modelMeshCols && typeof saved.modelMeshCols === 'object') {
     for (const part of Object.keys(saved.modelMeshCols)) {
-      if (modelSets[part]) modelMeshCols[part] = saved.modelMeshCols[part];
+      if (modelSets[part] || mixExtraUrls.has(part)) modelMeshCols[part] = saved.modelMeshCols[part];
     }
   }
+
+  // Standalone mix models. Absent key (older state) -> leave whatever's loaded.
+  // Runs after modelCols/modelMeshCols above, so setMixExtras' applyColor()
+  // repaints each piece with the restored paint.
+  if (Array.isArray(saved.mixExtras)) setMixExtras(saved.mixExtras);
 
   // Safety net for state saved/shared before this rule existed.
   enforceBottomMotionExclusion();
@@ -3456,6 +3570,7 @@ function tryRestoreFromLocal() {
     const saved = JSON.parse(raw);
     applySavedState(saved);
     activePresetKey = saved.presetKey || 'custom';
+    syncShowcaseMode();
     restoredFromLocal = true;
     return true;
   } catch {
@@ -3470,7 +3585,8 @@ function encodeShareState() {
     currentIdx,
     partVis,
     modelCols: Object.fromEntries(Object.entries(modelCols).map(([part, color]) => [part, `#${color.getHexString()}`])),
-    modelMeshCols
+    modelMeshCols,
+    mixExtras: activeMixExtras
   };
   const json = JSON.stringify(state);
   const bytes = new TextEncoder().encode(json);
@@ -3502,6 +3618,7 @@ function tryRestoreFromUrl() {
   try {
     applySavedState(decodeShareState(param));
     activePresetKey = 'custom';
+    syncShowcaseMode();
     restoredFromLocal = true;
 
     // Strip the config param once loaded so it doesn't keep overriding
@@ -3959,7 +4076,7 @@ async function exportVisiblePartsAsGlb() {
   const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
   const visibleParts = Object.keys(modelSets).filter((part) => partVis[part] && loadedMods[part]);
 
-  if (!visibleParts.length) throw new Error('No visible parts to export');
+  if (!visibleParts.length && !mixExtrasGroup.children.length) throw new Error('No visible parts to export');
 
   const exportRoot = new THREE.Group();
 
@@ -3990,6 +4107,15 @@ async function exportVisiblePartsAsGlb() {
       });
       node.material = wasArray ? tinted : tinted[0];
     });
+    exportRoot.add(clone);
+  });
+
+  // Standalone mix models (presets.js `extras`) — shown as authored, no tint.
+  // mixExtrasGroup carries the MODEL_Y_OFFSET lift the part clones bake into
+  // their own position, so fold it into each child clone.
+  mixExtrasGroup.children.forEach((child) => {
+    const clone = child.clone(true);
+    clone.position.y += mixExtrasGroup.position.y;
     exportRoot.add(clone);
   });
 
@@ -4033,7 +4159,8 @@ function closeArOverlay() {
 }
 
 function hasAnyVisiblePart() {
-  return Object.keys(modelSets).some((part) => partVis[part] && loadedMods[part]);
+  return mixExtrasGroup.children.length > 0
+    || Object.keys(modelSets).some((part) => partVis[part] && loadedMods[part]);
 }
 
 async function openArQrFlow() {
@@ -4178,7 +4305,296 @@ function toMaterialArray(material) {
 }
 
 function getPartDisplayName(part) {
-  return PART_META.find((meta) => meta.key === part)?.label || part;
+  const meta = PART_META.find((meta) => meta.key === part);
+  if (meta) return meta.label;
+  // A mix `extras` piece — key is its filename; show it human-ish.
+  return part.replace(/\.glb$/i, '').replace(/[_-]+/g, ' ').trim() || part;
+}
+
+// Base name for a downloaded/printed file. Parts use the part key; a mix
+// `extras` piece uses its filename minus the .glb.
+function getPartFileBase(part) {
+  return mixExtraUrls.has(part) ? part.replace(/\.glb$/i, '') : part;
+}
+
+// True when the current build is a pure showcase: standalone `extras` are
+// loaded and no part is visible. Its part panels / colour sidebar are then
+// locked — nothing there to act on; you paint/print the pieces on the model.
+// Live-state based (not just the preset def) so it survives the mix becoming a
+// "custom mix" the moment you paint one of its pieces.
+function isShowcaseMix() {
+  if (!mixExtrasGroup.children.length) return false;
+  return !Object.keys(modelSets).some((part) => partVis[part] && loadedMods[part]);
+}
+
+function syncShowcaseMode() {
+  const on = isShowcaseMix();
+  const page = document.getElementById('parts-page');
+  document.getElementById('panel-essential')?.classList.toggle('showcase-locked', on);
+  document.getElementById('color-sidebar')?.classList.toggle('showcase-locked', on);
+  document.getElementById('color-sidebar-toggle')?.classList.toggle('showcase-locked', on);
+  // The "show/hide individual parts" (V) tool is meaningless with no parts.
+  visibilityModeBtn?.classList.toggle('showcase-locked', on);
+  if (on && visibilityEditMode) exitVisibilityEditMode();
+  if (page) {
+    let note = document.getElementById('showcase-note');
+    if (on && !note) {
+      note = document.createElement('p');
+      note.id = 'showcase-note';
+      note.className = 'showcase-note';
+      note.textContent = 'Fixed mix — click a piece on the model to paint, print or download it.';
+      page.prepend(note);
+    }
+    if (note) note.hidden = !on;
+  }
+  renderMixCodePanel(on);
+}
+
+// ---------------------------------------------------------------------------
+// Per-mix code panel (showcase mixes only)
+//
+// A special mix can ship code for the HP Otto app. A "Python" disclosure
+// button under the mix carousel reveals assets/mix-code/<codeId>.py with a
+// Copy button; the preset opts in with `codeId: '<name>'` (see presets.js).
+// State (mixCodeEl / mixCodeCache) is declared up near the mixExtras state —
+// this runs during bootstrap().
+// ---------------------------------------------------------------------------
+// Desktop: the "Python" button sits in the right-dock tab row (left of
+// Mixes/Parts) and the code drops open just below the tab row, over whichever
+// page is showing. Mobile has no dock, so it falls back to a panel in the
+// mixes sheet.
+function mixCodeOnDock() {
+  return !mobileLayoutActive && !!document.querySelector('.right-dock-tabs');
+}
+
+// highlight.js (+ line-numbers plugin) — lazily injected the first time the
+// user opens a code block, so it never touches first paint. Highlighting is
+// best-effort: on any load failure the code just shows as plain monospace text.
+let hljsReady = null;
+function ensureHljs() {
+  if (hljsReady) return hljsReady;
+  const CDN = 'https://cdnjs.cloudflare.com/ajax/libs';
+  const add = (el, attrs) => { Object.assign(el, attrs); el.crossOrigin = 'anonymous'; document.head.appendChild(el); return el; };
+  add(document.createElement('link'), {
+    rel: 'stylesheet',
+    href: `${CDN}/highlight.js/11.11.1/styles/github.min.css`,
+    integrity: 'sha384-eFTL69TLRZTkNfYZOLM+G04821K1qZao/4QLJbet1pP4tcF+fdXq/9CdqAbWRl/L',
+  });
+  hljsReady = new Promise((resolve) => {
+    const core = document.createElement('script');
+    add(core, {
+      src: `${CDN}/highlight.js/11.11.1/highlight.min.js`,
+      integrity: 'sha384-RH2xi4eIQ/gjtbs9fUXM68sLSi99C7ZWBRX1vDrVv6GQXRibxXLbwO2NGZB74MbU',
+      onerror: () => resolve(null),
+      onload: () => {
+        const ln = document.createElement('script');
+        add(ln, {
+          src: `${CDN}/highlightjs-line-numbers.js/2.8.0/highlightjs-line-numbers.min.js`,
+          integrity: 'sha384-+ch8x/dgaV//v6Sa8m4v5+7KScnpCuxHqilN8njQ013CEKg3Fbd8Q3oN9tfpouLh',
+          onload: () => resolve(window.hljs || null),
+          onerror: () => resolve(window.hljs || null), // line numbers optional
+        });
+      },
+    });
+  });
+  return hljsReady;
+}
+
+function destroyMixCodePanel() {
+  if (!mixCodeEl) return;
+  mixCodeEl.wrap?.remove();
+  mixCodeEl.toggle?.remove();
+  mixCodeEl.body?.remove();
+  mixCodeEl = null;
+}
+
+function buildMixCodePanel() {
+  const onDock = mixCodeOnDock();
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.id = 'mix-code-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  // starts hidden via the .u-hidden / .mix-code-panel.u-hidden class set below
+
+  const body = document.createElement('div');
+  body.id = 'mix-code-body';
+  body.className = 'mix-code-body';
+  body.hidden = true;
+  body.innerHTML = `
+    <div class="mix-code-bar">
+      <span class="mix-code-file" data-role="mix-code-file">code.py</span>
+      <button type="button" class="mix-code-copy" data-role="mix-code-copy"><span class="material-icons">content_copy</span>Copy</button>
+    </div>
+    <pre class="mix-code-pre"><code class="language-python"></code></pre>
+    <p class="mix-code-hint">Paste this into the HP Otto app.</p>
+  `;
+
+  let wrap = null;
+  if (onDock) {
+    // A standalone floating icon button, sitting just OUTSIDE the dock to the
+    // left of the Mixes tab. positionMixCodeDock() places both it and the
+    // dropdown relative to the live tab rect (see the resize listener).
+    toggle.className = 'mix-code-tab u-hidden';
+    toggle.title = 'Python code for this mix';
+    toggle.setAttribute('aria-label', 'Python code for this mix');
+    toggle.innerHTML = `<span class="material-icons" aria-hidden="true">code</span><span>Python code</span>`;
+    body.classList.add('mix-code-body--float');
+    document.body.append(toggle, body);
+  } else {
+    const host = document.getElementById('mobile-sheet-mixes') || document.getElementById('preset-panel');
+    if (!host) return null;
+    toggle.className = 'mix-code-toggle';
+    toggle.innerHTML = `<span class="material-icons mix-code-lead" aria-hidden="true">code</span>Python<span class="material-icons mix-code-caret" aria-hidden="true">expand_more</span>`;
+    wrap = document.createElement('div');
+    wrap.id = 'mix-code-panel';
+    wrap.className = 'mix-code-panel u-hidden';
+    wrap.append(toggle, body);
+    host.appendChild(wrap);
+  }
+
+  mixCodeEl = {
+    onDock, wrap, toggle, body,
+    pre: body.querySelector('.mix-code-pre'),
+    file: body.querySelector('[data-role="mix-code-file"]'),
+    copyBtn: body.querySelector('[data-role="mix-code-copy"]'),
+    expanded: false,
+    rendered: false,
+  };
+  toggle.addEventListener('click', toggleMixCode);
+  mixCodeEl.copyBtn.addEventListener('click', copyMixCode);
+  return mixCodeEl;
+}
+
+function setMixCodeVisible(show) {
+  const el = mixCodeEl;
+  if (!el) return;
+  // .u-hidden ({display:none!important}) — the dock chip needs it because a
+  // bare [hidden] loses to any element that sets its own `display`.
+  el.toggle.classList.toggle('u-hidden', !show);
+  el.wrap?.classList.toggle('u-hidden', !show);
+  if (!show) setMixCodeExpanded(false);
+  else if (el.onDock) positionMixCodeDock();
+}
+
+function setMixCodeExpanded(open) {
+  const el = mixCodeEl;
+  if (!el) return;
+  el.expanded = open;
+  el.toggle.classList.toggle('is-open', open);
+  el.body.classList.toggle('is-open', open);
+  el.wrap?.classList.toggle('is-open', open);
+  el.body.hidden = !open;
+  el.toggle.setAttribute('aria-expanded', String(open));
+  if (open && el.onDock) positionMixCodeDock();
+}
+
+// Places the floating chip just left of the Mixes tab, and the dropdown just
+// below it — both anchored to the live tab rect so they track the dock.
+function positionMixCodeDock() {
+  const el = mixCodeEl;
+  if (!el?.onDock || el.toggle.classList.contains('u-hidden')) return;
+  const anchor = document.getElementById('dock-tab-mixes');
+  const dock = document.getElementById('right-dock');
+  if (!anchor || !dock) return;
+  const a = anchor.getBoundingClientRect();
+  const d = dock.getBoundingClientRect();
+  const gap = 8;
+  const w = el.toggle.offsetWidth || 120;
+  const h = el.toggle.offsetHeight || 34;
+  // Just OUTSIDE the dock box on the left; vertically centred on the Mixes tab
+  // so it lines up with the tab-row divider.
+  el.toggle.style.left = `${Math.max(8, d.left - w - gap)}px`;
+  el.toggle.style.top = `${Math.round(a.top + (a.height - h) / 2)}px`;
+  // Dropdown: right edge just clear of the dock, growing leftward.
+  el.body.style.top = `${a.bottom + gap}px`;
+  el.body.style.right = `${Math.max(8, window.innerWidth - d.left + gap)}px`;
+}
+window.addEventListener('resize', positionMixCodeDock);
+
+function toggleMixCode() {
+  const el = mixCodeEl;
+  if (!el) return;
+  const open = !el.expanded;
+  setMixCodeExpanded(open);
+  if (open && !el.rendered && el.raw != null) {
+    el.rendered = true;
+    // Fresh <code> so the line-numbers plugin's table can't stack up.
+    el.pre.innerHTML = '<code class="language-python"></code>';
+    const code = el.pre.firstChild;
+    code.textContent = el.raw;
+    ensureHljs().then((hljs) => {
+      if (!hljs || !code.isConnected) return;
+      try {
+        hljs.highlightElement(code);
+        hljs.lineNumbersBlock?.(code);
+      } catch { /* leave plain text */ }
+    });
+  }
+}
+
+async function loadMixCode(codeId) {
+  if (mixCodeCache.has(codeId)) return mixCodeCache.get(codeId);
+  let entry = { code: null, ok: false };
+  try {
+    const res = await fetch(`./assets/mix-code/${codeId}.py`, { cache: 'no-store' });
+    if (res.ok) entry = { code: await res.text(), ok: true };
+  } catch { /* no code file for this mix */ }
+  mixCodeCache.set(codeId, entry);
+  return entry;
+}
+
+function copyMixCode() {
+  const text = mixCodeEl?.raw || '';
+  if (!text) return;
+  const ok = () => {
+    toast('Code copied', 'ok', 1400);
+    const btn = mixCodeEl.copyBtn;
+    btn.classList.add('is-copied');
+    setTimeout(() => btn.classList.remove('is-copied'), 1400);
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(ok).catch(fallbackCopy);
+  } else {
+    fallbackCopy();
+  }
+  function fallbackCopy() {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); ok(); } catch {}
+    ta.remove();
+  }
+}
+
+let mixCodeRenderToken = 0;
+function renderMixCodePanel(on) {
+  const codeId = on ? presets[activePresetKey]?.codeId : null;
+  if (!codeId) {
+    setMixCodeVisible(false);
+    return;
+  }
+  // Rebuild if a desktop<->mobile layout swap changed where it belongs.
+  if (mixCodeEl && mixCodeEl.onDock !== mixCodeOnDock()) destroyMixCodePanel();
+  const el = mixCodeEl || buildMixCodePanel();
+  if (!el) return;
+
+  const token = ++mixCodeRenderToken;
+  loadMixCode(codeId).then((entry) => {
+    if (token !== mixCodeRenderToken) return;           // a newer mix took over
+    if (!isShowcaseMix() || presets[activePresetKey]?.codeId !== codeId) return;
+    if (!entry.ok) { setMixCodeVisible(false); return; }
+    // Only the "Python" button shows until clicked — the code + highlighter
+    // load on first open (see toggleMixCode).
+    el.raw = entry.code;
+    el.rendered = false;
+    el.file.textContent = `${codeId}.py`;
+    setMixCodeExpanded(false);
+    setMixCodeVisible(true);
+  });
 }
 
 function updateVariantCounter(part) {
@@ -4397,7 +4813,9 @@ function countValidBuilds() {
 function updateComboChip() {
   const chip = document.getElementById('comboChip');
   if (!chip) return;
-  const combos = countValidBuilds();
+  // A mix built purely from standalone `extras` (all parts hidden) has no
+  // variant space to count — it's one fixed showcase, not "0 combos".
+  const combos = countValidBuilds() || (mixExtrasGroup.children.length ? 1 : 0);
   chip.textContent = `Combos: ${combos.toLocaleString()}`;
   chip.title = 'Distinct buildable robots from the visible parts, after removing '
     + 'variant pairs flagged incompatible in the compatibility check.';
@@ -5089,6 +5507,72 @@ function loadModel(part, animatePop = false) {
   tryLoad(0);
 }
 
+// Loads exactly the `mixonly` models named in `files` into mixExtrasGroup,
+// dropping any that are no longer wanted. Called by applyPreset with the mix's
+// `extras` (or [] for a normal mix / reset). Async; a token guards against a
+// slow load from a superseded mix landing after a newer one.
+async function setMixExtras(files) {
+  const want = Array.isArray(files) ? files.filter((f) => mixExtraUrls.has(f)) : [];
+  activeMixExtras = want.slice();
+  const myToken = ++mixExtrasToken;
+
+  for (const child of [...mixExtrasGroup.children]) {
+    if (!want.includes(child.userData.mixExtraFile)) {
+      mixExtrasGroup.remove(child);
+      delete loadedMods[child.userData.mixExtraFile];
+      child.traverse((n) => { if (n.isMesh) n.geometry?.dispose?.(); });
+      // modelCols / modelMeshCols for the file are kept, so re-selecting the
+      // mix restores whatever the user painted onto it.
+    }
+  }
+
+  const toFetch = want.filter((f) => !mixExtrasGroup.children.some((c) => c.userData.mixExtraFile === f));
+
+  // On a showcase mix (all parts hidden) NO part load holds the splash — so
+  // without this the loader would sit until the 12s safety timeout. Hold it
+  // here for the extras' loads instead, exactly like loadModel does for a part.
+  const holdsSplash = !firstBuildDone && toFetch.length > 0;
+  if (holdsSplash) pendingInitialLoads += 1;
+
+  // Fetch in parallel, not one-await-at-a-time.
+  await Promise.all(toFetch.map(async (file) => {
+    try {
+      const gltf = await loader.loadAsync(mixExtraUrls.get(file));
+      if (mixExtrasToken !== myToken) return; // a newer mix took over mid-load
+      const obj = gltf.scene;
+      obj.userData.mixExtraFile = file;
+      // Tag meshes so the paint bucket / per-piece overrides can target them,
+      // exactly like loadModel does for a part.
+      let meshIndex = 0;
+      obj.traverse((n) => {
+        if (!n.isMesh) return;
+        n.castShadow = true;
+        n.userData.meshIndex = meshIndex++;
+        n.geometry.computeBoundingSphere();
+        n.geometry.computeBoundingBox();
+      });
+      // Register the piece as a first-class, paintable/printable target keyed
+      // by its filename — the same key tools/mix-colorizer.js and
+      // assets/mix-colors.json use. It is NOT in modelSets/PART_META, so it
+      // never becomes a category, variant, panel row, or combo-count factor.
+      loadedMods[file] = obj;
+      partVis[file] = true;
+      if (!modelCols[file]) modelCols[file] = new THREE.Color(DEFAULT_PART_COLOR);
+      mixExtrasGroup.add(obj);
+      applyColor(file); // grey canvas, or restores retained per-piece paint
+    } catch (err) {
+      console.error(`Mix extra "${file}" failed to load`, err);
+    }
+  }));
+
+  if (holdsSplash) {
+    pendingInitialLoads = Math.max(0, pendingInitialLoads - 1);
+    if (pendingInitialLoads === 0) hideAppLoader();
+  }
+  updateComboChip();
+  syncShowcaseMode();
+}
+
 function applyPreset(key, showToast = true) {
   const preset = presets[key];
   if (!preset) return;
@@ -5135,6 +5619,9 @@ function applyPreset(key, showToast = true) {
     }
 
     toLoad.forEach((part) => loadModel(part, true));
+    // Standalone mix models (consoles, robot arms…) for this mix — or clear the
+    // previous mix's set when this one has none.
+    setMixExtras(preset.extras || []);
     // Parts NOT in toLoad (same variant, already loaded) won't run loadModel's
     // position pass, so fix their offset here to match this preset's Spacer
     // state — otherwise a mix without a Spacer inherits the previous mix's
@@ -5148,6 +5635,7 @@ function applyPreset(key, showToast = true) {
     activePresetKey = key;
     setPresetLabel(preset.label);
     syncPresetButtons(key);
+    syncShowcaseMode();
     if (showToast) toast(`${preset.label} preset loaded`, 'ok', 1200);
     saveStateToLocal();
     // Last interaction was picking a mix — keep the sheet on the Mixes page and
