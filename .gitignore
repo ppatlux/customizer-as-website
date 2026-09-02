@@ -12,3 +12,10 @@ tools/compat-checker.js
 tools/mix-colorizer.html
 tools/mix-colorizer.css
 tools/mix-colorizer.js
+# Internal-only model positioning / GLB export tool. Its OUTPUT (the .glb files
+# it writes into assets/models/**, plus their .placement.json sidecars) stays
+# tracked — the deployed app needs the .glb; asset-manifest.js it patches is
+# tracked too.
+tools/model-placer.html
+tools/model-placer.css
+tools/model-placer.js

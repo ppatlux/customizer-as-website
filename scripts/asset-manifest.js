@@ -39,7 +39,8 @@ export const ASSET_MANIFEST = {
     { file: 'Hat_dome.glb', folder: 'hat', source: '' },
     { file: 'Hat_Magic.glb', folder: 'hat', source: '' },
     { file: 'Hat_Bricks.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Santa.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Hat_Santa.glb' }
+    { file: 'Hat_Santa.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Hat_Santa.glb' },
+    { file: 'casque.glb', folder: 'hat', source: '' }
   ],
    middle: [
     { file: 'Middle-starter.glb', folder: 'middle', source: 'https://hprobots.com/wp-content/uploads/2025/08/Middle-starter.glb' },
@@ -54,6 +55,7 @@ export const ASSET_MANIFEST = {
     { file: 'Middle_Space.glb', folder: 'middle', source: '' } 
   ],
   face: [
+    { file: 'FaceMatrix8x8_v02.glb', folder: 'face', source: '' },
     { file: 'Face-ultrasonic.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/08/Face-ultrasonic.glb' },
     { file: 'Face-RGB-ring.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/08/Face-RGB-ring.glb' },
     { file: 'Face-matrix.glb', folder: 'face', source: 'https://hprobots.com/wp-content/uploads/2025/08/Face-matrix.glb' },
