@@ -1,0 +1,113 @@
+<!-- Lesson content for the "Modular cube" mix, lesson 1 of 2.
+     Injected as innerHTML into the right pane of lesson mode. Plain HTML
+     fragment. Paired code: assets/mix-code/ringchase.py (the "Copy code"
+     button in the header pulls it). Everything below matches that file. -->
+
+<span class="eyebrow">Make &amp; Code &middot; Modular Cube</span>
+<h1>Ring Chase</h1>
+<p>The cube's top is a <strong>ring of 12 LEDs</strong> with a <strong>single button</strong>.
+A blue light chases around the ring; one fixed LED glows red as the target. Press
+the button at the exact moment the blue light lands on the red one &mdash; hit it and
+you level up and the chase gets faster. It never ends: 16 levels, then it wraps
+and resets.</p>
+
+<div class="chip-row">
+  <span class="chip">⏱ 25&ndash;40 min</span>
+  <span class="chip">🐍 MicroPython</span>
+  <span class="chip">🎯 Timing game</span>
+  <span class="chip">1 button</span>
+</div>
+<p><em>Hit <strong>Copy code</strong> in the header to drop <code class="inline">ringchase.py</code>
+into the editor, then run it.</em></p>
+
+<h2>1 · The parts it uses</h2>
+<table class="pins">
+  <thead><tr><th>Part</th><th>Type</th><th>Job</th><th>Pin</th></tr></thead>
+  <tbody>
+    <tr><td>LED ring (12 px)</td><td>output</td><td>The chaser + the target</td><td>GP4</td></tr>
+    <tr><td>Button</td><td>input</td><td>"Catch it now"</td><td>GP26</td></tr>
+  </tbody>
+</table>
+<pre><span class="cmt"># ringchase.py, top of file</span>
+button_pin = 26
+pixel_pin  = 4
+no_pixels  = 12
+pixels = NeoPixel(Pin(pixel_pin), no_pixels)
+button = Pin(button_pin, Pin.IN, Pin.PULL_UP)   <span class="cmt"># pressed = value() 0</span></pre>
+<div class="callout">Just one button and one ring &mdash; no buzzer (the file imports
+<code class="inline">PWM</code> but never uses it). The whole game is about
+<em>when</em> you press, not <em>which</em> button.</div>
+
+<h2>2 · Two positions on the ring</h2>
+<p>Everything is two numbers, both 0&ndash;11:</p>
+<ul>
+  <li><code class="inline">counter</code> &mdash; where the <strong>blue chaser</strong> is right now.</li>
+  <li><code class="inline">randomNumber</code> &mdash; where the <strong>red target</strong> sits (picked once at
+  start, then again after every press).</li>
+</ul>
+<p>A catch is simply <code class="inline">counter == randomNumber</code> at the instant you press.</p>
+
+<h2>3 · The chase loop</h2>
+<p><code class="inline">gameLoop()</code> walks <code class="inline">counter</code> around the
+ring. At each LED it lights blue, waits <code class="inline">speed</code>
+milliseconds, checks the button, clears blue, and re-draws the red target so it
+stays visible as the chaser passes over it:</p>
+<pre>for count in range(no_pixels):
+    pixels[counter] = (0, 0, 100)      <span class="cmt"># blue chaser on</span>
+    pixels.write()
+    time.sleep_ms(speed)               <span class="cmt"># the whole difficulty knob</span>
+    checkStatus()                      <span class="cmt"># look at the button</span>
+    pixels[counter] = (0, 0, 0)        <span class="cmt"># blue chaser off</span>
+    counter += 1
+    pixels[randomNumber] = (255, 0, 0) <span class="cmt"># keep the red target lit</span>
+    pixels.write()</pre>
+<p>There's no separate "input thread" &mdash; the button is polled once per LED step,
+right in the middle of the animation. That's the core pattern for a small
+microcontroller: <strong>one loop does the drawing and the input.</strong></p>
+
+<h2>4 · Catch, miss, level up</h2>
+<p><code class="inline">checkStatus()</code> is where a press is judged:</p>
+<pre>def checkStatus():
+    if button.value() == 0:
+        while button.value() == 0:      <span class="cmt"># wait until it's released</span>
+            time.sleep_us(100)
+        if counter == randomNumber:     <span class="cmt"># chaser is on the target</span>
+            turnOnAll(30, 150, 30)      <span class="cmt"># whole ring flashes green</span>
+            speed -= 10                 <span class="cmt"># faster next level</span>
+            level += 1
+            showLevel()
+        else:
+            turnOnAll(50, 0, 0)         <span class="cmt"># whole ring blinks red</span>
+        turnOff()
+        randomNumber = random_int(0, no_pixels - 1)   <span class="cmt"># new target</span></pre>
+<div class="callout callout--do">Notice a miss just flashes red and moves on &mdash;
+<strong>there's no "game over"</strong>. Ring Chase is a score chase, not a lives
+game. Adding a real fail state is challenge 3 below.</div>
+
+<h2>5 · Levels and the wrap</h2>
+<p><code class="inline">showLevel()</code> draws the current level as a little green
+progress bar (one lit LED per level), blinks, then clears. It also holds the
+difficulty ceiling:</p>
+<pre>if level > 16:
+    level = 1
+    speed = 180        <span class="cmt"># wrap back to the start, easy again</span></pre>
+<p>So <code class="inline">speed</code> ramps 180&nbsp;ms &rarr; 20&nbsp;ms over 16 levels
+(<code class="inline">speed -= 10</code> each time), then resets. That's the entire
+progression curve, in two lines.</p>
+
+<h2>Try it</h2>
+<ul>
+  <li><span class="step-tag">EASY</span>Start easier or harder: change <code class="inline">speed = 180</code> and the <code class="inline">speed -= 10</code> step.</li>
+  <li><span class="step-tag">EASY</span>Recolour the chaser and target (the <code class="inline">(0,0,100)</code> and <code class="inline">(255,0,0)</code> tuples).</li>
+  <li><span class="step-tag">MED</span>Add a real game over: keep a <code class="inline">lives</code> count, subtract one on a miss, stop the <code class="inline">while True</code> loop at zero.</li>
+  <li><span class="step-tag">MED</span>Make the chaser reverse direction each level (<code class="inline">counter -= 1</code>, wrap with <code class="inline">% no_pixels</code>).</li>
+  <li><span class="step-tag">HARD</span>Add the buzzer that's already imported: a rising blip on a catch, a low buzz on a miss.</li>
+  <li><span class="step-tag">HARD</span>Two targets lit at once for a "double" round every 4 levels.</li>
+</ul>
+<div class="callout callout--do">Then build the shell on the left: paint the frame
+and the diffuser top, use <strong>Pieces</strong> in the 3D bar to peek at the PCB
+inside, and <strong>Print</strong> / <strong>Download</strong> each piece for your slicer.</div>
+
+<p style="margin-top:24px;color:var(--muted);font-size:12px;">
+Paired code: <code class="inline">assets/mix-code/ringchase.py</code>. Next lesson in this
+mix: <strong>Simon Says</strong> &mdash; four buttons, a memory game instead of a timing one.</p>
