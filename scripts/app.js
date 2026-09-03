@@ -360,6 +360,31 @@ let mixExtrasToken = 0;   // guards against out-of-order async loads
 // well before those functions' own spot in the file is evaluated.
 let mixCodeEl = null;
 const mixCodeCache = new Map(); // codeId -> { code, ok }
+
+// Lesson mode state (see the "Lesson mode" section far below). Same reasoning
+// as mixCodeEl: syncShowcaseMode() -> renderLessonButton() runs during
+// bootstrap(), before that section is evaluated -- so anything mixLessons() /
+// renderLessonButton() touch (incl. these) MUST be initialised up here, not at
+// the section's own spot, or bootstrap hits their temporal dead zone and the
+// whole app fails to load. lessonEl holds the built DOM; lessonActive tracks
+// whether the 3-pane layout is currently on.
+let lessonEl = null;
+let lessonActive = false;
+const lessonHtmlCache = new Map(); // lessonId -> html string (or null on miss)
+// Which lesson of the active mix's list is selected (chip + in-lesson nav).
+// Reset to 0 by applyPreset on any mix change.
+let selectedLessonIdx = 0;
+// The preset the current lesson came from, kept so the lesson chip and its
+// content survive markCustomPreset() flipping activePresetKey to 'custom'
+// (e.g. the moment you paint a part mid-lesson).
+let lessonSourceKey = null;
+// Which app.hprobots.com editor loads in the lesson's left pane, per the
+// lesson's `editor` field (see presets.js). 'python' is the text editor,
+// 'word' the block editor.
+const EDITOR_SRC = {
+  python: 'https://app.hprobots.com/projects/create?type=python',
+  word: 'https://app.hprobots.com/projects/create?type=word',
+};
 // Per-object paint overrides for parts built from multiple meshes (see the
 // "paint pieces" bucket tool). Shape: { [part]: { [variantIndex]: { [meshIndex]: hex } } }.
 // Keyed by variant index (not just part) because mesh layout/order differs
@@ -740,8 +765,9 @@ function bootstrap() {
   if (isTouchLikeDevice()) setupMobileSheet();
   populatePresetMenu();
 
-  const restoredFromShareLink = tryRestoreFromUrl();
-  if (!restoredFromShareLink) tryRestoreFromLocal();
+  const forcedMix = getForcedMixFromUrl();
+  const restoredFromShareLink = !forcedMix && tryRestoreFromUrl();
+  if (!forcedMix && !restoredFromShareLink) tryRestoreFromLocal();
 
   if (restoredFromLocal) {
     // applySavedState() (called by the two restore attempts above) only sets
@@ -757,6 +783,9 @@ function bootstrap() {
     updateComboChip();
     saveStateToLocal();
     if (restoredFromShareLink) toast('Loaded shared build', 'ok', 1800);
+  } else if (forcedMix) {
+    // ?mix= deep-link (lesson pages) — jump straight to the pinned mix.
+    applyPreset(forcedMix, false);
   } else {
     // No saved/shared state: applyPreset() already loads every part it
     // touches, so this is the only load pass a fresh visit needs. (A prior
@@ -2022,9 +2051,17 @@ function setupBucketTool() {
     // Visibility-edit mode (see setupVisibilityShortcut) needs hidden parts'
     // ghost previews to be clickable too, not just the currently-shown ones.
     if (visibilityEditMode) {
-      return Object.keys(loadedMods)
-        .filter((part) => loadedMods[part])
-        .map((part) => ({ part, model: loadedMods[part] }));
+      // A showcase mix only ever toggles its OWN standalone pieces. Everything
+      // else in loadedMods (every standard part is preloaded at boot) must be
+      // untouchable here, or a stray hit/hitbox-ray lands on a hidden hat or
+      // bumper and drags a regular part into the mix. A normal build targets
+      // the standard categories only (never a stray mix extra).
+      const keys = isShowcaseMix()
+        ? activeMixExtras
+        : Object.keys(loadedMods).filter((part) => modelSets[part]);
+      return keys
+        .filter((k) => loadedMods[k])
+        .map((k) => ({ part: k, model: loadedMods[k] }));
     }
     if (bucketModePart === GLOBAL_PAINT_KEY || !bucketModePart) {
       return Object.keys(loadedMods)
@@ -2240,9 +2277,14 @@ function setupBucketTool() {
 
     // Visibility-edit mode takes over the click entirely -- toggle whatever
     // was hit (shown -> ghost, ghost -> shown) and skip painting/variant
-    // browsing until the user presses V (or Escape) to leave the mode.
+    // browsing until the user presses V (or Escape) to leave the mode. On a
+    // showcase mix the hit resolves to a mix piece (filename key) instead of a
+    // part category, so route it to the piece-only handler.
     if (visibilityEditMode) {
-      if (hit) toggleVisibilityEditPart(hit.part);
+      if (hit) {
+        if (mixExtraUrls.has(hit.part)) toggleMixExtraVisibility(hit.part);
+        else toggleVisibilityEditPart(hit.part);
+      }
       return;
     }
 
@@ -3018,8 +3060,9 @@ function setupVisibilityShortcut() {
 
 function enterVisibilityEditMode() {
   if (visibilityEditMode) return;
-  // A pure showcase mix has no parts to show/hide — the V tool is disabled.
-  if (isShowcaseMix()) return;
+  const showcase = isShowcaseMix();
+  // Nothing to toggle: a showcase mix with no standalone pieces at all.
+  if (showcase && !mixExtrasGroup.children.length) return;
   // Mutually exclusive with the other click-driven viewport modes -- a
   // click while in this mode always means "toggle visibility", so paint
   // mode and any open variant grid need to get out of the way first.
@@ -3027,11 +3070,28 @@ function enterVisibilityEditMode() {
   if (openVariantGridPart) closeVariantGrid();
   visibilityEditMode = true;
   hideModelHoverPopupNow();
-  for (const part of Object.keys(modelSets)) {
-    if (partVis[part] || !loadedMods[part]) continue;
-    if (!loadedMods[part].parent) scene.add(loadedMods[part]);
-    loadedMods[part].visible = true;
-    setGhostHighlight(part, true);
+  if (showcase) {
+    // On a showcase mix the V tool acts ONLY on this mix's own standalone
+    // pieces (activeMixExtras) -- never the standard part categories. Those are
+    // all preloaded at boot, so force them out of the scene here in case one is
+    // stuck visible (load finished after applyPreset set its visibility).
+    for (const part of Object.keys(modelSets)) {
+      if (loadedMods[part]) loadedMods[part].visible = false;
+    }
+    // Reveal each hidden piece as a clickable ghost.
+    for (const file of activeMixExtras) {
+      const obj = loadedMods[file];
+      if (!obj || partVis[file] !== false) continue;
+      obj.visible = true;
+      setGhostHighlight(file, true);
+    }
+  } else {
+    for (const part of Object.keys(modelSets)) {
+      if (partVis[part] || !loadedMods[part]) continue;
+      if (!loadedMods[part].parent) scene.add(loadedMods[part]);
+      loadedMods[part].visible = true;
+      setGhostHighlight(part, true);
+    }
   }
   document.getElementById('visibility-edit-banner')?.classList.remove('u-hidden');
   document.getElementById('visibility-edit-vignette')?.classList.add('visible');
@@ -3039,6 +3099,7 @@ function enterVisibilityEditMode() {
   visibilityModeBtn.classList.add('active');
   visibilityModeBtn.setAttribute('aria-pressed', 'true');
   visibilityModeBtn.querySelector('.material-icons').textContent = 'visibility_off';
+  syncLessonVisButton();
 }
 
 function exitVisibilityEditMode() {
@@ -3051,6 +3112,11 @@ function exitVisibilityEditMode() {
     // part doesn't just vanish the instant the mode is exited.
     setGhostHighlight(part, false);
   }
+  // Fade out every showcase-mix piece's ghost -- updateGhostAnimation then
+  // hides the ones whose partVis is false and leaves the revealed ones shown.
+  for (const file of activeMixExtras) {
+    if (loadedMods[file]) setGhostHighlight(file, false);
+  }
   renderer.domElement.style.cursor = '';
   document.getElementById('visibility-edit-banner')?.classList.add('u-hidden');
   document.getElementById('visibility-edit-vignette')?.classList.remove('visible');
@@ -3058,6 +3124,7 @@ function exitVisibilityEditMode() {
   visibilityModeBtn.classList.remove('active');
   visibilityModeBtn.setAttribute('aria-pressed', 'false');
   visibilityModeBtn.querySelector('.material-icons').textContent = 'visibility';
+  syncLessonVisButton();
 }
 
 // Flips `part`'s real show/hide state (partVis) from inside the
@@ -3070,6 +3137,9 @@ function exitVisibilityEditMode() {
 // correctly rather than snapping a part invisible mid-preview.
 function toggleVisibilityEditPart(part) {
   if (!modelSets[part]) return;
+  // A showcase mix never toggles standard part categories (only its own
+  // pieces, via toggleMixExtraVisibility) -- guard in case a hit slips through.
+  if (isShowcaseMix()) return;
   partVis[part] = !partVis[part];
 
   const visBtn = document.getElementById(`${part}-visibility`);
@@ -3103,6 +3173,23 @@ function toggleVisibilityEditPart(part) {
     loadedMods[p].visible = true;
     setGhostHighlight(p, !partVis[p]);
   }
+}
+
+// The showcase-mix counterpart of toggleVisibilityEditPart: flips one of the
+// active mix's own standalone pieces (keyed by filename) shown <-> ghosted
+// from inside visibility-edit mode. No enforce* / variant / conflict logic --
+// a mix piece is not a part category, it just shows or hides. Deliberately does
+// NOT markCustomPreset(): hiding a piece to look inside shouldn't drop the mix
+// identity (and with it the lesson / "Python code" panel). The hidden state is
+// still saved (partVis) and rides along in the share link.
+function toggleMixExtraVisibility(file) {
+  if (!loadedMods[file]) return;
+  const nowVisible = partVis[file] === false; // was hidden -> reveal it
+  partVis[file] = nowVisible;
+  loadedMods[file].visible = true;            // stays rendered while the mode is open
+  setGhostHighlight(file, !nowVisible);       // ghost in if we just hid it, out if revealed
+  updateComboChip();
+  saveStateToLocal();
 }
 
 // TEMPORARY dev helper for picking the default camera angle -- rotate/zoom
@@ -3609,6 +3696,17 @@ function getShareUrl() {
   url.hash = '';
   url.searchParams.set('c', encodeShareState());
   return url.href;
+}
+
+// Deep-link: index.html?mix=<presetKey> boots straight into a ready-made mix,
+// bypassing the share-link / localStorage restore path. Used by the embedded
+// customizer pane in lesson pages under /learn/ so a lesson can pin its own 3D
+// model. Unknown keys return null and the normal starter/restore flow runs.
+// Deliberately not stripped from the URL or persisted specially — reloading the
+// iframe should land back on the same mix.
+function getForcedMixFromUrl() {
+  const key = new URLSearchParams(window.location.search).get('mix');
+  return key && Object.prototype.hasOwnProperty.call(presets, key) ? key : null;
 }
 
 function tryRestoreFromUrl() {
@@ -4333,9 +4431,10 @@ function syncShowcaseMode() {
   document.getElementById('panel-essential')?.classList.toggle('showcase-locked', on);
   document.getElementById('color-sidebar')?.classList.toggle('showcase-locked', on);
   document.getElementById('color-sidebar-toggle')?.classList.toggle('showcase-locked', on);
-  // The "show/hide individual parts" (V) tool is meaningless with no parts.
-  visibilityModeBtn?.classList.toggle('showcase-locked', on);
-  if (on && visibilityEditMode) exitVisibilityEditMode();
+  // The V tool stays available on a showcase mix -- there it toggles the mix's
+  // own standalone pieces (see enterVisibilityEditMode), not part categories.
+  // Only lock it if there's genuinely nothing to act on.
+  visibilityModeBtn?.classList.toggle('showcase-locked', on && !mixExtrasGroup.children.length);
   if (page) {
     let note = document.getElementById('showcase-note');
     if (on && !note) {
@@ -4348,6 +4447,8 @@ function syncShowcaseMode() {
     if (note) note.hidden = !on;
   }
   renderMixCodePanel(on);
+  renderLessonButton();
+  syncLessonVisButton();
 }
 
 // ---------------------------------------------------------------------------
@@ -4509,6 +4610,7 @@ function positionMixCodeDock() {
   // Dropdown: right edge just clear of the dock, growing leftward.
   el.body.style.top = `${a.bottom + gap}px`;
   el.body.style.right = `${Math.max(8, window.innerWidth - d.left + gap)}px`;
+  if (lessonEl) positionLessonChip();
 }
 window.addEventListener('resize', positionMixCodeDock);
 
@@ -4596,6 +4698,462 @@ function renderMixCodePanel(on) {
     setMixCodeVisible(true);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Lesson mode
+//
+// A showcase mix can also ship a *lesson*: the preset opts in with
+// `lessonId: '<name>'` (see presets.js), and a floating "Lesson" chip appears
+// next to the "Python code" chip. Clicking it puts the customizer into a
+// 3-pane layout:
+//
+//   +---------------+-----------------------+
+//   | Python editor |                       |  left column, top half
+//   | (app.hprobots)|   lesson content      |
+//   +---------------+   assets/lessons/<id> |  right pane, fixed 50%
+//   | 3D model      |                       |
+//   | (this canvas) |                       |  left column, bottom half
+//   +---------------+-----------------------+
+//
+// The two left panes are collapsible (data-lesson-collapse on <body>) so
+// whichever one the learner needs can take the whole left column; the right
+// pane is fixed. The customizer's own chrome is hidden while lesson mode is on
+// - the canvas + OrbitControls stay live, just resized into the quadrant.
+// Desktop only (gated on mixCodeOnDock(), same as the Python chip).
+// Each lesson picks its editor via `editor: 'python' | 'word'` (see presets.js);
+// showLesson() sets the iframe src accordingly. (EDITOR_SRC and the lesson-state
+// lets live in the state block far above — buildLessonUI() can run during
+// bootstrap(), before this section is reached, so nothing it touches may sit
+// in a temporal dead zone here.)
+// ---------------------------------------------------------------------------
+
+// The active mix's lessons as a normalised [{ id, title, code }, …]. Accepts
+// either `lessons: [{ id, title, code }]` or the `lessonId: '<id>'` shorthand
+// (see presets.js). Empty array = this mix has no lesson. Falls back to the
+// lesson's source mix once the build has been marked "custom".
+function mixLessons(key = (activePresetKey === 'custom' && lessonSourceKey) || activePresetKey) {
+  const p = presets[key];
+  if (!p) return [];
+  const norm = (l, code) => ({
+    id: l.id,
+    title: l.title || 'Lesson',
+    editor: l.editor === 'word' ? 'word' : 'python',
+    code: l.editor === 'word' ? null : (code ?? l.code ?? null),
+  });
+  if (Array.isArray(p.lessons)) return p.lessons.filter((l) => l && l.id).map((l) => norm(l));
+  if (p.lessonId) return [norm({ id: p.lessonId }, p.codeId)];
+  return [];
+}
+
+function currentLesson() {
+  const list = mixLessons();
+  return list[Math.min(selectedLessonIdx, list.length - 1)] || null;
+}
+
+// Nudge the Three.js renderer to re-fit after the viewer pane changes size.
+// setupResize()'s onResize isn't exported, but it listens on window 'resize' -
+// fire it now, next frame, and once more after the CSS transition settles.
+function pokeViewerResize() {
+  const fire = () => window.dispatchEvent(new Event('resize'));
+  fire();
+  requestAnimationFrame(fire);
+  setTimeout(fire, 320);
+}
+
+function buildLessonUI() {
+  if (lessonEl) return lessonEl;
+
+  // Floating "Lesson" chip - a pill next to the "Python code" chip. With more
+  // than one lesson it grows prev/next arrows around the name.
+  const chip = document.createElement('div');
+  chip.id = 'lesson-chip';
+  chip.className = 'lesson-chip u-hidden';
+  chip.innerHTML = `
+    <button type="button" class="lesson-chip-arrow" data-role="lesson-prev" aria-label="Previous lesson" hidden>
+      <span class="material-icons" aria-hidden="true">chevron_left</span>
+    </button>
+    <button type="button" class="lesson-chip-open" data-role="lesson-open" aria-label="Open this lesson">
+      <span class="material-icons" aria-hidden="true">school</span>
+      <span class="lesson-chip-name" data-role="lesson-chip-name">Lesson</span>
+    </button>
+    <button type="button" class="lesson-chip-arrow" data-role="lesson-next" aria-label="Next lesson" hidden>
+      <span class="material-icons" aria-hidden="true">chevron_right</span>
+    </button>`;
+
+  // Top-left pane: the editor. Which one (Python text / Word blocks) and its
+  // iframe src are set per lesson by showLesson().
+  const editor = document.createElement('section');
+  editor.id = 'lesson-editor-pane';
+  editor.className = 'lesson-pane';
+  editor.innerHTML = `
+    <header class="lesson-pane-bar">
+      <button type="button" class="lesson-collapse-btn" data-target="editor" aria-label="Collapse or expand the editor">
+        <span class="material-icons" aria-hidden="true">unfold_less</span>
+      </button>
+      <span class="lesson-pane-title" data-role="lesson-editor-label">Editor</span>
+      <span class="lesson-pane-spacer"></span>
+      <a class="lesson-pane-ext" data-role="lesson-editor-link" href="${EDITOR_SRC.python}" target="_blank" rel="noopener">Open &#8599;</a>
+    </header>
+    <div class="lesson-pane-body">
+      <div class="lesson-embed-fallback">
+        <b data-role="lesson-editor-fallback">Editor</b>
+        <span>If it doesn't appear here it's blocking embedding &mdash; open it in a new tab.</span>
+        <a data-role="lesson-editor-link" href="${EDITOR_SRC.python}" target="_blank" rel="noopener">Open the editor &#8599;</a>
+      </div>
+      <iframe title="HP Robots editor"
+              allow="serial; usb; bluetooth; hid; clipboard-read; clipboard-write; fullscreen"
+              referrerpolicy="no-referrer-when-downgrade"></iframe>
+    </div>`;
+
+  // Thin bar overlaying the top edge of the viewer region - collapse control
+  // for the 3D pane (the pane itself is #viewer-container, reused in place).
+  const viewerBar = document.createElement('header');
+  viewerBar.id = 'lesson-viewer-bar';
+  viewerBar.className = 'lesson-pane-bar';
+  viewerBar.innerHTML = `
+    <button type="button" class="lesson-collapse-btn" data-target="viewer" aria-label="Collapse or expand the 3D model">
+      <span class="material-icons" aria-hidden="true">unfold_less</span>
+    </button>
+    <span class="lesson-pane-title">3D model</span>
+    <span class="lesson-pane-spacer"></span>
+    <button type="button" class="lesson-vis-btn" data-role="lesson-vis" hidden aria-pressed="false"
+            title="Show or hide parts on the model">
+      <span class="material-icons" aria-hidden="true">visibility</span><span>Show / hide</span>
+    </button>`;
+
+  // Right pane: the lesson itself.
+  const content = document.createElement('section');
+  content.id = 'lesson-content-pane';
+  content.className = 'lesson-pane';
+  content.innerHTML = `
+    <header class="lesson-pane-bar lesson-pane-bar--content">
+      <button type="button" class="lesson-collapse-btn lesson-nav-btn" data-role="lesson-nav-prev" aria-label="Previous lesson" hidden>
+        <span class="material-icons" aria-hidden="true">chevron_left</span>
+      </button>
+      <span class="lesson-pane-title" data-role="lesson-title">Lesson</span>
+      <span class="lesson-nav-count" data-role="lesson-nav-count" hidden></span>
+      <button type="button" class="lesson-collapse-btn lesson-nav-btn" data-role="lesson-nav-next" aria-label="Next lesson" hidden>
+        <span class="material-icons" aria-hidden="true">chevron_right</span>
+      </button>
+      <span class="lesson-pane-spacer"></span>
+      <button type="button" class="lesson-code-btn" data-role="lesson-code" hidden title="Copy this lesson's code to paste into the editor">
+        <span class="material-icons" aria-hidden="true">content_copy</span>Copy code
+      </button>
+      <button type="button" class="lesson-exit-btn" data-role="lesson-exit">
+        <span class="material-icons" aria-hidden="true">close</span>Exit lesson
+      </button>
+    </header>
+    <div class="lesson-scroll" data-role="lesson-scroll" tabindex="0">
+      <p class="lesson-loading">Loading lesson&hellip;</p>
+    </div>`;
+
+  document.body.append(chip, editor, viewerBar, content);
+
+  const q = (sel) => content.querySelector(sel);
+  lessonEl = {
+    chip, editor, viewerBar, content,
+    frame: editor.querySelector('iframe'),
+    scroll: q('[data-role="lesson-scroll"]'),
+    title: q('[data-role="lesson-title"]'),
+    visBtn: viewerBar.querySelector('[data-role="lesson-vis"]'),
+    chipOpen: chip.querySelector('[data-role="lesson-open"]'),
+    chipName: chip.querySelector('[data-role="lesson-chip-name"]'),
+    chipPrev: chip.querySelector('[data-role="lesson-prev"]'),
+    chipNext: chip.querySelector('[data-role="lesson-next"]'),
+    navPrev: q('[data-role="lesson-nav-prev"]'),
+    navNext: q('[data-role="lesson-nav-next"]'),
+    navCount: q('[data-role="lesson-nav-count"]'),
+    codeBtn: q('[data-role="lesson-code"]'),
+    editorLabel: editor.querySelector('[data-role="lesson-editor-label"]'),
+    editorFallback: editor.querySelector('[data-role="lesson-editor-fallback"]'),
+    editorLinks: [...editor.querySelectorAll('[data-role="lesson-editor-link"]')],
+    loadedEditor: null,       // 'python' | 'word' currently in the iframe
+    loadedLessonId: null,
+  };
+
+  lessonEl.chipOpen.addEventListener('click', enterLessonMode);
+  lessonEl.chipPrev.addEventListener('click', () => stepChipLesson(-1));
+  lessonEl.chipNext.addEventListener('click', () => stepChipLesson(1));
+  lessonEl.navPrev.addEventListener('click', () => showLesson(selectedLessonIdx - 1));
+  lessonEl.navNext.addEventListener('click', () => showLesson(selectedLessonIdx + 1));
+  lessonEl.codeBtn.addEventListener('click', copyCurrentLessonCode);
+  q('[data-role="lesson-exit"]').addEventListener('click', exitLessonMode);
+  // In-lesson "#anchor" links (e.g. the wiring-diagram jump) scroll within the
+  // lesson pane instead of navigating the whole page.
+  lessonEl.scroll.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    e.preventDefault();
+    const target = lessonEl.scroll.querySelector(`[id="${CSS.escape(a.getAttribute('href').slice(1))}"]`);
+    if (!target) return;
+    if (target.tagName === 'DETAILS') target.open = true; // expand a collapsed section before jumping
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  for (const btn of [editor, viewerBar].flatMap((n) => [...n.querySelectorAll('.lesson-collapse-btn')])) {
+    btn.addEventListener('click', () => toggleLessonCollapse(btn.dataset.target));
+  }
+  // In-lesson entry point for the show/hide-pieces tool (the customizer's own
+  // #visibilityModeBtn lives in #left-tools, which is hidden in lesson mode).
+  lessonEl.visBtn.addEventListener('click', () => {
+    if (visibilityEditMode) exitVisibilityEditMode();
+    else enterVisibilityEditMode();
+  });
+  // Esc: leave visibility-edit mode first if it's on, otherwise leave lesson
+  // mode. Capture phase + stopPropagation so it beats the app's other Escape
+  // handlers rather than firing alongside them.
+  document.addEventListener('keydown', (e) => {
+    if (!lessonActive || e.key !== 'Escape') return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (visibilityEditMode) exitVisibilityEditMode();
+    else exitLessonMode();
+  }, true);
+  return lessonEl;
+}
+
+// Show the lesson viewer-bar's show/hide toggle whenever there's anything on
+// the model to toggle -- a showcase mix's standalone pieces, or the standard
+// parts of a normal build (e.g. the Starter kit) -- and mirror V-mode's state.
+// (#left-tools, home of the customizer's own V button, is hidden in lesson mode.)
+function syncLessonVisButton() {
+  const btn = lessonEl?.visBtn;
+  if (!btn) return;
+  const hasPieces = isShowcaseMix() && mixExtrasGroup.children.length > 0;
+  const hasParts = !isShowcaseMix() && Object.keys(modelSets).some((p) => loadedMods[p]);
+  btn.hidden = !(hasPieces || hasParts);
+  btn.classList.toggle('is-active', visibilityEditMode);
+  btn.setAttribute('aria-pressed', String(visibilityEditMode));
+  btn.querySelector('.material-icons').textContent = visibilityEditMode ? 'visibility_off' : 'visibility';
+}
+
+// Wrap a lesson-mode layout change in a View Transition so the fullscreen
+// customizer choreographs into (and back out of) the 3-card layout: the 3D view
+// morphs into its card while the lesson/editor cards slide in and the dock /
+// paint column / toolbar slide out (see the "choreography" block in app.css).
+// `.lesson-animating` on <body> gates every view-transition-name for exactly
+// this transition's lifetime, so none of it leaks into the index<->engrave one.
+// No-op fallback where the API or the user's motion preference rules it out.
+function runLessonTransition(mutate) {
+  if (!document.startViewTransition
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    mutate();
+    return;
+  }
+  document.body.classList.add('lesson-animating');
+  const t = document.startViewTransition(mutate);
+  t.finished.finally(() => document.body.classList.remove('lesson-animating'));
+}
+
+async function loadLessonHtml(lessonId) {
+  if (lessonHtmlCache.has(lessonId)) return lessonHtmlCache.get(lessonId);
+  let html = null;
+  try {
+    const res = await fetch(`./assets/lessons/${lessonId}.html`, { cache: 'no-store' });
+    if (res.ok) html = await res.text();
+  } catch { /* no lesson file for this mix */ }
+  lessonHtmlCache.set(lessonId, html);
+  return html;
+}
+
+function syncLessonCollapseIcons() {
+  if (!lessonEl) return;
+  const state = document.body.getAttribute('data-lesson-collapse') || 'none';
+  const set = (node, collapsed) => {
+    const i = node.querySelector('.lesson-collapse-btn .material-icons');
+    if (i) i.textContent = collapsed ? 'unfold_more' : 'unfold_less';
+  };
+  set(lessonEl.editor, state === 'editor');
+  set(lessonEl.viewerBar, state === 'viewer');
+}
+
+function toggleLessonCollapse(target) {
+  const cur = document.body.getAttribute('data-lesson-collapse') || 'none';
+  document.body.setAttribute('data-lesson-collapse', cur === target ? 'none' : target);
+  syncLessonCollapseIcons();
+  pokeViewerResize();
+}
+
+// Load and render one lesson by index into the active mix's list. Shared by the
+// chip's Open button and the prev/next arrows in the lesson header.
+function showLesson(idx) {
+  const lessons = mixLessons();
+  if (!lessons.length || !lessonEl) return;
+  selectedLessonIdx = ((idx % lessons.length) + lessons.length) % lessons.length;
+  const lesson = lessons[selectedLessonIdx];
+  const el = lessonEl;
+  el.loadedLessonId = lesson.id;
+  el.title.textContent = lesson.title;
+  el.codeBtn.hidden = !lesson.code;
+
+  // Point the editor pane at the right app.hprobots.com editor for this lesson.
+  // Only (re)load the iframe when the editor type actually changes, so paging
+  // between two same-type lessons doesn't wipe the learner's work.
+  const src = EDITOR_SRC[lesson.editor] || EDITOR_SRC.python;
+  const isWord = lesson.editor === 'word';
+  el.editorLabel.textContent = isWord ? 'Blocks' : 'Python';
+  if (el.editorFallback) el.editorFallback.textContent = isWord ? 'Block editor' : 'Python editor';
+  el.editorLinks.forEach((a) => { a.href = src; });
+  if (el.loadedEditor !== lesson.editor) {
+    el.frame.src = src;
+    el.loadedEditor = lesson.editor;
+  }
+
+  el.scroll.classList.add('is-swapping');
+  el.scroll.innerHTML = '<p class="lesson-loading">Loading lesson&hellip;</p>';
+  syncLessonChip();
+  syncLessonNav();
+  loadLessonHtml(lesson.id).then((html) => {
+    if (el.loadedLessonId !== lesson.id) return; // a newer selection took over
+    el.scroll.innerHTML = html == null
+      ? '<p class="lesson-loading">This lesson has no content yet.</p>'
+      : html;
+    const h = html != null && el.scroll.querySelector('h1');
+    if (h) el.title.textContent = h.textContent;
+    el.scroll.scrollTop = 0;
+    requestAnimationFrame(() => el.scroll.classList.remove('is-swapping'));
+  });
+}
+
+// Copies the current lesson's paired code (assets/mix-code/<code>.py) to the
+// clipboard so it can be pasted straight into the editor pane. Reuses the
+// mix-code loader/cache.
+function copyCurrentLessonCode() {
+  const code = currentLesson()?.code;
+  if (!code) return;
+  loadMixCode(code).then((entry) => {
+    if (!entry.ok || !entry.code) {
+      toast(`No code file for this lesson (${code}.py)`, 'warn', 2200);
+      return;
+    }
+    const done = () => {
+      toast('Lesson code copied — paste it into the editor', 'ok', 1800);
+      lessonEl?.codeBtn.classList.add('is-copied');
+      setTimeout(() => lessonEl?.codeBtn.classList.remove('is-copied'), 1400);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(entry.code).then(done).catch(() => {
+        window.prompt('Copy this lesson\'s code:', entry.code);
+      });
+    } else {
+      window.prompt('Copy this lesson\'s code:', entry.code);
+    }
+  });
+}
+
+// Chip arrows page the selection without opening lesson mode.
+function stepChipLesson(dir) {
+  const lessons = mixLessons();
+  if (lessons.length < 2) return;
+  selectedLessonIdx = ((selectedLessonIdx + dir) % lessons.length + lessons.length) % lessons.length;
+  syncLessonChip();
+  positionLessonChip();
+}
+
+// Chip: toggle the arrows and show the current lesson's name.
+function syncLessonChip() {
+  const el = lessonEl;
+  if (!el) return;
+  const lessons = mixLessons();
+  const multi = lessons.length > 1;
+  if (selectedLessonIdx >= lessons.length) selectedLessonIdx = 0;
+  el.chip.classList.toggle('lesson-chip--multi', multi);
+  el.chipPrev.hidden = !multi;
+  el.chipNext.hidden = !multi;
+  el.chipName.textContent = lessons[selectedLessonIdx]?.title || 'Lesson';
+  el.chipOpen.title = lessons.length
+    ? `Open lesson: ${lessons[selectedLessonIdx].title}`
+    : 'Open the lesson';
+}
+
+// In-lesson header: prev/next + "n / total".
+function syncLessonNav() {
+  const el = lessonEl;
+  if (!el) return;
+  const multi = mixLessons().length > 1;
+  el.navPrev.hidden = !multi;
+  el.navNext.hidden = !multi;
+  el.navCount.hidden = !multi;
+  if (multi) el.navCount.textContent = `${selectedLessonIdx + 1} / ${mixLessons().length}`;
+}
+
+function enterLessonMode() {
+  if (!mixLessons().length) return;
+  const el = buildLessonUI();
+
+  // showLesson() owns the editor iframe src (per-lesson: python vs word). It
+  // always runs on the first entry (loadedLessonId starts null).
+  if (el.loadedLessonId !== currentLesson()?.id) showLesson(selectedLessonIdx);
+  else syncLessonNav();
+
+  runLessonTransition(() => {
+    document.body.setAttribute('data-lesson-collapse', 'none');
+    document.body.classList.add('lesson-mode-body');
+    lessonActive = true;
+    el.chip.classList.add('u-hidden');
+    syncLessonCollapseIcons();
+    syncLessonVisButton();
+    pokeViewerResize();
+  });
+}
+
+function exitLessonMode() {
+  if (visibilityEditMode) exitVisibilityEditMode();
+  runLessonTransition(() => {
+    document.body.classList.remove('lesson-mode-body');
+    document.body.removeAttribute('data-lesson-collapse');
+    lessonActive = false;
+    if (lessonEl && mixLessons().length && mixCodeOnDock()) {
+      lessonEl.chip.classList.remove('u-hidden');
+      syncLessonChip();
+      positionLessonChip();
+    }
+    pokeViewerResize();
+  });
+}
+
+// Called from syncShowcaseMode(): show the chip for any desktop mix that ships
+// at least one lesson (showcase or a normal build like the Starter kit); drop
+// out of lesson mode if the active mix no longer has one, and hot-swap content
+// if a different lesson-bearing mix is chosen while lesson mode is already open.
+function renderLessonButton() {
+  const lessons = mixCodeOnDock() ? mixLessons() : [];
+  if (!lessons.length) {
+    if (lessonActive) exitLessonMode();
+    lessonEl?.chip.classList.add('u-hidden');
+    return;
+  }
+  const el = buildLessonUI();
+  if (selectedLessonIdx >= lessons.length) selectedLessonIdx = 0;
+  syncLessonChip();
+  if (lessonActive) {
+    if (el.loadedLessonId !== currentLesson()?.id) showLesson(selectedLessonIdx);
+    else syncLessonNav();
+  } else {
+    el.chip.classList.remove('u-hidden');
+    positionLessonChip();
+  }
+}
+
+// Sit the Lesson chip just left of the "Python code" chip (or in that chip's
+// own slot just outside the dock, if this mix has a lesson but no code).
+function positionLessonChip() {
+  const el = lessonEl;
+  if (!el || el.chip.classList.contains('u-hidden')) return;
+  const dock = document.getElementById('right-dock');
+  const anchor = document.getElementById('dock-tab-mixes');
+  if (!dock || !anchor) return;
+  const d = dock.getBoundingClientRect();
+  const a = anchor.getBoundingClientRect();
+  const gap = 8;
+  const w = el.chip.offsetWidth || 96;
+  const h = el.chip.offsetHeight || 34;
+  const codeChip = mixCodeEl?.onDock && !mixCodeEl.toggle.classList.contains('u-hidden')
+    ? mixCodeEl.toggle : null;
+  const rightEdge = codeChip ? codeChip.getBoundingClientRect().left - gap : d.left - gap;
+  el.chip.style.left = `${Math.max(8, rightEdge - w)}px`;
+  el.chip.style.top = `${Math.round(a.top + (a.height - h) / 2)}px`;
+}
+window.addEventListener('resize', positionLessonChip);
 
 function updateVariantCounter(part) {
   const el = document.getElementById(`${part}-counter`);
@@ -5067,6 +5625,12 @@ function setGhostHighlight(part, ghosted) {
     if (ghosted) {
       if (phase === 'in' || phase === 'steady') return;
       if (phase !== 'out') {
+        // If this mesh is the one currently hover-highlighted, drop that tint
+        // NOW -- otherwise its 0x3d7fff emissive is saved into preGhostMaterial
+        // and pops back when the real material is restored on fade-out
+        // (clearPaintHover can't reach it once the ghost material is swapped in,
+        // so the part reads as "highlighted" with no pointer on it).
+        if (node === paintHoverMesh) clearPaintHover();
         node.userData.preGhostMaterial = node.material;
         node.userData.ghostPart = part;
         node.material = new THREE.MeshBasicMaterial({
@@ -5556,7 +6120,10 @@ async function setMixExtras(files) {
       // assets/mix-colors.json use. It is NOT in modelSets/PART_META, so it
       // never becomes a category, variant, panel row, or combo-count factor.
       loadedMods[file] = obj;
-      partVis[file] = true;
+      // Keep an already-restored hidden state (from a share link / reload where
+      // applySavedState set partVis first); default to visible otherwise.
+      if (!(file in partVis)) partVis[file] = true;
+      obj.visible = partVis[file] !== false;
       if (!modelCols[file]) modelCols[file] = new THREE.Color(DEFAULT_PART_COLOR);
       mixExtrasGroup.add(obj);
       applyColor(file); // grey canvas, or restores retained per-piece paint
@@ -5577,6 +6144,13 @@ function applyPreset(key, showToast = true) {
   const preset = presets[key];
   if (!preset) return;
   isApplyingPreset = true;
+  // Any ghost previews belong to the outgoing build — leave the mode so the
+  // new mix starts clean (V / the lesson-bar button re-enters it).
+  if (visibilityEditMode) exitVisibilityEditMode();
+  // A new mix starts at its first lesson; remember it as the lesson source even
+  // if painting later flips activePresetKey to 'custom'.
+  selectedLessonIdx = 0;
+  lessonSourceKey = mixLessons(key).length ? key : null;
 
   try {
     const toLoad = new Set();
@@ -5619,6 +6193,11 @@ function applyPreset(key, showToast = true) {
     }
 
     toLoad.forEach((part) => loadModel(part, true));
+    // An explicit mix pick starts every one of its pieces shown -- any
+    // hide/show-pieces (V-mode) state belonged to the previous build. (A
+    // restore reaches setMixExtras directly, not through here, so its saved
+    // per-piece visibility is still honoured.)
+    for (const f of preset.extras || []) partVis[f] = true;
     // Standalone mix models (consoles, robot arms…) for this mix — or clear the
     // previous mix's set when this one has none.
     setMixExtras(preset.extras || []);

@@ -1,0 +1,128 @@
+<!-- Lesson content for the "Modular cube" mix, lesson 2 of 2.
+     Injected as innerHTML into the right pane of lesson mode. Plain HTML
+     fragment. Paired code: assets/mix-code/simonsays.py (the "Copy code"
+     button in the header pulls it). Everything below matches that file. -->
+
+<span class="eyebrow">Make &amp; Code &middot; Modular Cube</span>
+<h1>Simon Says</h1>
+<p>Now the cube has <strong>four coloured buttons</strong> and a <strong>13-LED ring</strong>.
+It flashes a growing sequence of colours &mdash; one, then two, then three &mdash; and
+you play it back on the buttons. Each colour has its own tone, so you can learn
+the pattern by ear as well as by sight. There's a single-player mode with a saved
+high score and a pass-the-pattern multiplayer mode.</p>
+
+<div class="chip-row">
+  <span class="chip">⏱ 35&ndash;50 min</span>
+  <span class="chip">🐍 MicroPython</span>
+  <span class="chip">🧠 Memory game</span>
+  <span class="chip">4 buttons + buzzer</span>
+</div>
+<p><em>Hit <strong>Copy code</strong> in the header to drop <code class="inline">simonsays.py</code>
+into the editor, then run it.</em></p>
+
+<h2>1 · The parts it uses</h2>
+<table class="pins">
+  <thead><tr><th>Part</th><th>Type</th><th>Job</th><th>Pin</th></tr></thead>
+  <tbody>
+    <tr><td>Buttons R, G, B, Y</td><td>input</td><td>Play the sequence back</td><td>GP13 / GP14 / GP15 / GP27</td></tr>
+    <tr><td>LED ring (13 px)</td><td>output</td><td>Shows the sequence + score</td><td>GP4</td></tr>
+    <tr><td>Buzzer</td><td>output</td><td>One tone per colour</td><td>GP25</td></tr>
+  </tbody>
+</table>
+<pre><span class="cmt"># simonsays.py — CONFIG block</span>
+BUTTON_PINS = [13, 14, 15, 27]        <span class="cmt"># R, G, B, Y — index 0..3</span>
+COLORS      = [(255,0,0),(0,255,0),(0,0,255),(255,255,0)]
+TONE_FREQS  = [440, 523, 659, 784]    <span class="cmt"># A4, C5, E5, G5 — one per colour</span></pre>
+<div class="callout">A colour is just an <strong>index 0&ndash;3</strong> everywhere in this
+program: it picks the button, the RGB tuple, the tone, and (via the map below)
+which LEDs light. Keep that in mind and the whole file reads easily.</div>
+
+<h2>2 · Colour index &rarr; physical LEDs</h2>
+<p>The ring has 13 LEDs. LED&nbsp;0 is the white centre "power" light; the other 12
+are split into four arcs of three. <code class="inline">COLOR_LED_MAP</code> hides
+that wiring so the rest of the code only ever thinks in colour indexes:</p>
+<pre>COLOR_LED_MAP = {
+    0: [2, 3, 4],     <span class="cmt"># Red arc</span>
+    1: [5, 6, 7],     <span class="cmt"># Green arc</span>
+    2: [8, 9, 10],    <span class="cmt"># Blue arc</span>
+    3: [11, 12, 1],   <span class="cmt"># Yellow arc — wraps past LED 0</span>
+}
+
+def show_color(index, color, brightness=0.3):
+    dimmed = tuple(int(c * brightness) for c in color)
+    for led in COLOR_LED_MAP[index]:
+        np[led] = dimmed
+    np.write()</pre>
+<div class="callout">Everything is drawn at <code class="inline">brightness=0.3</code>.
+NeoPixels at full power are blinding and eat current &mdash; dim them.</div>
+
+<h2>3 · Reading a button</h2>
+<p>The four buttons live in a list. <code class="inline">wait_for_button()</code>
+<strong>blocks</strong> until one is pressed, confirms it after 50&nbsp;ms (debounce),
+waits for release, and returns its index:</p>
+<pre>def wait_for_button():
+    while True:
+        for i, button in enumerate(buttons):
+            if button.value() == 0:          <span class="cmt"># PULL_UP: pressed = 0</span>
+                time.sleep(0.05)
+                if button.value() == 0:      <span class="cmt"># still down = real press</span>
+                    while button.value() == 0:
+                        time.sleep(0.01)      <span class="cmt"># wait for release</span>
+                    return i
+        time.sleep(0.01)</pre>
+<p>Simon Says can afford to just stop and wait like this &mdash; unlike Ring Chase, it
+never races a clock. That blocking-vs-polling choice is the real difference
+between a memory game and a timing game.</p>
+
+<h2>4 · The sequence is a list</h2>
+<p>The whole game state is one list of colour indexes, e.g.
+<code class="inline">[2, 0, 3, 3, 1]</code>. Each round appends a random one:</p>
+<pre>sequence.append(random.randint(0, 3))</pre>
+<p><code class="inline">play_sequence()</code> shows it back &mdash;
+<code class="inline">flash_color()</code> lights the arc, plays the tone, pauses,
+clears. Then an input loop checks your presses <em>in order</em> and bails the
+moment one is wrong:</p>
+<pre>for expected in sequence:
+    pressed = wait_for_button()
+    flash_color(pressed, duration=0.15)     <span class="cmt"># quick echo of your input</span>
+    if pressed != expected:
+        error_sound()                       <span class="cmt"># 150 Hz buzz</span>
+        game_over_effect()                  <span class="cmt"># 3x red pulse</span>
+        ...save high score if beaten...
+        return</pre>
+<p>Clear the sequence, <code class="inline">update_score_leds(level)</code> lights a
+purple progress meter, <code class="inline">play_level_up_sound()</code>, and the
+next round is one longer.</p>
+
+<h2>5 · Two modes, same pieces</h2>
+<p>Both modes are built from the same primitives (<code class="inline">play_sequence</code>,
+<code class="inline">wait_for_button</code>, <code class="inline">flash_color</code>):</p>
+<ul>
+  <li><strong>Single player</strong> &mdash; the cube adds each new step; you only repeat.
+  Your score is <code class="inline">level - 1</code> (you failed <em>on</em> a level, so
+  cleared the one before), saved to <code class="inline">highscore.txt</code> if it beats
+  the stored best.</li>
+  <li><strong>Multiplayer</strong> &mdash; players alternate; on your turn you repeat the
+  sequence <em>and then add a step of your own</em>. Miss and the other player wins
+  (<code class="inline">victory_jingle()</code>). The turn flips with one line:
+  <code class="inline">current_player = 3 - current_player</code>.</li>
+</ul>
+<p>The menu at the bottom lights LED&nbsp;3 orange (RED&nbsp;=&nbsp;single) and LED&nbsp;6 cyan
+(GREEN&nbsp;=&nbsp;multi) and waits on <code class="inline">wait_for_button()</code>.</p>
+
+<h2>Try it</h2>
+<ul>
+  <li><span class="step-tag">EASY</span>Slow the playback: raise the <code class="inline">duration</code> in <code class="inline">flash_color()</code> / <code class="inline">play_sequence()</code>.</li>
+  <li><span class="step-tag">EASY</span>Retune the four notes in <code class="inline">TONE_FREQS</code>.</li>
+  <li><span class="step-tag">MED</span>Speed the playback up a little each round for pressure (shrink the duration as <code class="inline">level</code> grows).</li>
+  <li><span class="step-tag">MED</span>Add a timeout to <code class="inline">wait_for_button()</code> &mdash; take too long and it counts as a miss.</li>
+  <li><span class="step-tag">HARD</span>"Simon <em>says</em>" trap mode: only repeat when the level-up jingle played first; a bare flash means "don't move".</li>
+  <li><span class="step-tag">HARD</span>Show the high score on the ring at boot instead of only printing it.</li>
+</ul>
+<div class="callout callout--do">Then finish the shell on the left: paint it, use
+<strong>Pieces</strong> in the 3D bar to check the button mounts and PCB fit, and
+<strong>Print</strong> / <strong>Download</strong> each piece.</div>
+
+<p style="margin-top:24px;color:var(--muted);font-size:12px;">
+Paired code: <code class="inline">assets/mix-code/simonsays.py</code>. Other lesson in this
+mix: <strong>Ring Chase</strong> &mdash; the one-button timing game on the same ring.</p>

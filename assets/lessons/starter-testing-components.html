@@ -1,0 +1,320 @@
+<!-- Lesson content for the "Basic" (Starter kit) mix.
+     Migrated from https://hprobots.com/lesson/testing-components/ into the new
+     3-pane lesson environment: same text, headings and images as the original,
+     laid out as collapsible <details> sections (.lesson-section) with
+     collapsible Vocabulary panels, matching the original's accordion layout.
+     See styles/app.css for the components. WORD-BLOCKS lesson (left pane loads
+     app.hprobots.com's ?type=word editor). Images in assets/lessons/img/.
+     Plain HTML fragment. -->
+
+<span class="eyebrow">Otto Starter Kit</span>
+<h1>Testing Components</h1>
+<p>Students will explore the components included in the Otto Starter box. They will
+start to identify and familiarize themselves with each component, gaining a
+fundamental understanding of how they work.</p>
+
+<details class="lesson-section" open>
+  <summary>Knowledge required</summary>
+  <div class="lesson-section-body">
+    <p>This activity assumes that the teacher knows how to use webcode or websimulate.
+    You can refer to the
+    <a href="https://hprobots.com/otto-robot/code/#flipbook-hp-robots-otto-starter-coding-intro/1/" target="_blank" rel="noopener">coding guide</a>
+    if you have any doubts about using the software needed to teach the lessons.</p>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary>Materials required</summary>
+  <div class="lesson-section-body">
+    <ul>
+      <li>Otto Starter Kit (it can be only the electronic components)</li>
+      <li>Computer with internet connection</li>
+    </ul>
+    <h4>Optional materials</h4>
+    <ul>
+      <li>Testing components worksheets</li>
+      <li>Testing components slides</li>
+    </ul>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary>Learning Objectives</summary>
+  <div class="lesson-section-body">
+    <p>Understand the fundamental concepts of robotics.</p>
+    <ul>
+      <li>Identify the key components of a robot and explain their functions.</li>
+      <li>Describe the difference between sensors and actuators and how they interact in a robot.</li>
+    </ul>
+    <p>Learn the basics of coding with ESP32 boards and block-based programming.</p>
+    <ul>
+      <li>Write and upload programs that control the robot.</li>
+      <li>Modify an existing program to add new functionality to the robot.</li>
+      <li>Analyse and debug existing code to identify and fix errors, and explain how the code works.</li>
+    </ul>
+    <p>Develop skills in engineering and mechanical design</p>
+    <ul>
+      <li>Analyse the mechanical/electronic components of the robot and explain how they work together.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary>Word blocks app or Simulator</summary>
+  <div class="lesson-section-body">
+    <p>These lesson's activities can be approached using the physical components and
+    word blocks app to test everything or using
+    <a href="https://hprobots.com/otto-code/webcode/websimulate.html" target="_blank" rel="noopener">simulator</a>
+    to digitally test the different components of Otto. If using the simulator, the
+    Otto Starter Kit is not required.</p>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary>Unboxing the components</summary>
+  <div class="lesson-section-body">
+    <p>As your first activity, you can do an unboxing/review the Otto Starter Kit box.
+    This will help you make sure every student has all the required components to
+    complete this lesson but also to build Otto in a future lesson. After checking we
+    have all the components, ask your students to only keep out of the box the
+    electronic components to test them.</p>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary><span class="lesson-test-num">1</span>Test #1: Circuit board &amp; Buzzer</summary>
+  <div class="lesson-section-body">
+    <p>The circuit board is a crucial component that serves as a central hub,
+    connecting all the other electronic parts of the robot. The circuit board plays a
+    key role in managing communication between the input device (the computer or
+    tablet used to code) and the robot itself.</p>
+    <p class="lesson-note">💡 To help the students understand, an analogy can be used
+    to compare the microcontroller to the human brain for robots. Just as our brain
+    controls the actions of our bodies and sends commands to execute tasks, the
+    circuit board sends electrical signals to the other components, guiding their
+    actions. As a teacher, feel free to choose the most effective approach to explain
+    the workings of a circuit board to your students.</p>
+
+    <details class="lesson-vocab">
+      <summary>Vocabulary</summary>
+      <dl>
+        <dt>Circuit Board (Microcontroller Board)</dt>
+        <dd>The main hub that connects and controls all other components of the robot, similar to a brain.</dd>
+        <dt>Microcontroller</dt>
+        <dd>A small computer on a single chip that executes the program and sends signals to the components.</dd>
+        <dt>LED (Light Emitting Diode)</dt>
+        <dd>A small light on the board that can be turned on or off to show output signals</dd>
+        <dt>Buzzer</dt>
+        <dd>An electronic component that produces sound when powered.</dd>
+        <dt>Sequence</dt>
+        <dd>An ordered set of instructions that the robot follows step by step.</dd>
+      </dl>
+    </details>
+
+    <h4>🛠 Turning on/off internal LED of the circuit board</h4>
+    <p>Get your students into word blocks app.</p>
+    <p>Once you press the play button, an LED
+    (<a href="https://en.wikipedia.org/wiki/Light-emitting_diode" target="_blank" rel="noopener">Light Emitting Diode</a>)
+    integrated in the board will start to blink every second.</p>
+    <p>After confirming that the LED is working correctly, feel free to add sound to
+    check the integrated buzzer on the circuit board by adding a sound block like the
+    one below, before the forever loop.</p>
+    <figure>
+      <img src="assets/lessons/img/buzzer-sound-block.png" alt="Code block showing sound configuration">
+    </figure>
+
+    <div class="lesson-challenge">
+      <h3>Challenge</h3>
+      <p><strong>Ask your students to compose a program giving them the following
+      instructions:</strong></p>
+      <ul>
+        <li><strong>Turns on the internal LED and play a "connection" sound</strong></li>
+        <li><strong>Wait for 2 seconds</strong></li>
+        <li><strong>Play any other sound and turn off the internal LED</strong></li>
+      </ul>
+      <p><strong>❗️ Be clear with the instructions, the order of the actions is
+      important (LED &gt; Sound &gt; Wait &gt; Sound &gt; LED).</strong> This small
+      challenge will allow you to identify your student's skills to connect a series
+      of blocks creating a specific sequence of actions based on instructions.</p>
+      <p>The result code should look like the one below.</p>
+      <figure>
+        <img src="assets/lessons/img/board-buzzer-solution.png" alt="Code block showing LED and sound sequence">
+      </figure>
+    </div>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary><span class="lesson-test-num">2</span>Test #2: Color Lights</summary>
+  <div class="lesson-section-body">
+    <p>The color lights component is a neopixel ring. A circular array of individually
+    addressable RGB (Red, Green, Blue) LEDs. Each LED on the ring can independently
+    emit a wide range of colors and brightness levels.</p>
+    <p><strong>Connect this component to the connector 5 (refer to the
+    <a href="#wiring">wiring diagram</a> at the end of this document if needed):</strong></p>
+    <figure>
+      <img src="assets/lessons/img/ring-connector5.png" alt="Neopixel ring component illustration">
+    </figure>
+    <p>To test this component, we will use these 3 blocks. First, compose an algorithm
+    only with the first one and play it. Ask your students to describe what is
+    happening. Then repeat it with the other two blocks.</p>
+
+    <details class="lesson-vocab">
+      <summary>Vocabulary</summary>
+      <dl>
+        <dt>Neopixel Ring</dt>
+        <dd>A circular arrangement of individually addressable LEDs that can show different colors and patterns.</dd>
+        <dt>RGB LED</dt>
+        <dd>A light-emitting diode that can display many colors by mixing red, green, and blue.</dd>
+        <dt>Brightness</dt>
+        <dd>The intensity of light an LED emits.</dd>
+        <dt>Addressable LED</dt>
+        <dd>An LED that can be controlled independently from others in the same strip or ring.</dd>
+        <dt>Effect (Animation)</dt>
+        <dd>A programmed sequence of color changes or movements of lights.</dd>
+      </dl>
+    </details>
+
+    <div class="figure-row">
+      <figure>
+        <img src="assets/lessons/img/effect-rainbow.png" alt="Rainbow effect">
+        <figcaption>It lights up the component's LEDs in different colors, creating a rainbow effect. The LEDs change colors at the speed you set (slow, normal, or fast) for a limited time.</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/lessons/img/effect-bounce.png" alt="Bounce effect">
+        <figcaption>All LEDs start lit in an assigned color and turn on and off one by one until they complete two turns around the ring at the speed assigned to them (slow, normal, or fast).</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/lessons/img/effect-cycle.png" alt="Cycle effect">
+        <figcaption>All LEDs start off and turn on and off one by one in an assigned color until they complete a revolution around the ring at the speed assigned to them (slow, normal, or fast).</figcaption>
+      </figure>
+    </div>
+
+    <div class="lesson-challenge">
+      <h3>Challenge</h3>
+      <p><strong>Give your students 5 minutes to create whatever they want with the
+      light blocks (including the other blocks from the Colored Lights section that we
+      didn't use) and the other blocks we covered in the lesson. At the end of the 5
+      minutes, allow them to show their results.</strong></p>
+    </div>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary><span class="lesson-test-num">3</span>Test #3: Ultrasonic Sensor</summary>
+  <div class="lesson-section-body">
+    <p>An ultrasonic sensor is a device that uses sound waves to measure distances. It
+    sends out high-frequency sound waves, and when these waves bounce back after
+    hitting an object, the sensor calculates the distance based on the time taken for
+    the waves to return.</p>
+
+    <details class="lesson-vocab">
+      <summary>Vocabulary</summary>
+      <dl>
+        <dt>Ultrasonic Sensor</dt>
+        <dd>A device that measures distance using high-frequency sound waves.</dd>
+        <dt>Echo</dt>
+        <dd>The reflected sound wave that returns to the sensor after hitting an object.</dd>
+        <dt>Distance Measurement</dt>
+        <dd>The process of calculating how far away an object is based on the time it takes for the sound wave to return.</dd>
+        <dt>Threshold</dt>
+        <dd>A set value (e.g., 20 cm) that determines when the sensor will trigger an action.</dd>
+        <dt>Integration</dt>
+        <dd>Combining two or more functions of a component (in this case, distance sensing and light display).</dd>
+      </dl>
+    </details>
+
+    <p><strong>Connect this component to connector 1. Refer to the
+    <a href="#wiring">wiring diagram</a> if needed.</strong></p>
+    <p>The ultrasonic sensor can be considered as 2 components in 1: as a sensor to
+    measure distances from itself to the closest object in front, and as color light
+    device additional to the Color Lights ring. To try both functions at the same
+    time, we can use this piece of code.</p>
+    <figure>
+      <img src="assets/lessons/img/ultrasonic-blocks.png" alt="Code block showing ultrasonic sensor with distance threshold">
+    </figure>
+    <p>This algorithm will turn the lights of the ultrasonic sensor on green when it
+    detects something in front of it in less than 20 cm (about 7.87 in).</p>
+    <p class="lesson-note">💡 Using a ruler, show students that the action effectively
+    happens once an object is in the range of less than 20 cm.</p>
+
+    <div class="lesson-challenge">
+      <h3>Challenge</h3>
+      <p><strong>Modify the code to detect when an object is 10 cm (about 3.94 inches)
+      or closer. When this happens, turn the lights red and make a sound. If there is
+      nothing within 10 cm, keep the lights green.</strong></p>
+    </div>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary><span class="lesson-test-num">4</span>Test #4: Line sensors &amp; Motors</summary>
+  <div class="lesson-section-body">
+    <p>The line sensors are in fact infrared sensors. With them we can measure how
+    light or dark a surface is; thanks to this, for instance, we can determine when a
+    surface is black or white.</p>
+    <p>In this test we will combine them with the motors to see how they work together.</p>
+
+    <details class="lesson-vocab">
+      <summary>Vocabulary</summary>
+      <dl>
+        <dt>Line Sensor (Infrared Sensor)</dt>
+        <dd>A sensor that detects differences in light and dark surfaces.</dd>
+        <dt>Infrared Light</dt>
+        <dd>Invisible light used by sensors to detect surface reflection.</dd>
+        <dt>Digital Input</dt>
+        <dd>A sensor signal that has only two states: ON (1) or OFF (0).</dd>
+        <dt>Motor</dt>
+        <dd>An actuator that converts electrical energy into mechanical motion.</dd>
+        <dt>Actuator</dt>
+        <dd>A component that performs an action, such as moving or turning.</dd>
+        <dt>Interaction</dt>
+        <dd>The way sensors and actuators work together to control the robot's behavior.</dd>
+      </dl>
+    </details>
+
+    <p>Line sensors can be used as analog inputs (in the connectors 6 &amp; 7) or as
+    digital inputs (in the connectors <strong>8 &amp; 9</strong>). For this test,
+    <strong>we will connect the line sensors as digital inputs. Motors will be
+    connected as shown in the <a href="#wiring">wiring diagram</a>.</strong></p>
+    <p>The next algorithm will make motors to move once a line sensor detects
+    something close enough.</p>
+    <figure>
+      <img src="assets/lessons/img/line-motor-blocks.png" alt="Code block showing line sensor triggering motor movement">
+    </figure>
+    <p class="lesson-note lesson-note--warn">⚠️ Notice that the line sensors and motors blocks are not
+    the same. The first ones correspond to the left sensor and left motor while the
+    seconds to the right sensor and right motor.</p>
+  </div>
+</details>
+
+<p class="lesson-note lesson-note--done">✅ All test done! After confirming that all
+the electronic components are working correctly, if there is still time, consider
+giving an extra challenge to the students asking them to make an algorithm that
+combines all the electronic components together.</p>
+
+<details class="lesson-section" open id="wiring">
+  <summary>Wiring Diagram</summary>
+  <div class="lesson-section-body">
+    <figure class="figure--wide">
+      <img src="assets/lessons/img/wiring-diagram.png" alt="Wiring diagram showing component connections to Otto circuit board">
+    </figure>
+  </div>
+</details>
+
+<details class="lesson-section" open>
+  <summary>Lesson Evaluation</summary>
+  <div class="lesson-section-body">
+    <ul>
+      <li>Students identified the electronic components from the Otto Starter Kit and explained their basic functions.</li>
+      <li>Students successfully connected the circuit board and verified the LED and buzzer functions through coding.</li>
+      <li>Students tested the color lights and described the behavior of different light programs.</li>
+      <li>Students experimented with the ultrasonic sensor and explained how it measures distance using sound waves.</li>
+      <li>Students tested the line sensors and motors, demonstrating understanding of how sensors and actuators interact.</li>
+      <li>Students demonstrated debugging skills by correcting errors when components did not respond as expected.</li>
+    </ul>
+  </div>
+</details>
+
+<p style="margin-top:24px;color:var(--muted);font-size:12px;">
+From <code class="inline">hprobots.com/lesson/testing-components</code>. Images &copy; MORAVIA Consulting.</p>

@@ -616,6 +616,745 @@ html.vt-fallback.vt-leaving body{
   color:var(--muted);
 }
 
+/* ===========================================================================
+   Lesson mode  (see the "Lesson mode" section in scripts/app.js)
+
+   Toggled by the floating "Lesson" chip. Everything keys off
+   <body class="lesson-mode-body"> because the injected panes are body children,
+   not inside .page-shell. Presentation matches the rest of the customizer:
+   three rounded glass cards floating on a navy dot-grid "workspace", the same
+   --radius-lg / --shadow-lg / --stroke chrome the dock and toolbars use, and
+   the enter/exit is wrapped in a View Transition in app.js so the fullscreen
+   customizer cross-fades into the 3-card layout.
+
+   Right card is fixed at half the viewport; the two left cards share the other
+   half and either can be collapsed to a strip
+   (body[data-lesson-collapse="editor" | "viewer"]) so the other grows to fill
+   the column. #viewer-container is re-used in place as the bottom-left card -
+   the WebGL canvas and OrbitControls keep running, just resized
+   (app.js pokeViewerResize()).
+   =========================================================================== */
+:root{
+  --lg-gap:var(--edge);                        /* workspace gutter */
+  --lg-bar:34px;                               /* header / collapsed strip */
+  --lg-w:calc(50vw - var(--lg-gap) * 1.5);     /* each column card's width */
+  --lg-split:50vh;                             /* divider between the left cards */
+  --lg-ease:260ms cubic-bezier(.2,.8,.2,1);
+}
+
+/* The "Lesson" chip - a floating pill (JS-positioned, see positionLessonChip)
+   next to the plain "Python code" chip, wearing the brand accent so it reads as
+   the primary call to action. A container, not a button: the middle opens the
+   lesson, the flanking arrows page between a mix's lessons (shown only when it
+   has more than one -> .lesson-chip--multi). */
+.lesson-chip{
+  position:fixed;
+  z-index:var(--z-panels);
+  display:inline-flex;
+  align-items:stretch;
+  height:34px;
+  border:1px solid color-mix(in srgb, var(--brand) 55%, var(--stroke));
+  border-radius:999px;
+  background:var(--glass-bg);
+  box-shadow:var(--shadow-sm);
+  overflow:hidden;
+  font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+.lesson-chip .material-icons{ font-size:17px; }
+.lesson-chip-open,
+.lesson-chip-arrow{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  background:transparent;
+  color:var(--hpro-navy);
+  cursor:pointer;
+  transition:background var(--transition);
+}
+.lesson-chip-open{
+  gap:6px;
+  padding:0 13px;
+  font:inherit;
+}
+.lesson-chip-open .material-icons{ color:var(--brand-ink); }
+.lesson-chip-open:hover{ background:var(--brand-ghost); }
+.lesson-chip-name{
+  max-width:180px;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.lesson-chip-arrow{
+  width:28px;
+  flex:0 0 auto;
+}
+.lesson-chip-arrow .material-icons{ color:var(--muted); font-size:18px; }
+.lesson-chip-arrow:hover{ background:var(--brand-ghost); }
+.lesson-chip-arrow:hover .material-icons{ color:var(--hpro-navy); }
+.lesson-chip--multi [data-role="lesson-prev"]{ border-right:1px solid var(--stroke); }
+.lesson-chip--multi [data-role="lesson-next"]{ border-left:1px solid var(--stroke); }
+.lesson-chip--multi .lesson-chip-open{ padding:0 11px; }
+
+/* Injected panes sit in <body>; keep them out of the way until lesson mode. */
+.lesson-pane{ display:none; }
+#lesson-viewer-bar{ display:none; }
+
+/* Same light dot-grid surface the customizer canvas uses, so the floating
+   cards sit on the surface they always do - just guttered. */
+body.lesson-mode-body{
+  background-color:var(--canvas);
+  background-image:radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
+  background-size:24px 24px;
+}
+body.lesson-mode-body #lesson-editor-pane,
+body.lesson-mode-body #lesson-content-pane{ display:flex; flex-direction:column; }
+body.lesson-mode-body #lesson-viewer-bar{ display:flex; }
+body.lesson-mode-body #lesson-chip{ display:none !important; }
+
+/* Hide the customizer's own chrome while a lesson is open - the canvas alone
+   lives in the bottom-left card. */
+body.lesson-mode-body #right-dock,
+body.lesson-mode-body #left-tools,
+body.lesson-mode-body #info-container,
+body.lesson-mode-body #controls-toggle,
+body.lesson-mode-body #mix-code-toggle,
+body.lesson-mode-body #mix-code-body{ display:none !important; }
+
+/* Shared card chrome. */
+body.lesson-mode-body #lesson-editor-pane,
+body.lesson-mode-body #lesson-content-pane,
+body.lesson-mode-body #viewer-container{
+  position:fixed;
+  z-index:var(--z-floating);
+  border:1px solid var(--stroke);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lg);
+  background:var(--glass-bg);
+  overflow:hidden;
+}
+/* Entrance keyframes only where there's no View Transition to do the job
+   (html.vt-fallback is set by the inline head script when startViewTransition
+   is unavailable) - otherwise the VT snapshot can catch the cards mid-animation. */
+html.vt-fallback body.lesson-mode-body #lesson-editor-pane{
+  animation:lesson-in-left 300ms cubic-bezier(.22,.8,.24,1) both;
+}
+html.vt-fallback body.lesson-mode-body #lesson-content-pane{
+  animation:lesson-in-right 320ms cubic-bezier(.22,.8,.24,1) 30ms both;
+}
+
+/* --- right card: the lesson, fixed half-width --- */
+body.lesson-mode-body #lesson-content-pane{
+  top:var(--lg-gap);
+  right:var(--lg-gap);
+  bottom:var(--lg-gap);
+  width:var(--lg-w);
+}
+
+/* --- top-left card: the Python editor --- */
+body.lesson-mode-body #lesson-editor-pane{
+  left:var(--lg-gap);
+  width:var(--lg-w);
+  top:var(--lg-gap);
+  bottom:calc(100vh - var(--lg-split) + var(--lg-gap) * 0.5);
+  transition:top var(--lg-ease), bottom var(--lg-ease);
+}
+
+/* --- bottom-left card: the live viewer, re-used in place --- */
+body.lesson-mode-body #viewer-container{
+  left:var(--lg-gap);
+  width:var(--lg-w);
+  top:calc(var(--lg-split) + var(--lg-gap) * 0.5);
+  bottom:var(--lg-gap);
+  /* The base rule sets height:100%; with position:fixed + top + bottom that
+     over-constrains and height wins, so the card runs ~50vh past the viewport.
+     Let top/bottom define the box instead. */
+  height:auto;
+  border-top:0;
+  border-radius:0 0 var(--radius-lg) var(--radius-lg);
+  transition:top var(--lg-ease), bottom var(--lg-ease);
+}
+
+/* The customizer's modals/overlays live inside #viewer-container, so in lesson
+   mode they were positioned against (and clipped by) the small viewer card -
+   dialog buttons ended up off the card and unclickable. Re-anchor them with
+   position:fixed, scoped to the 3D-MODEL card exactly (matching its live
+   left/width/top/bottom, collapse state included) so the dialog is sized to
+   that pane and dims only it - never the editor above or the lesson on the
+   right. */
+body.lesson-mode-body #consent-overlay,
+body.lesson-mode-body #ar-overlay,
+body.lesson-mode-body #settings-overlay{
+  position:fixed;
+  inset:auto;
+  left:var(--lg-gap);
+  width:var(--lg-w);
+  top:calc(var(--lg-split) + var(--lg-gap) * 0.5);
+  bottom:var(--lg-gap);
+  height:auto;
+  border-radius:var(--radius-lg);
+  overflow:auto;
+}
+body.lesson-mode-body[data-lesson-collapse="editor"] #consent-overlay,
+body.lesson-mode-body[data-lesson-collapse="editor"] #ar-overlay,
+body.lesson-mode-body[data-lesson-collapse="editor"] #settings-overlay{
+  top:calc(var(--lg-gap) * 2 + var(--lg-bar));
+}
+/* Viewer collapsed to a strip - nothing to dim there, fall back to the column. */
+body.lesson-mode-body[data-lesson-collapse="viewer"] #consent-overlay,
+body.lesson-mode-body[data-lesson-collapse="viewer"] #ar-overlay,
+body.lesson-mode-body[data-lesson-collapse="viewer"] #settings-overlay{
+  top:var(--lg-gap);
+}
+/* Cap the dialog card to the pane it now lives in (it's otherwise 600px wide /
+   85vh tall - bigger than the card). #consent-text already scrolls internally. */
+body.lesson-mode-body #consent-card,
+body.lesson-mode-body #ar-card,
+body.lesson-mode-body #settings-card{
+  max-width:100%;
+  max-height:100%;
+}
+/* Small and JS-anchored to the part on the model - just needs to escape the
+   card clip, not be re-scoped. */
+body.lesson-mode-body #variant-grid-panel{ position:fixed; }
+body.lesson-mode-body #toastStack{
+  position:fixed;
+  z-index:calc(var(--z-floating) + 5);
+}
+
+/* --- the viewer card's header / collapse strip (sits flush on its top edge) --- */
+body.lesson-mode-body #lesson-viewer-bar{
+  position:fixed;
+  left:var(--lg-gap);
+  width:var(--lg-w);
+  top:calc(var(--lg-split) + var(--lg-gap) * 0.5);
+  height:var(--lg-bar);
+  z-index:calc(var(--z-floating) + 1);
+  border:1px solid var(--stroke);
+  border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow:var(--shadow-lg);
+  transition:top var(--lg-ease);
+}
+
+/* editor collapsed -> viewer grows to fill the column */
+body.lesson-mode-body[data-lesson-collapse="editor"] #lesson-editor-pane{
+  bottom:calc(100vh - var(--lg-gap) - var(--lg-bar));
+}
+body.lesson-mode-body[data-lesson-collapse="editor"] #viewer-container,
+body.lesson-mode-body[data-lesson-collapse="editor"] #lesson-viewer-bar{
+  top:calc(var(--lg-gap) * 2 + var(--lg-bar));
+}
+
+/* viewer collapsed -> editor grows to fill the column */
+body.lesson-mode-body[data-lesson-collapse="viewer"] #lesson-editor-pane{
+  bottom:calc(var(--lg-gap) * 2 + var(--lg-bar));
+}
+body.lesson-mode-body[data-lesson-collapse="viewer"] #viewer-container,
+body.lesson-mode-body[data-lesson-collapse="viewer"] #lesson-viewer-bar{
+  top:calc(100vh - var(--lg-gap) - var(--lg-bar));
+}
+body.lesson-mode-body[data-lesson-collapse="viewer"] #lesson-viewer-bar{
+  border-radius:var(--radius-lg);
+}
+
+@media (prefers-reduced-motion: reduce){
+  body.lesson-mode-body #lesson-editor-pane,
+  body.lesson-mode-body #lesson-content-pane{ animation:none; }
+  body.lesson-mode-body #lesson-editor-pane,
+  body.lesson-mode-body #viewer-container,
+  body.lesson-mode-body #lesson-viewer-bar{ transition:none; }
+}
+
+/* ===========================================================================
+   Lesson mode enter / exit choreography  (View Transitions)
+
+   app.js wraps the toggle in document.startViewTransition() and, only for the
+   duration of that transition, puts .lesson-animating on <body>. Every
+   view-transition-name below is gated on that class, so this whole sequence is
+   scoped to the lesson toggle and never touches the index <-> engrave one.
+
+   What moves:
+     - the 3D view (#viewer-container) is present in BOTH states, so the API
+       morphs it between fullscreen and its card automatically - the anchor of
+       the whole effect;
+     - the lesson + editor cards slide in from the right / left edges;
+     - the customizer chrome it replaces (dock, paint column, toolbar) slides
+       out the way it came in - right, left, down.
+   Reverse on exit (old <-> new swap themselves).
+   =========================================================================== */
+body.lesson-animating #viewer-container{ view-transition-name:lesson-viewer; }
+body.lesson-animating #lesson-content-pane{ view-transition-name:lesson-content; }
+body.lesson-animating #lesson-editor-pane{ view-transition-name:lesson-editor; }
+body.lesson-animating #lesson-viewer-bar{ view-transition-name:lesson-viewerbar; }
+body.lesson-animating #right-dock{ view-transition-name:cz-dock; }
+body.lesson-animating #left-tools{ view-transition-name:cz-left; }
+body.lesson-animating #info-container{ view-transition-name:cz-toolbar; }
+
+:root::view-transition-group(lesson-viewer),
+:root::view-transition-old(lesson-viewer),
+:root::view-transition-new(lesson-viewer){
+  animation-duration:480ms;
+  animation-timing-function:cubic-bezier(.22,.8,.24,1);
+}
+
+:root::view-transition-new(lesson-content){
+  animation:460ms cubic-bezier(.22,.8,.24,1) 40ms both lesson-in-right;
+}
+:root::view-transition-old(lesson-content){
+  animation:300ms cubic-bezier(.4,0,1,1) both lesson-out-right;
+}
+:root::view-transition-new(lesson-editor){
+  animation:440ms cubic-bezier(.22,.8,.24,1) 20ms both lesson-in-left;
+}
+:root::view-transition-old(lesson-editor){
+  animation:300ms cubic-bezier(.4,0,1,1) both lesson-out-left;
+}
+:root::view-transition-new(lesson-viewerbar){
+  animation:380ms cubic-bezier(.22,.8,.24,1) 90ms both lesson-in-down;
+}
+:root::view-transition-old(lesson-viewerbar){
+  animation:180ms ease both lesson-fade-out;
+}
+
+:root::view-transition-old(cz-dock){
+  animation:300ms cubic-bezier(.4,0,1,1) both lesson-out-right;
+}
+:root::view-transition-new(cz-dock){
+  animation:400ms cubic-bezier(.22,.8,.24,1) 60ms both lesson-in-right;
+}
+:root::view-transition-old(cz-left){
+  animation:300ms cubic-bezier(.4,0,1,1) both lesson-out-left;
+}
+:root::view-transition-new(cz-left){
+  animation:400ms cubic-bezier(.22,.8,.24,1) 60ms both lesson-in-left;
+}
+:root::view-transition-old(cz-toolbar){
+  animation:280ms cubic-bezier(.4,0,1,1) both lesson-out-down;
+}
+:root::view-transition-new(cz-toolbar){
+  animation:380ms cubic-bezier(.22,.8,.24,1) 80ms both lesson-in-down;
+}
+
+/* everything unnamed just cross-fades - keep it quick and out of the way */
+:root::view-transition-old(root){ animation-duration:220ms; }
+:root::view-transition-new(root){ animation-duration:300ms; }
+
+@keyframes lesson-in-right{
+  from{ opacity:0; transform:translateX(26px); }
+  to{ opacity:1; transform:translateX(0); }
+}
+@keyframes lesson-out-right{
+  from{ opacity:1; transform:translateX(0); }
+  to{ opacity:0; transform:translateX(30px); }
+}
+@keyframes lesson-in-left{
+  from{ opacity:0; transform:translateX(-26px); }
+  to{ opacity:1; transform:translateX(0); }
+}
+@keyframes lesson-out-left{
+  from{ opacity:1; transform:translateX(0); }
+  to{ opacity:0; transform:translateX(-30px); }
+}
+@keyframes lesson-in-down{
+  from{ opacity:0; transform:translateY(-10px); }
+  to{ opacity:1; transform:translateY(0); }
+}
+@keyframes lesson-out-down{
+  from{ opacity:1; transform:translateY(0); }
+  to{ opacity:0; transform:translateY(12px); }
+}
+@keyframes lesson-fade-out{ from{ opacity:1; } to{ opacity:0; } }
+
+@media (prefers-reduced-motion: reduce){
+  :root::view-transition-group(*),
+  :root::view-transition-old(*),
+  :root::view-transition-new(*){ animation:none !important; }
+}
+
+/* --- pane furniture: glass headers, matching .mix-code-bar / .preset-panel-head --- */
+.lesson-pane-bar{
+  flex:0 0 var(--lg-bar);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:0 8px 0 10px;
+  background:var(--glass-hover);
+  border-bottom:1px solid var(--stroke);
+  color:var(--muted);
+  font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.01em;
+}
+.lesson-pane-title{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lesson-pane-spacer{ flex:1 1 auto; }
+.lesson-pane-ext{
+  color:var(--brand-ink); text-decoration:none;
+  font-size:11px; font-weight:700; white-space:nowrap;
+}
+.lesson-pane-ext:hover{ text-decoration:underline; }
+
+.lesson-collapse-btn{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:26px; height:26px;
+  border:1px solid var(--stroke);
+  border-radius:50%;
+  background:var(--glass-bg);
+  color:var(--muted);
+  cursor:pointer;
+  transition:background var(--transition), transform var(--transition), color var(--transition);
+}
+.lesson-collapse-btn:hover{ background:var(--glass-hover); transform:translateY(-1px); color:var(--hpro-navy); }
+.lesson-collapse-btn:active{ transform:translateY(0); background:var(--glass-press); }
+.lesson-collapse-btn .material-icons{ font-size:15px; }
+
+/* prev/next lesson in the content-pane header (reuses .lesson-collapse-btn) */
+.lesson-nav-btn{ width:24px; height:24px; }
+.lesson-nav-count{
+  font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:var(--muted);
+  white-space:nowrap;
+}
+/* brief cross-fade when paging between lessons */
+.lesson-scroll{ transition:opacity 140ms ease; }
+.lesson-scroll.is-swapping{ opacity:0; }
+
+.lesson-exit-btn{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:28px;
+  padding:0 12px;
+  border:1px solid var(--brand);
+  border-radius:999px;
+  background:var(--brand);
+  color:var(--hpro-navy);
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.03em;
+  cursor:pointer;
+  box-shadow:0 6px 14px color-mix(in srgb, var(--brand) 26%, transparent);
+  transition:transform var(--transition), background var(--transition);
+}
+.lesson-exit-btn .material-icons{ font-size:15px; color:var(--hpro-navy); }
+.lesson-exit-btn:hover{ transform:translateY(-1px); background:var(--brand-ink); }
+.lesson-exit-btn:active{ transform:translateY(0); }
+
+/* "Copy code" - secondary ghost pill beside Exit, shown when the lesson has a
+   paired assets/mix-code/<code>.py */
+.lesson-code-btn{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  height:28px;
+  padding:0 11px;
+  border:1px solid var(--stroke);
+  border-radius:999px;
+  background:var(--glass-bg);
+  color:var(--muted);
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.03em;
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition), border-color var(--transition);
+}
+.lesson-code-btn .material-icons{ font-size:14px; }
+.lesson-code-btn:hover{ background:var(--glass-hover); color:var(--hpro-navy); }
+.lesson-code-btn.is-copied{ color:#1a9f5a; border-color:#1a9f5a55; }
+
+.lesson-pane-body{
+  position:relative;
+  flex:1 1 auto;
+  min-height:0;
+  background:var(--glass-hover);
+}
+.lesson-pane-body iframe{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  border:0; display:block;
+  background:#fff;
+}
+.lesson-embed-fallback{
+  position:absolute; inset:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:9px; padding:22px; text-align:center;
+  color:var(--muted); font-size:12.5px; line-height:1.5;
+}
+.lesson-embed-fallback b{ color:var(--text); }
+.lesson-embed-fallback a{
+  padding:7px 13px; border-radius:9px;
+  background:var(--brand); color:var(--hpro-navy);
+  text-decoration:none; font-weight:700;
+}
+
+/* Viewer-bar "Pieces" toggle - in-lesson entry point for hide/show-pieces.
+   Ghost pill by default, brand-tinted when the mode is on. */
+.lesson-vis-btn{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  height:24px;
+  padding:0 9px 0 7px;
+  border:1px solid var(--stroke);
+  border-radius:999px;
+  background:var(--glass-bg);
+  color:var(--muted);
+  font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition), border-color var(--transition);
+}
+.lesson-vis-btn:hover{ background:var(--glass-hover); color:var(--hpro-navy); }
+.lesson-vis-btn .material-icons{ font-size:15px; }
+.lesson-vis-btn.is-active{
+  background:var(--brand);
+  border-color:var(--brand);
+  color:var(--hpro-navy);
+}
+.lesson-vis-btn.is-active .material-icons{ color:var(--hpro-navy); }
+
+/* The V-mode banner is a wide pill - it would clip inside the small viewer
+   card. The viewer-bar toggle + the edge vignette are the cue in lesson mode. */
+body.lesson-mode-body #visibility-edit-banner{ display:none !important; }
+
+/* --- lesson content (innerHTML from assets/lessons/<id>.html) --- */
+.lesson-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  padding:24px 28px 56px;
+  background:var(--glass-bg);
+  color:#22263a;
+}
+.lesson-loading{ color:var(--muted); font-size:13px; }
+.lesson-scroll .eyebrow{
+  display:inline-block; margin:0 0 8px;
+  font:800 11px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:var(--brand-ink);
+}
+.lesson-scroll h1{ margin:0 0 6px; font-size:25px; line-height:1.15; color:var(--hpro-navy); }
+.lesson-scroll h2{
+  margin:32px 0 10px; font-size:17px; color:var(--hpro-navy);
+  padding-bottom:6px; border-bottom:2px solid var(--glass-hover);
+}
+.lesson-scroll h3{ margin:20px 0 6px; font-size:14px; color:var(--text); }
+.lesson-scroll p, .lesson-scroll li{ font-size:13.5px; line-height:1.62; }
+.lesson-scroll ul, .lesson-scroll ol{ padding-left:20px; }
+.lesson-scroll a{ color:var(--brand-ink); }
+.lesson-scroll code.inline{
+  background:var(--glass-hover); border:1px solid var(--stroke);
+  padding:1px 5px; border-radius:5px;
+  font:11.5px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.lesson-scroll pre{
+  margin:12px 0; padding:14px 16px;
+  background:var(--hpro-navy); color:#eef0ff;
+  border-radius:10px; overflow-x:auto;
+  font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  tab-size:4;
+}
+.lesson-scroll pre .cmt{ color:#8b8fc4; }
+
+/* Lesson figures (screenshots, diagrams). */
+.lesson-scroll img{ max-width:100%; height:auto; display:block; }
+.lesson-scroll figure{
+  margin:16px 0;
+  padding:10px;
+  background:var(--glass-hover);
+  border:1px solid var(--stroke);
+  border-radius:10px;
+}
+.lesson-scroll figure img{
+  border-radius:6px;
+  background:#fff;
+  margin:0 auto;
+}
+.lesson-scroll figure.figure--wide img{ width:100%; }
+.lesson-scroll figcaption{
+  margin-top:8px;
+  font-size:11.5px;
+  line-height:1.45;
+  color:var(--muted);
+  text-align:center;
+}
+.lesson-scroll .figure-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin:16px 0;
+}
+.lesson-scroll .figure-row figure{ flex:1 1 150px; margin:0; }
+
+.lesson-scroll table.pins{ width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+.lesson-scroll table.pins th, .lesson-scroll table.pins td{
+  text-align:left; padding:7px 10px; border-bottom:1px solid var(--glass-hover);
+}
+.lesson-scroll table.pins th{
+  color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+}
+.lesson-scroll table.pins td:last-child{
+  font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--hpro-navy); font-weight:700; white-space:nowrap;
+}
+.lesson-scroll .callout{
+  margin:14px 0; padding:12px 14px;
+  background:#fff8e5; border:1px solid #f2d891; border-left:4px solid var(--brand);
+  border-radius:8px; font-size:12.5px; line-height:1.55; color:#5b4a1c;
+}
+.lesson-scroll .callout--do{
+  background:#eafaf3; border-color:#a9e6cf; border-left-color:var(--hpro-mint); color:#1f5943;
+}
+
+/* ===========================================================================
+   Lesson content components  (see assets/lessons/STYLE.md)
+   Mostly neutral. Colour is used sparingly: challenge cards are blue, the two
+   note flavours (⚠️ / ✅) keep a light tint. Everything else is grey.
+   =========================================================================== */
+
+/* --- collapsible lesson section (accordion) - neutral --- */
+.lesson-scroll details.lesson-section{
+  margin:14px 0;
+  border:1px solid var(--stroke);
+  border-radius:12px;
+  background:#fff;
+  overflow:hidden;
+}
+.lesson-scroll details.lesson-section > summary{
+  list-style:none;
+  cursor:pointer;
+  user-select:none;
+  display:flex; align-items:center; gap:10px;
+  padding:12px 14px;
+  background:var(--glass-hover);
+  font:700 14px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--hpro-navy);
+  transition:background var(--transition);
+}
+.lesson-scroll details.lesson-section > summary::-webkit-details-marker{ display:none; }
+.lesson-scroll details.lesson-section > summary:hover{ background:var(--glass-press); }
+.lesson-scroll details.lesson-section > summary::after{
+  content:"\25BE";                 /* ▾ */
+  margin-left:auto;
+  color:var(--muted); font-size:13px;
+  transition:transform var(--transition);
+}
+.lesson-scroll details.lesson-section[open] > summary::after{ transform:rotate(180deg); }
+.lesson-scroll details.lesson-section[open] > summary{ border-bottom:1px solid var(--stroke); }
+.lesson-scroll .lesson-section-body{ padding:14px 16px 4px; }
+.lesson-scroll .lesson-section-body > :first-child{ margin-top:0; }
+.lesson-scroll details.lesson-section[open] > .lesson-section-body{
+  animation:lesson-section-in 200ms cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes lesson-section-in{ from{ opacity:0; transform:translateY(-4px); } to{ opacity:1; transform:none; } }
+
+/* number badge for the Test #1..#4 sections */
+.lesson-scroll .lesson-test-num{
+  flex:0 0 auto;
+  width:26px; height:26px;
+  display:inline-flex; align-items:center; justify-content:center;
+  border-radius:8px;
+  background:var(--hpro-navy); color:#fff;
+  font:800 13px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+/* --- vocabulary glossary (collapsible, nested) - neutral --- */
+.lesson-scroll details.lesson-vocab{
+  margin:14px 0;
+  background:var(--glass-hover);
+  border:1px solid var(--stroke);
+  border-radius:10px;
+  overflow:hidden;
+}
+.lesson-scroll details.lesson-vocab > summary{
+  list-style:none; cursor:pointer; user-select:none;
+  padding:9px 13px;
+  font:800 10.5px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:var(--muted);
+  display:flex; align-items:center;
+}
+.lesson-scroll details.lesson-vocab > summary::-webkit-details-marker{ display:none; }
+.lesson-scroll details.lesson-vocab > summary::after{
+  content:"\25BE"; margin-left:auto; color:var(--muted);
+  letter-spacing:0; transition:transform var(--transition);
+}
+.lesson-scroll details.lesson-vocab[open] > summary::after{ transform:rotate(180deg); }
+.lesson-scroll details.lesson-vocab[open] > summary{ border-bottom:1px solid var(--stroke); }
+.lesson-scroll details.lesson-vocab dl{ margin:0; padding:10px 14px 12px; display:grid; gap:9px; background:#fff; }
+.lesson-scroll details.lesson-vocab dt{ font:700 12.5px/1.4 -apple-system,BlinkMacSystemFont,Inter,system-ui; color:var(--hpro-navy); }
+.lesson-scroll details.lesson-vocab dd{ margin:2px 0 0; font-size:12.5px; line-height:1.5; color:#3a3f52; }
+
+/* --- challenge card - blue (the one deliberately coloured block) --- */
+.lesson-scroll .lesson-challenge{
+  margin:22px 0;
+  padding:14px 16px 4px;
+  background:#eef4ff;
+  border:1px solid #c6dbfb;
+  border-left:4px solid #3d7fff;
+  border-radius:10px;
+}
+.lesson-scroll .lesson-challenge > h3{
+  margin:0 0 8px;
+  font:800 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:.12em; text-transform:uppercase;
+  color:#26518f;
+}
+.lesson-scroll .lesson-challenge > h3::before{ content:"🎯 "; }
+.lesson-scroll .lesson-challenge p,
+.lesson-scroll .lesson-challenge li{ color:#274063; }
+.lesson-scroll .lesson-challenge figure{ background:#f7faff; border-color:#c6dbfb; }
+
+/* --- inline teacher note: plain (💡), warn (⚠️), done (✅) --- */
+.lesson-scroll .lesson-note{
+  margin:12px 0;
+  padding:9px 13px;
+  background:var(--glass-hover);
+  border-left:3px solid var(--stroke-strong);
+  border-radius:0 8px 8px 0;
+  font-size:12.5px; line-height:1.55; color:#3a3f52;
+}
+.lesson-scroll .lesson-note--warn{
+  background:#fff1e8; border-left-color:#e08744; color:#8a4a1c;
+}
+.lesson-scroll .lesson-note--done{
+  background:#eafaf3; border-left-color:var(--ok); color:#1f5943;
+}
+
+/* lead paragraph right under the title */
+.lesson-scroll h1 + p{ font-size:14.5px; line-height:1.55; color:#22263a; }
+
+.lesson-scroll .chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px; }
+.lesson-scroll .chip-row .chip{
+  font:700 11px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted); background:var(--glass-hover);
+  border:1px solid var(--stroke); padding:4px 9px; border-radius:999px;
+}
+.lesson-scroll .step-tag{
+  display:inline-block; margin-right:8px; padding:2px 8px;
+  background:var(--brand); color:var(--hpro-navy);
+  border-radius:6px; font:800 11px/1.4 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+
+/* Lesson mode is a desktop layout; the chip is gated to desktop in app.js, but
+   guard the cards too in case the window is shrunk while a lesson is open -
+   stack the model over the lesson, drop the editor and its strip. */
+@media (max-width:900px){
+  body.lesson-mode-body #lesson-editor-pane,
+  body.lesson-mode-body #lesson-viewer-bar{ display:none !important; }
+  body.lesson-mode-body #viewer-container{
+    left:var(--lg-gap); right:var(--lg-gap); width:auto;
+    top:var(--lg-gap); bottom:auto; height:42vh;
+    border-top:1px solid var(--stroke);
+    border-radius:var(--radius-lg);
+  }
+  body.lesson-mode-body #lesson-content-pane{
+    left:var(--lg-gap); right:var(--lg-gap); width:auto;
+    top:calc(42vh + var(--lg-gap) * 2); bottom:var(--lg-gap);
+  }
+}
+
 /* Two-column grid, scrolling vertically -- matches how #panel-essential's own
    part list scrolls on the Parts tab (see .model-controls), fills the dock's
    available height the same way instead of sitting as a short single row

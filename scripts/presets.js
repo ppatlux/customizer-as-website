@@ -26,6 +26,26 @@
 // assets/mix-code/<name>.py displayed and a Copy button. Only for showcase
 // mixes (all parts hidden). Drop the .py in and set the field; a missing file
 // just hides the panel.
+//
+// A showcase mix may also carry lessons — a floating "Lesson" chip then appears
+// next to the Python chip (desktop only). Clicking it drops the customizer into
+// a 3-pane lesson layout: Python editor (app.hprobots.com) top left, this 3D
+// model bottom left, and assets/lessons/<id>.html on the right. Missing file →
+// the chip still shows but the pane says "no content yet".
+//
+//   lessons: [{ id: 'cube-ring-chase', title: 'Ring Chase', code: 'ringchase' }, …]
+//
+// Per lesson:
+//   title   — shown on the chip and the in-lesson header.
+//   editor  — 'python' (default) or 'word'. Picks which app.hprobots.com editor
+//             loads in the left pane (?type=python vs ?type=word block editor).
+//   code    — optional filename in assets/mix-code/; adds a "Copy code" button
+//             that copies assets/mix-code/<code>.py. Only for text (python)
+//             lessons; a word-blocks lesson has no paste-able code.
+//
+// With more than one entry the chip and the in-lesson header grow prev/next
+// arrows to page between them. `lessonId: '<id>'` is still accepted as a
+// shorthand for `lessons: [{ id: '<id>', title: 'Lesson' }]`.
 export const PRESETS = {
   starter: {
     label: 'Basic',
@@ -35,7 +55,10 @@ export const PRESETS = {
       bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Leprechaun.glb',
       arms: 'wings.glb', bumper: 'bumper_oriented.glb'
     },
-    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: false }
+    visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: false },
+    lessons: [
+      { id: 'starter-testing-components', title: 'Testing Components', editor: 'word' }
+    ]
   },
   invent: {
     label: 'Walk & Roll',
@@ -131,7 +154,8 @@ export const PRESETS = {
     parts: {},
     visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
     extras: ['bottom_extend_pcb_r1_1_.glb', 'top_matrix_double-butttons_v2.glb', 'HP_KnobEncoder_R1.glb'],
-    codeId: 'console'
+    codeId: 'console',
+    lessons: [{ id: 'retro-console', title: 'Retro Console', code: 'console' }]
   },
 
   console2: {
@@ -147,7 +171,11 @@ export const PRESETS = {
     description: 'Simon says!',
     parts: {},
     visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
-    extras: ['Top_lightsdiffuser_cube.glb', 'Top-sensor-single_cube_1.glb', 'Top-sensor-single_cube_2.glb', 'Top-sensor-single_cube_3.glb', 'Top-sensor-single_cube_4.glb', 'top_pcb_v1.glb', 'cube-frame.glb']
+    extras: ['Top_lightsdiffuser_cube.glb', 'Top-sensor-single_cube_1.glb', 'Top-sensor-single_cube_2.glb', 'Top-sensor-single_cube_3.glb', 'Top-sensor-single_cube_4.glb', 'top_pcb_v1.glb', 'cube-frame.glb'],
+    lessons: [
+      { id: 'cube-ring-chase', title: 'Ring Chase', code: 'ringchase' },
+      { id: 'cube-simon-says', title: 'Simon Says', code: 'simonsays' }
+    ]
   }
 };
 

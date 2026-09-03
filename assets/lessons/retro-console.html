@@ -1,0 +1,166 @@
+<!-- Lesson content for the "Retro Console" mix. Injected as innerHTML into the
+     right pane of lesson mode (see scripts/app.js "Lesson mode"). Plain HTML
+     fragment: no <html>/<head>/<body>. Styling comes from .lesson-scroll rules
+     in styles/app.css. Paired code: assets/mix-code/console.py. -->
+
+<span class="eyebrow">Make &amp; Code</span>
+<h1>Inside the Retro Console</h1>
+<p>The model on the left is a handheld games console built on the HP Robot board:
+an <strong>8&nbsp;&times;&nbsp;16 LED screen</strong>, two buttons, a rotary knob and
+a buzzer &mdash; running a full game of <strong>Tetris</strong>. The complete program
+is on the <em>Python code</em> panel for this mix (<code class="inline">console.py</code>).
+This lesson walks through how it works so you can change it.</p>
+
+<div class="chip-row">
+  <span class="chip">⏱ 45&ndash;60 min</span>
+  <span class="chip">🐍 MicroPython</span>
+  <span class="chip">🔌 Digital I/O only</span>
+  <span class="chip">🖨 1 printed shell</span>
+</div>
+
+<h2>1 · The parts it talks to</h2>
+<p>Every input and output is wired to a fixed pin. There are no analog sensors
+here &mdash; the console reads <em>digital inputs</em> (buttons, encoder) and drives
+<em>digital outputs</em> (the LED matrix, the buzzer).</p>
+<table class="pins">
+  <thead><tr><th>Part</th><th>Type</th><th>Job</th><th>Pin</th></tr></thead>
+  <tbody>
+    <tr><td>LED matrix (8&times;16)</td><td>output</td><td>The screen &mdash; 128 addressable RGB LEDs</td><td>GP18</td></tr>
+    <tr><td>Left button</td><td>input</td><td>Move piece left</td><td>GP27</td></tr>
+    <tr><td>Right button</td><td>input</td><td>Move piece right</td><td>GP14</td></tr>
+    <tr><td>Rotary encoder</td><td>input</td><td>Rotate piece (two signals: CLK, DT)</td><td>GP21 / GP22</td></tr>
+    <tr><td>Buzzer</td><td>output</td><td>Sound effects and music</td><td>GP25</td></tr>
+  </tbody>
+</table>
+<p>The buttons and encoder are set up with <code class="inline">Pin.PULL_UP</code>, so
+an untouched pin reads <code class="inline">1</code> and a pressed one reads
+<code class="inline">0</code>. The matrix is a NeoPixel strip physically folded into
+a grid. The buzzer is passive &mdash; you make tone by sending it a square wave.</p>
+
+<h2>2 · The screen is just a list of lights</h2>
+<p>A NeoPixel matrix is one long chain of LEDs. The code treats it as a grid by
+converting an <code class="inline">(x, y)</code> position into a position in that chain:</p>
+<pre><span class="cmt"># pixel (x, y) -&gt; index in the 128-LED chain</span>
+np[y * WIDTH + x] = (r, g, b)</pre>
+<p>Two helpers do all the drawing every frame: <code class="inline">draw_grid()</code>
+paints the blocks that have already landed, then <code class="inline">draw_piece()</code>
+paints the piece you're controlling on top. Both run every loop, then
+<code class="inline">np.write()</code> pushes the colours out to the hardware.</p>
+<div class="callout">Every colour is passed through <code class="inline">scale_color()</code>,
+which multiplies it by <code class="inline">BRIGHTNESS = 0.3</code>. At full brightness a
+packed screen draws a lot of current and the colours wash out &mdash; keep values low.</div>
+
+<h2>3 · Reading the controls</h2>
+<h3>Buttons</h3>
+<p>Because of the pull-ups, <em>pressed means the value is 0</em>. The loop also
+remembers the previous reading (<code class="inline">last_btn_left</code>,
+<code class="inline">last_btn_right</code>) so one press moves the piece one step
+instead of sliding it across the screen while you hold the button &mdash; that's
+<strong>edge detection</strong>.</p>
+<pre><span class="cmt"># move only on the 1 -&gt; 0 transition (the moment of pressing)</span>
+if last_btn_left == 1 and curr_left == 0:
+    if valid_position(px - 1, py, current_piece['shape']):
+        px -= 1
+        blip()</pre>
+<h3>Rotary knob (encoder)</h3>
+<p>An encoder sends two square waves, <code class="inline">CLK</code> and
+<code class="inline">DT</code>, that are slightly out of step. When
+<code class="inline">CLK</code> changes, the <em>level of <code class="inline">DT</code>
+at that instant</em> tells you which way it turned:</p>
+<pre>if clk_now != last_clk:                       <span class="cmt"># CLK edge = one detent</span>
+    if time.ticks_diff(now, move_timer) &gt; 100:  <span class="cmt"># ignore contact bounce</span>
+        rotate_piece(clockwise=(clk_now != dt_now))
+        click()
+last_clk = clk_now</pre>
+
+<h2>4 · The game loop never sleeps</h2>
+<p>The piece has to fall on its own <em>and</em> the buttons have to feel instant.
+You can't <code class="inline">sleep()</code> &mdash; that would freeze input. Instead the
+loop runs flat out and each activity checks a stopwatch,
+<code class="inline">time.ticks_ms()</code>, to decide if it's due:</p>
+<ul>
+  <li><code class="inline">fall_timer</code> + <code class="inline">fall_interval</code>
+  &mdash; drop the piece one row (500&nbsp;ms normally, 75&nbsp;ms when both buttons are held: the fast drop).</li>
+  <li><code class="inline">move_timer</code> + <code class="inline">move_delay</code>
+  &mdash; how often a held button repeats, and encoder debounce.</li>
+</ul>
+<pre>if time.ticks_diff(now_ms, fall_timer) &gt; fall_interval:
+    fall_timer = now_ms
+    if valid_position(px, py + 1, current_piece['shape']):
+        py += 1
+    else:
+        freeze_piece(); thud(); remove_lines(); new_piece()</pre>
+<p>This "check a timer, don't block" pattern is how one loop juggles several
+things at once on a microcontroller.</p>
+
+<h2>5 · Pieces, rotation &amp; collision</h2>
+<p>The 7 tetrominoes live in <code class="inline">SHAPES</code> as plain data: each
+shape is a list of its <strong>4 rotation states</strong>, and each state is a list of
+<strong>4 cells</strong> given as <code class="inline">(dx, dy)</code> offsets from the
+piece's position.</p>
+<pre><span class="cmt"># the T piece: 4 rotations, each 4 cells</span>
+[[(0,0),(1,0),(2,0),(1,1)],
+ [(1,0),(1,1),(1,2),(0,1)],
+ [(0,1),(1,1),(2,1),(1,0)],
+ [(1,0),(1,1),(1,2),(2,1)]]</pre>
+<p>Rotating doesn't do any maths &mdash; it just moves to the next state in the list.
+And there's <strong>one rule</strong> for whether any move is allowed,
+<code class="inline">valid_position()</code>, reused by left/right moves, rotation and
+gravity alike:</p>
+<pre>def valid_position(x0, y0, shape):
+    for dx, dy in shape:
+        x, y = x0 + dx, y0 + dy
+        if x &lt; 0 or x &gt;= WIDTH or y &gt;= HEIGHT:
+            return False                 <span class="cmt"># off the screen</span>
+        if y &gt;= 0 and grid[y][x] != (0, 0, 0):
+            return False                 <span class="cmt"># hits a settled block</span>
+    return True</pre>
+<p><code class="inline">rotate_piece()</code> builds the rotated shape, tests it with
+that function, and <em>only keeps it if it fits</em> &mdash; so a rotation against a wall
+is simply ignored.</p>
+
+<h2>6 · Landing, line clears &amp; scoring</h2>
+<p>When gravity finds no valid spot below, <code class="inline">freeze_piece()</code>
+copies the piece's cells into <code class="inline">grid</code> for good. Then
+<code class="inline">remove_lines()</code> rebuilds the grid keeping only the rows that
+<em>aren't</em> full, and drops blank rows in on top:</p>
+<pre>new_grid = [row for row in grid if not all(p != (0,0,0) for p in row)]
+cleared  = HEIGHT - len(new_grid)
+while len(new_grid) &lt; HEIGHT:
+    new_grid.insert(0, [(0,0,0)] * WIDTH)
+score += cleared * 10                    <span class="cmt"># then jingle()</span></pre>
+<p>If <code class="inline">new_piece()</code> spawns a shape that's already invalid,
+the stack reached the top &mdash; <code class="inline">game_over()</code> plays a sad tone,
+scrolls your score, saves the high score and resets.</p>
+
+<h2>7 · Sound &amp; memory</h2>
+<p>The buzzer is driven with <strong>PWM</strong> &mdash; a square wave whose frequency is
+the pitch:</p>
+<pre>def buzz(freq, dur=100, duty=200):
+    buzzer.freq(freq); buzzer.duty(duty)
+    time.sleep_ms(dur); buzzer.duty(0)</pre>
+<p>Short named helpers (<code class="inline">blip</code>, <code class="inline">click</code>,
+<code class="inline">thud</code>, <code class="inline">jingle</code>,
+<code class="inline">sad_tone</code>) call it with set pitches, and
+<code class="inline">play_tetris_theme()</code> plays the Korobeiniki melody as a list of
+<code class="inline">(freq, duration)</code> pairs on boot. The high score is written to
+<code class="inline">highscore.txt</code> on the board's own filesystem, so it survives a
+power-off.</p>
+
+<h2>Try it</h2>
+<p>Open <code class="inline">console.py</code> in the editor above, run it, then change
+one thing at a time:</p>
+<ul>
+  <li><span class="step-tag">EASY</span>Speed the game up: lower <code class="inline">fall_interval</code> from 500.</li>
+  <li><span class="step-tag">EASY</span>Recolour the pieces in <code class="inline">SHAPE_COLORS</code>.</li>
+  <li><span class="step-tag">MED</span>Score more for multi-line clears: make <code class="inline">score += cleared * cleared * 10</code>.</li>
+  <li><span class="step-tag">MED</span>Add a sound on rotate &mdash; call <code class="inline">blip()</code> inside <code class="inline">rotate_piece()</code> when the rotation is accepted.</li>
+  <li><span class="step-tag">HARD</span>Add a "next piece" preview in the top row using <code class="inline">draw_piece</code>'s idea on a second mini-area.</li>
+</ul>
+<div class="callout callout--do">Then design the shell on the left: paint the body
+and the buttons in contrasting colours, check no parts show a red clash badge, and
+use <em>Print</em> / <em>Download</em> on each piece to send it to your slicer.</div>
+
+<p style="margin-top:24px;color:var(--muted);font-size:12px;">
+Paired code: <code class="inline">assets/mix-code/console.py</code>. Next lesson: add a
+second game and a menu to pick between them.</p>
