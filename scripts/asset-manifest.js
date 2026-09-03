@@ -49,7 +49,8 @@ export const ASSET_MANIFEST = {
     { file: 'Hat_Magic.glb', folder: 'hat', source: '' },
     { file: 'Hat_Bricks.glb', folder: 'hat', source: '' },
     { file: 'Hat_Santa.glb', folder: 'hat', source: 'https://hprobots.com/wp-content/uploads/2025/10/Hat_Santa.glb' },
-    { file: 'casque.glb', folder: 'hat', source: '' }
+    { file: 'casque.glb', folder: 'hat', source: '' },
+    { file: 'hat_painting.glb', folder: 'hat', source: '' }
   ],
    middle: [
     { file: 'Middle-starter.glb', folder: 'middle', source: 'https://hprobots.com/wp-content/uploads/2025/08/Middle-starter.glb' },
