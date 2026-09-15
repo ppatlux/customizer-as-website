@@ -645,8 +645,9 @@ html.vt-fallback.vt-leaving body{
 /* The "Lesson" chip - a floating pill (JS-positioned, see positionLessonChip)
    next to the plain "Python code" chip, wearing the brand accent so it reads as
    the primary call to action. A container, not a button: the middle opens the
-   lesson, the flanking arrows page between a mix's lessons (shown only when it
-   has more than one -> .lesson-chip--multi). */
+   lesson; the flanking chevrons page between a mix's lessons and only appear
+   when it has more than one (.lesson-chip--multi). Single- and multi-lesson
+   look like the same pill - no segment dividers, just optional chevrons. */
 .lesson-chip{
   position:fixed;
   z-index:var(--z-panels);
@@ -674,7 +675,7 @@ html.vt-fallback.vt-leaving body{
 }
 .lesson-chip-open{
   gap:6px;
-  padding:0 13px;
+  padding:0 14px;
   font:inherit;
 }
 .lesson-chip-open .material-icons{ color:var(--brand-ink); }
@@ -686,15 +687,14 @@ html.vt-fallback.vt-leaving body{
   text-overflow:ellipsis;
 }
 .lesson-chip-arrow{
-  width:28px;
+  width:24px;
   flex:0 0 auto;
 }
-.lesson-chip-arrow .material-icons{ color:var(--muted); font-size:18px; }
+.lesson-chip-arrow .material-icons{ color:var(--muted); font-size:17px; }
 .lesson-chip-arrow:hover{ background:var(--brand-ghost); }
 .lesson-chip-arrow:hover .material-icons{ color:var(--hpro-navy); }
-.lesson-chip--multi [data-role="lesson-prev"]{ border-right:1px solid var(--stroke); }
-.lesson-chip--multi [data-role="lesson-next"]{ border-left:1px solid var(--stroke); }
-.lesson-chip--multi .lesson-chip-open{ padding:0 11px; }
+/* multi-lesson: tighten the name padding so the chevrons don't blow the width */
+.lesson-chip--multi .lesson-chip-open{ padding:0 8px; }
 
 /* Injected panes sit in <body>; keep them out of the way until lesson mode. */
 .lesson-pane{ display:none; }

@@ -4541,7 +4541,10 @@ function buildMixCodePanel() {
     toggle.setAttribute('aria-label', 'Python code for this mix');
     toggle.innerHTML = `<span class="material-icons" aria-hidden="true">code</span><span>Python code</span>`;
     body.classList.add('mix-code-body--float');
-    document.body.append(toggle, body);
+    // Live inside #viewer-container (a stacking context) so this chip stays
+    // BELOW the loader / consent / settings overlays instead of a body-level
+    // z-index floating it over everything.
+    (container || document.body).append(toggle, body);
   } else {
     const host = document.getElementById('mobile-sheet-mixes') || document.getElementById('preset-panel');
     if (!host) return null;
@@ -4674,7 +4677,12 @@ function copyMixCode() {
 
 let mixCodeRenderToken = 0;
 function renderMixCodePanel(on) {
-  const codeId = on ? presets[activePresetKey]?.codeId : null;
+  // Show the "Python code" chip whenever Python code is available for the
+  // current context: the selected lesson's `code` (per-lesson, so it tracks
+  // the chip's prev/next) or, failing that, a showcase mix's own `codeId`.
+  const codeId = firstBuildDone
+    ? (currentLesson()?.code || (on ? presets[activePresetKey]?.codeId : null))
+    : null;
   if (!codeId) {
     setMixCodeVisible(false);
     return;
@@ -4686,8 +4694,7 @@ function renderMixCodePanel(on) {
 
   const token = ++mixCodeRenderToken;
   loadMixCode(codeId).then((entry) => {
-    if (token !== mixCodeRenderToken) return;           // a newer mix took over
-    if (!isShowcaseMix() || presets[activePresetKey]?.codeId !== codeId) return;
+    if (token !== mixCodeRenderToken) return;           // a newer selection took over
     if (!entry.ok) { setMixCodeVisible(false); return; }
     // Only the "Python" button shows until clicked — the code + highlighter
     // load on first open (see toggleMixCode).
@@ -4847,7 +4854,11 @@ function buildLessonUI() {
       <p class="lesson-loading">Loading lesson&hellip;</p>
     </div>`;
 
-  document.body.append(chip, editor, viewerBar, content);
+  // The chip lives inside #viewer-container (its own stacking context) so it
+  // stays below the loader / modal overlays. The lesson-mode panes stay at body
+  // level - they need to escape the container when it shrinks to a card.
+  (container || document.body).append(chip);
+  document.body.append(editor, viewerBar, content);
 
   const q = (sel) => content.querySelector(sel);
   lessonEl = {
@@ -5063,6 +5074,9 @@ function syncLessonChip() {
   el.chipOpen.title = lessons.length
     ? `Open lesson: ${lessons[selectedLessonIdx].title}`
     : 'Open the lesson';
+  // Keep the "Python code" chip in step with the selected lesson (Modular Cube
+  // pages between ringchase.py / simonsays.py).
+  renderMixCodePanel(isShowcaseMix());
 }
 
 // In-lesson header: prev/next + "n / total".
@@ -5116,7 +5130,9 @@ function exitLessonMode() {
 // out of lesson mode if the active mix no longer has one, and hot-swap content
 // if a different lesson-bearing mix is chosen while lesson mode is already open.
 function renderLessonButton() {
-  const lessons = mixCodeOnDock() ? mixLessons() : [];
+  // Not before the app is actually up - otherwise the chip shows over the
+  // loading screen. hideAppLoader() re-runs syncShowcaseMode() once ready.
+  const lessons = firstBuildDone && mixCodeOnDock() ? mixLessons() : [];
   if (!lessons.length) {
     if (lessonActive) exitLessonMode();
     lessonEl?.chip.classList.add('u-hidden');
@@ -5861,6 +5877,9 @@ function hideAppLoader() {
   // thumbnails) run. Staggered one per idle slot so 8 offscreen renders don't
   // land in a single frame and jank the freshly-shown viewer.
   firstBuildDone = true;
+  // Chips (Lesson / Python code) are gated on firstBuildDone so they never
+  // paint over the loader — now that it's gone, let them appear.
+  syncShowcaseMode();
   const drainNext = () => {
     const fn = afterFirstBuildQueue.shift();
     if (!fn) return;
