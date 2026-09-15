@@ -11,3 +11,15 @@
   Header always set X-Frame-Options "SAMEORIGIN"
   Header always set Content-Security-Policy "frame-ancestors 'self'"
 </IfModule>
+
+# Force browsers/in-app webviews to always revalidate the HTML entry points and
+# local JS/CSS with the server instead of serving a stale copy from disk cache.
+# Without this, some mobile browsers and app-embedded webviews cache these
+# aggressively and never notice a new deploy (the ?v= query param on
+# app.js/app.css bumps on deploy to force a fresh fetch even on clients that
+# ignore Cache-Control revalidation).
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|css)$">
+    Header always set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
