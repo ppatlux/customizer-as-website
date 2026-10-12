@@ -536,6 +536,12 @@ for (const part of Object.keys(modelSets)) {
 }
 partVis.spacer = false;
 
+// A compressed share link (?z=, see getCompactShareUrl) can only be inflated
+// asynchronously, but tryRestoreFromUrl() runs synchronously inside
+// bootstrap() — so inflate it here first. Module evaluation simply pauses at
+// this await; nothing below has run yet, so the evaluation order is unchanged.
+const compressedShareState = await readCompressedShareStateFromUrl();
+
 bootstrap();
 
 function renderPanels() {
@@ -3580,7 +3586,7 @@ function tryRestoreFromLocal() {
 
 // Compact, URL-safe base64 of the same shape saveStateToLocal() persists, so a
 // shared link and a locally-saved session decode through the same path.
-function encodeShareState() {
+function getShareStateJsonBytes() {
   const state = {
     currentIdx,
     partVis,
@@ -3588,19 +3594,15 @@ function encodeShareState() {
     modelMeshCols,
     mixExtras: activeMixExtras
   };
-  const json = JSON.stringify(state);
-  const bytes = new TextEncoder().encode(json);
-  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
-  const base64 = btoa(binary);
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return new TextEncoder().encode(JSON.stringify(state));
+}
+
+function encodeShareState() {
+  return bytesToBase64Url(getShareStateJsonBytes());
 }
 
 function decodeShareState(param) {
-  let base64 = param.replace(/-/g, '+').replace(/_/g, '/');
-  while (base64.length % 4) base64 += '=';
-  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-  const json = new TextDecoder().decode(bytes);
-  return JSON.parse(json);
+  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(param)));
 }
 
 function getShareUrl() {
@@ -3611,12 +3613,60 @@ function getShareUrl() {
   return url.href;
 }
 
+function bytesToBase64Url(bytes) {
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlToBytes(param) {
+  let base64 = param.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) base64 += '=';
+  return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+}
+
+async function pipeBytes(bytes, transform) {
+  const stream = new Blob([bytes]).stream().pipeThrough(transform);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// Same state as getShareUrl(), but deflated (?z= instead of ?c=). The plain
+// base64 JSON grows fast with per-mesh paint and easily reached 1–2k chars —
+// past what qrcodejs can encode at all, and far too dense to scan at QR size
+// well before that. Deflate shrinks the repetitive JSON several-fold. Falls
+// back to the plain link where CompressionStream is unavailable.
+async function getCompactShareUrl() {
+  if (typeof CompressionStream === 'undefined') return getShareUrl();
+  try {
+    const deflated = await pipeBytes(getShareStateJsonBytes(), new CompressionStream('deflate-raw'));
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('z', bytesToBase64Url(deflated));
+    return url.href;
+  } catch (error) {
+    console.error('Failed to compress share link', error);
+    return getShareUrl();
+  }
+}
+
+async function readCompressedShareStateFromUrl() {
+  const param = new URLSearchParams(window.location.search).get('z');
+  if (!param || typeof DecompressionStream === 'undefined') return null;
+  try {
+    const inflated = await pipeBytes(base64UrlToBytes(param), new DecompressionStream('deflate-raw'));
+    return JSON.parse(new TextDecoder().decode(inflated));
+  } catch (error) {
+    console.error('Failed to inflate shared config', error);
+    return null;
+  }
+}
+
 function tryRestoreFromUrl() {
   const param = new URLSearchParams(window.location.search).get('c');
-  if (!param) return false;
+  if (!param && !compressedShareState) return false;
 
   try {
-    applySavedState(decodeShareState(param));
+    applySavedState(compressedShareState || decodeShareState(param));
     activePresetKey = 'custom';
     syncShowcaseMode();
     restoredFromLocal = true;
@@ -3625,6 +3675,7 @@ function tryRestoreFromUrl() {
     // localStorage on every refresh of a bookmarked shared link.
     const cleanUrl = new URL(window.location.href);
     cleanUrl.searchParams.delete('c');
+    cleanUrl.searchParams.delete('z');
     window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
     return true;
   } catch (error) {
@@ -4172,14 +4223,18 @@ async function openArQrFlow() {
   arOverlay.classList.add('show');
   arClose.focus();
 
-  const shareUrl = getShareUrl();
+  const shareUrl = await getCompactShareUrl();
   try {
     await ensureQrLibLoaded();
+    arQrHolder.innerHTML = ''; // a fast double-click could otherwise draw two codes
+    // Rendered at 2x+ and scaled down by CSS (#ar-qr-holder) so the modules
+    // stay crisp on HiDPI screens; level L because a QR on a screen never
+    // gets damaged, and each step up in correction makes it markedly denser.
     new window.QRCode(arQrHolder, {
       text: shareUrl,
-      width: 180,
-      height: 180,
-      correctLevel: window.QRCode.CorrectLevel.M
+      width: 440,
+      height: 440,
+      correctLevel: window.QRCode.CorrectLevel.L
     });
   } catch (error) {
     console.error(error);
