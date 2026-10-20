@@ -3,7 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ASSET_MANIFEST } from './asset-manifest.js';
 import { PRESETS as presets, normalizeMixPartColor } from './presets.js';
-import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer, PRUSA_SLICER_LIVE } from './slicer-preference.js';
+import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer } from './slicer-preference.js';
+import { sendToPrusa } from './prusa-export.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 // Accelerated raycasting for every Mesh. The paint-bucket / hover hit-test
@@ -25,6 +26,7 @@ THREE.Mesh.prototype.raycast = acceleratedRaycast;
 // dead zone at that point and throw.
 const SLICER_LOGO_SRC = {
   prusa: './assets/icons/prusaslicer-logo.png',
+  easyprint: './assets/icons/easyprint-logo.svg',
   orca: './assets/icons/orcaslicer-logo.png'
 };
 
@@ -1271,7 +1273,6 @@ function setupSettingsMenu() {
   settingsOverlay.querySelectorAll('.settings-switch-option[data-slicer]').forEach((item) => {
     item.addEventListener('click', (event) => {
       event.preventDefault();
-      if (item.getAttribute('aria-disabled') === 'true') return;
       setPreferredSlicer(item.dataset.slicer);
       updateSlicerUi();
     });
@@ -1316,20 +1317,6 @@ function updateSlicerUi() {
 
   document.querySelectorAll('.settings-switch-option[data-slicer]').forEach((item) => {
     item.setAttribute('aria-checked', String(item.dataset.slicer === slicer));
-
-    // PrusaSlicer previews as a disabled "coming soon" option until
-    // PRUSA_SLICER_LIVE flips on (see slicer-preference.js) — everything
-    // else about this menu is already fully live.
-    const isLockedPrusa = item.dataset.slicer === 'prusa' && !PRUSA_SLICER_LIVE;
-    if (isLockedPrusa) {
-      item.setAttribute('aria-disabled', 'true');
-      item.title = 'Coming soon — waiting on a PrusaSlicer update';
-    } else {
-      item.removeAttribute('aria-disabled');
-      item.removeAttribute('title');
-    }
-    const note = item.querySelector('[data-role="slicer-note"]');
-    if (note) note.textContent = isLockedPrusa ? 'Soon' : '';
   });
 
   if (settingsToggle) {
@@ -3240,10 +3227,20 @@ function setupGlobalClickHandler() {
         return;
       }
 
-      // STL is preferred (see stlSets), but none is hosted yet for most
-      // variants — this probes for one and falls back to STEP so nothing
-      // breaks today, while automatically switching over the moment matching
-      // .stl files exist at the same path as the .step/.glb ones.
+      // PrusaSlicer / EasyPrint: upload an STL to Prusa and hand off to the
+      // links it returns (see prusa-export.js) — works for every part, hosted
+      // file or not, since the loaded mesh can always be exported.
+      const preferredSlicer = getPreferredSlicer();
+      if (preferredSlicer !== 'orca') {
+        await sendPartToPrusa(part, preferredSlicer);
+        return;
+      }
+
+      // OrcaSlicer opens our own hosted URL directly. STL is preferred (see
+      // stlSets), but none is hosted yet for most variants — this probes for
+      // one and falls back to STEP so nothing breaks today, while
+      // automatically switching over the moment matching .stl files exist at
+      // the same path as the .step/.glb ones.
       const pIdx = currentIdx[part] ?? 0;
       const isExtra = mixExtraUrls.has(part);
       let url = await firstExistingUrl(getAssetCandidates(part, pIdx, 'stl'));
@@ -3264,19 +3261,11 @@ function setupGlobalClickHandler() {
         }
       }
 
-      // getPreferredSlicer() can only return 'prusa' once PRUSA_SLICER_LIVE is
-      // true (see slicer-preference.js) — until then this always resolves to
-      // 'orca', so this branch is safe to ship in any build. PrusaSlicer's
-      // prusaslicer://open handler only accepts download URLs from a short
-      // reviewed allowlist; hprobots.com has been approved for addition, but
-      // it only takes effect once Prusa actually ships the release containing
-      // it. OrcaSlicer's orcaslicer://open has no such allowlist and always
-      // works regardless.
-      const preferredSlicer = getPreferredSlicer();
-      const scheme = preferredSlicer === 'prusa' ? 'prusaslicer' : 'orcaslicer';
+      // orcaslicer://open has no download allowlist (unlike prusaslicer://,
+      // which is why PrusaSlicer goes through Prusa's upload instead).
       const fullUrl = new URL(url, window.location.href).href;
       const link = document.createElement('a');
-      link.href = `${scheme}://open?file=${encodeURIComponent(fullUrl)}`;
+      link.href = `orcaslicer://open?file=${encodeURIComponent(fullUrl)}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -3478,6 +3467,31 @@ async function fetchFirstAvailable(urls) {
 // hosted file before falling back to something else — unlike
 // getAssetCandidates(), which only tells you a URL COULD be constructed by
 // pattern, not that anything actually lives there.
+// Same file choice as the per-part STL download: a hosted .stl if one exists,
+// otherwise an export of the mesh already in the viewer.
+async function sendPartToPrusa(part, target) {
+  const candidates = getAssetCandidates(part, currentIdx[part] ?? 0, 'stl');
+  const filename = `${getPartFileBase(part)}.stl`;
+  await sendToPrusa({
+    target,
+    // First candidate pins down the exact variant (mix extras included), so a
+    // repeat click within the link lifetime reuses the earlier upload.
+    cacheKey: candidates[0],
+    getFile: async () => {
+      const hostedUrl = await firstExistingUrl(candidates);
+      const blob = hostedUrl
+        ? await (await fetch(hostedUrl)).blob()
+        : await exportPartAsStlBlob(part);
+      return new File([blob], filename, { type: 'model/stl' });
+    },
+    onSuccess: (label) => toast(`${getPartDisplayName(part)} sent to ${label}.`, 'ok', 1600),
+    onError: (error) => {
+      console.error(error);
+      toast(error?.message || `Could not send ${getPartDisplayName(part)} to Prusa.`, 'err', 3200);
+    }
+  });
+}
+
 async function firstExistingUrl(urls) {
   for (const url of urls) {
     try {
@@ -5921,7 +5935,7 @@ function startTour(force = false) {
     { target: '#top-controls [data-role="next"]', dock: 'parts', essential: true, title: 'Variants', body: 'Use the arrows to browse different designs of a part, or click its name to pick from a grid of all of them.' },
     { target: '#top-visibility', dock: 'parts', essential: true, title: 'Visibility', body: 'Temporarily hide or show a single part to see how it affects the build.' },
     { target: '#visibilityModeBtn', dock: 'parts', title: 'Hide / show parts', body: 'Preview several hidden parts at once -- they turn into clickable blue ghosts you can tap to toggle. Press V anytime to jump straight into this mode.' },
-    { target: '#top-controls [data-role="print"]', dock: 'parts', essential: true, title: 'Direct 3D Print', body: 'Open the current part directly in your preferred slicer — pick PrusaSlicer or OrcaSlicer in Settings.' },
+    { target: '#top-controls [data-role="print"]', dock: 'parts', essential: true, title: 'Direct 3D Print', body: 'Open the current part directly in your preferred slicer — pick PrusaSlicer, EasyPrint or OrcaSlicer in Settings.' },
     { target: '#download-primary', title: 'Export', body: 'Download STL instantly, or open Settings for GLB and STEP.' },
     { target: '#settingsToggle', title: 'Settings', body: 'Preferred slicer, camera projection, GLB/STEP downloads, and this guide all live here.' }
   ];

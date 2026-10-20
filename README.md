@@ -20,30 +20,27 @@ For each `.glb` listed in `scripts/asset-manifest.js`, also place matching `.ste
 
 ## Send to Slicer
 
-The per-part "Print" buttons in `index.html` open the part directly with a bare
-`prusaslicer://open?file=<url>` or `orcaslicer://open?file=<url>` link — no local setup needed,
-same as the original WordPress version. Which scheme is used depends on the "Preferred Slicer"
-choice in the Settings modal (`#settings-overlay` in `index.html`, gear icon in the bottom
-toolbar — also home to the Camera projection toggle, GLB/STEP downloads, and the Quick Guide
-launcher; see `.settings-section` in `app.css` for adding more groups there later), backed by
-`scripts/slicer-preference.js`.
+The per-part "Print" buttons send the current part to the "Preferred Slicer" chosen in the
+Settings modal (`#settings-overlay` in `index.html`, gear icon in the bottom toolbar — also home to
+the Camera projection toggle, GLB/STEP downloads, and the Quick Guide launcher; see
+`.settings-section` in `app.css` for adding more groups there later), backed by
+`scripts/slicer-preference.js`. PrusaSlicer is the default.
 
-**PrusaSlicer is NOT actually live yet.** Its `prusaslicer://` handler only accepts download URLs
-from a short, manually reviewed allowlist. `hprobots.com` was rejected from it (see
-[PrusaSlicer#13752](https://github.com/prusa3d/PrusaSlicer/issues/13752), closed "not planned"),
-but Prusa has since agreed to add it after a direct request — the change ships in a future
-PrusaSlicer release (ETA a month or two out as of writing), not immediately. Until it ships,
-`prusaslicer://` links from this domain 404 for anyone on the current PrusaSlicer release.
-OrcaSlicer's `orcaslicer://` has no such allowlist and works regardless.
-
-This is gated behind one flag, `PRUSA_SLICER_LIVE` in `scripts/slicer-preference.js`, currently
-`false`. Everything downstream of it (`getPreferredSlicer()`, the Settings menu's PrusaSlicer
-option, the `role === 'print'` branch in `scripts/app.js`) already funnels through that flag, so
-**this whole feature is safe to commit, merge, and deploy right now alongside unrelated work** —
-while the flag is `false`, behavior is identical to the old OrcaSlicer-only build: Print always
-uses OrcaSlicer, and PrusaSlicer shows up in the Settings menu only as a disabled "coming soon"
-preview. Flipping `PRUSA_SLICER_LIVE` to `true` and redeploying is the entire "go live" step once
-the PrusaSlicer release is confirmed out — no other changes needed.
+- **PrusaSlicer / EasyPrint** (`scripts/prusa-export.js`, same approach as
+  [3D-Ghost-Generator](https://github.com/gzeus/3D-Ghost-Generator)): the part's STL (hosted `.stl`
+  if one exists, otherwise exported from the loaded mesh) is POSTed from the browser to Prusa's
+  anonymous `https://slicer.printables.com/import` endpoint (CORS `*`, no backend of ours). Prusa
+  returns an EasyPrint page (opened in a new tab) and a `prusaslicer://open?file=…` link pointing at
+  *its own* temporary copy. Because that copy lives on Prusa's domain, PrusaSlicer's download
+  allowlist doesn't matter — `hprobots.com` doesn't need to be on it
+  ([PrusaSlicer#13752](https://github.com/prusa3d/PrusaSlicer/issues/13752)). `#prusa-overlay`
+  shows upload progress with Cancel, and keeps a real link as a fallback when the browser blocks the
+  new tab or the protocol launch. Uploads are capped at 100 MB; Prusa's links expire after
+  30 minutes, so a repeat click on the same part within 25 minutes reuses the earlier upload.
+  Every returned URL is checked to really point at printables.com / slicer.printables.com before
+  it's followed. The endpoint isn't publicly documented — if it changes, this is the one file to fix.
+- **OrcaSlicer**: a bare `orcaslicer://open?file=<url>` link to our own hosted STL (or STEP
+  fallback). Its handler has no allowlist, so no upload is needed.
 
 The engraving tool (`engrave.html`) only offers a plain "Download STL" button — no local setup,
 no custom protocol, no helper scripts. Send the downloaded file to your slicer manually.
