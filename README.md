@@ -45,19 +45,33 @@ the Camera projection toggle, GLB/STEP downloads, and the Quick Guide launcher; 
   has "Print build with EasyPrint". After the upload the dialog shows a "Continue to EasyPrint"
   button instead of auto-opening a tab: mobile browsers block `window.open` after an async upload,
   and only a link the user taps can be handed to an installed app that claims printables.com links.
-- **OrcaSlicer**: a bare `orcaslicer://open?file=<url>` link to our own hosted STL (or STEP
-  fallback). Its handler has no allowlist, so no upload is needed.
+- **OrcaSlicer**: `orcaslicer://open?file=<url>` with Prusa's temporary file URL (its handler has
+  no allowlist), so it gets the same print-ready 3MF.
+
+**Separate print bodies.** Many models combine several separately printed bodies in one file
+because that's how they look assembled (both wheels, an arm pair, a top + its diffuser, a hat +
+its brim — 30 of the 107 models at the time of writing). Everything that leaves the app for
+printing — per-part send, whole build, per-part STL download and the STL zip — goes through
+`scripts/print-build.js`, which takes the part's hosted `.stl` if there is one (else the viewer
+mesh) and:
+- welds it and splits it into connected bodies; exact duplicate triangles (some exports carry a
+  surface 2-4x) are dropped and each body's winding made consistent;
+- keeps an inside-out shell inside a much bigger body as a cavity, flips other inside-out bodies,
+  and attaches open fragments to the body they touch;
+- lays a body flat on its flattest big side when it stands on an edge (wheels, arms, face plates);
+- spreads the bodies out on the bed: separate named objects in the 3MF sent to slicers
+  ("Motion (2/4)"), one spread-out STL for downloads (PrusaSlicer: "Split to objects").
+OrcaSlicer also goes through the Prusa upload now, so it receives the split 3MF too.
 
 **Print whole build** (print icon in the bottom toolbar, `printWholeBuild()` in `app.js` +
-`scripts/print-build.js`) builds one 3MF in the browser from the meshes in the scene: one named
-object per visible part (plus the active mix's `extras`, minus manifest entries marked
-`print: false` — PCBs, displays, encoders), welded, turned Z-up, grounded and laid out side by side
-around the MK3/MK4 bed centre. It goes through the same Prusa upload; OrcaSlicer gets Prusa's
-temporary file URL too, since a browser-built file has no URL of ours. Parts keep their
-assembly orientation — rotate any that print better another way in the slicer.
+`scripts/print-build.js`) builds one 3MF in the browser from every visible part (plus the active
+mix's `extras`, minus manifest entries marked `print: false` — PCBs, displays, encoders), each split
+into its bodies as above and laid out around the MK3/MK4 bed centre. It goes through the same Prusa
+upload. Bodies that aren't standing on an edge keep their assembly orientation — rotate any that
+print better another way in the slicer.
 
-Scene exports (`exportPartAsStlBlob`, Model Placer's STL save) are rotated Y-up → Z-up so parts
-land upright in a slicer; hosted CAD STLs already are. `firstExistingUrl()` skips 0-byte files.
+Viewer meshes are rotated Y-up → Z-up for printing (Model Placer's STL save too); hosted CAD
+STLs already are Z-up. `firstExistingUrl()` skips 0-byte files.
 
 The engraving tool (`engrave.html`) only offers a plain "Download STL" button — no local setup,
 no custom protocol, no helper scripts. Send the downloaded file to your slicer manually.

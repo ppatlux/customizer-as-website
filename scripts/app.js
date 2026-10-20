@@ -151,12 +151,9 @@ const remoteStepSets = Object.fromEntries(
   Object.entries(remoteModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.step'))])
 );
 
-// No STL is hosted yet for most current variants (checked: same file-naming
-// scheme as .step/.glb, just not present). These candidate URLs exist so that
-// the moment matching .stl files DO get uploaded alongside the .step/.glb ones,
-// print/download start using them automatically — see firstExistingUrl(), which
-// probes before falling back to STEP (print) or a client-side STLExporter
-// export of the already-loaded model (download).
+// Hosted print STLs, same file-naming scheme as .step/.glb. Not every variant
+// has one; getPartPrintPositions() probes with firstExistingUrl() and falls
+// back to the mesh already loaded in the viewer.
 const stlSets = Object.fromEntries(
   Object.entries(localModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.stl'))])
 );
@@ -3252,48 +3249,10 @@ function setupGlobalClickHandler() {
         return;
       }
 
-      // PrusaSlicer / EasyPrint: upload an STL to Prusa and hand off to the
-      // links it returns (see prusa-export.js) — works for every part, hosted
-      // file or not, since the loaded mesh can always be exported.
-      const preferredSlicer = getEffectiveSlicer();
-      if (preferredSlicer !== 'orca') {
-        await sendPartToPrusa(part, preferredSlicer);
-        return;
-      }
-
-      // OrcaSlicer opens our own hosted URL directly. STL is preferred (see
-      // stlSets), but none is hosted yet for most variants — this probes for
-      // one and falls back to STEP so nothing breaks today, while
-      // automatically switching over the moment matching .stl files exist at
-      // the same path as the .step/.glb ones.
-      const pIdx = currentIdx[part] ?? 0;
-      const isExtra = mixExtraUrls.has(part);
-      let url = await firstExistingUrl(getAssetCandidates(part, pIdx, 'stl'));
-      if (!url) {
-        const stepUrls = getAssetCandidates(part, pIdx, 'step');
-        // A mix `extras` piece is repo-only — verify the STEP actually exists
-        // (model-placer writes a sibling .stl on save; older pieces may have
-        // neither, in which case there's no URL to give a slicer://).
-        url = isExtra ? await firstExistingUrl(stepUrls) : stepUrls[0];
-        if (!url) {
-          try {
-            downloadBlob(await exportPartAsStlBlob(part), `${getPartFileBase(part)}.stl`);
-            toast('No hosted print file yet — STL downloaded. Re-save this piece in Model Placer to send it straight to a slicer.', 'warn', 3200);
-          } catch {
-            toast(`No printable file for ${getPartDisplayName(part)}.`, 'warn', 1800);
-          }
-          return;
-        }
-      }
-
-      // orcaslicer://open has no download allowlist (unlike prusaslicer://,
-      // which is why PrusaSlicer goes through Prusa's upload instead).
-      const fullUrl = new URL(url, window.location.href).href;
-      const link = document.createElement('a');
-      link.href = `orcaslicer://open?file=${encodeURIComponent(fullUrl)}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      // Every slicer gets a 3MF with the part's bodies split into separate
+      // objects (print-build.js), uploaded to Prusa and handed off from there
+      // (prusa-export.js) — OrcaSlicer included, via Prusa's temporary URL.
+      await sendPartToPrusa(part, getEffectiveSlicer());
     }
 
     if (role === 'download-part') {
@@ -3304,15 +3263,8 @@ function setupGlobalClickHandler() {
       }
 
       try {
-        // Prefer a hosted STL if one exists at the expected path; otherwise export
-        // one on the fly from the model already loaded in the viewer — always
-        // available, no dependency on what's been uploaded remotely.
-        // Prefer a hosted .stl (model-placer writes one for mixonly pieces);
-        // otherwise export from the loaded mesh.
-        const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part] ?? 0, 'stl'));
-        const blob = hostedUrl
-          ? await (await fetch(hostedUrl)).blob()
-          : await exportPartAsStlBlob(part);
+        // Print-ready: the part's bodies split apart and laid out flat.
+        const blob = await getPartPrintStl(part);
         downloadBlob(blob, `${getPartFileBase(part)}.stl`);
         toast(`${getPartDisplayName(part)} STL downloaded.`, 'ok', 1600);
       } catch (error) {
@@ -3492,27 +3444,24 @@ async function fetchFirstAvailable(urls) {
 // hosted file before falling back to something else — unlike
 // getAssetCandidates(), which only tells you a URL COULD be constructed by
 // pattern, not that anything actually lives there.
-// Same file choice as the per-part STL download: a hosted .stl if one exists,
-// otherwise an export of the mesh already in the viewer.
+// One part -> a 3MF with each of its bodies as a separate object.
 async function sendPartToPrusa(part, target) {
-  const candidates = getAssetCandidates(part, currentIdx[part] ?? 0, 'stl');
-  const filename = `${getPartFileBase(part)}.stl`;
+  const filename = `${getPartFileBase(part)}.3mf`;
   await sendToPrusa({
     target,
     // First candidate pins down the exact variant (mix extras included), so a
     // repeat click within the link lifetime reuses the earlier upload.
-    cacheKey: candidates[0],
+    cacheKey: `part:${getAssetCandidates(part, currentIdx[part] ?? 0, 'glb')[0] || part}`,
     getFile: async () => {
-      const hostedUrl = await firstExistingUrl(candidates);
-      const blob = hostedUrl
-        ? await (await fetch(hostedUrl)).blob()
-        : await exportPartAsStlBlob(part);
-      return new File([blob], filename, { type: 'model/stl' });
+      const { buildPrint3mf } = await import('./print-build.js');
+      const positions = await getPartPrintPositions(part);
+      const { blob } = await buildPrint3mf([{ name: getPartDisplayName(part), positions }], { title: getPartDisplayName(part) });
+      return new File([blob], filename, { type: 'model/3mf' });
     },
     onSuccess: (label) => toast(`${getPartDisplayName(part)} ready for ${label}.`, 'ok', 1600),
     onError: (error) => {
       console.error(error);
-      toast(error?.message || `Could not send ${getPartDisplayName(part)} to Prusa.`, 'err', 3200);
+      toast(error?.message || `Could not send ${getPartDisplayName(part)} to the slicer.`, 'err', 3200);
     }
   });
 }
@@ -3530,24 +3479,25 @@ async function firstExistingUrl(urls) {
   return null;
 }
 
-// Exports the currently-loaded, currently-colored model for a part straight
-// out of the live 3D scene — no hosted .stl file needed, so this always works
-// regardless of what's actually been uploaded for this variant.
-async function exportPartAsStlBlob(part) {
+// A part's print geometry as a Z-up triangle soup: the hosted .stl when one
+// exists (the designer's print file), otherwise the mesh shown in the viewer.
+// Either way print-build.js then splits it into separate bodies — many models
+// combine several printed pieces (both wheels, an arm pair, a top + its
+// diffuser) because that's how they look assembled.
+async function getPartPrintPositions(part) {
+  const { positionsFromStl, positionsFromObject } = await import('./print-build.js');
+  const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part] ?? 0, 'stl'));
+  if (hostedUrl) return positionsFromStl(await (await fetch(hostedUrl)).arrayBuffer());
   const model = loadedMods[part];
-  if (!model) throw new Error(`${part} is not loaded`);
-  const { STLExporter } = await import('three/addons/exporters/STLExporter.js');
-  // The scene is Y-up but STL/slicers are Z-up — export a clone under a +90°
-  // X turn so the part lands upright on the bed instead of on its back (the
-  // hosted CAD STLs are already Z-up). Mix pieces carry their group's lift.
-  const upright = new THREE.Group();
-  upright.rotation.x = Math.PI / 2;
-  const clone = model.clone(true);
-  if (model.parent === mixExtrasGroup) clone.position.y += mixExtrasGroup.position.y;
-  upright.add(clone);
-  upright.updateMatrixWorld(true);
-  const result = new STLExporter().parse(upright, { binary: true });
-  return new Blob([result], { type: 'model/stl' });
+  if (!model) throw new Error(`${getPartDisplayName(part)} is not loaded`);
+  return positionsFromObject(model);
+}
+
+// Print-ready STL for downloads: same split + flat layout as the slicer
+// upload, in one file (bodies spread apart; "Split to objects" separates them).
+async function getPartPrintStl(part) {
+  const { buildPrintStl } = await import('./print-build.js');
+  return buildPrintStl(await getPartPrintPositions(part)).blob;
 }
 
 // Every visible printable piece of the current build: the standard parts plus
@@ -3559,8 +3509,8 @@ function getPrintablePieces() {
   return [...parts, ...extras];
 }
 
-// "Print whole build": one 3MF with each visible piece as its own object,
-// laid out on the bed (print-build.js), uploaded to Prusa and handed to the
+// "Print whole build": one 3MF with every body of every visible piece as its
+// own object, laid out on the bed (print-build.js), uploaded to Prusa and handed to the
 // preferred slicer — OrcaSlicer included, via Prusa's temporary file URL,
 // since a browser-built file has no URL of ours to give it.
 async function printWholeBuild() {
@@ -3584,8 +3534,11 @@ async function printWholeBuild() {
     cacheKey: `build:${pieces.map((key) => getAssetCandidates(key, currentIdx[key] ?? 0, 'glb')[0] || key).join('|')}`,
     getFile: async () => {
       const { buildPrint3mf } = await import('./print-build.js');
-      const { blob } = await buildPrint3mf(
-        pieces.map((key) => ({ name: getPartDisplayName(key), object: loadedMods[key] })),
+      const named = await Promise.all(pieces.map(async (key) => ({
+        name: getPartDisplayName(key),
+        positions: await getPartPrintPositions(key)
+      })));
+      const { blob } = await buildPrint3mf(named,
         { title: activePresetKey && presets[activePresetKey]?.label ? `HP Robot – ${presets[activePresetKey].label}` : 'HP Robot' }
       );
       return new File([blob], 'hp-robot-build.3mf', { type: 'model/3mf' });
@@ -5900,11 +5853,7 @@ async function downloadSelectionStl() {
     const zip = new JSZip().folder('models');
     for (const part of visibleParts) {
       try {
-        const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part], 'stl'));
-        const blob = hostedUrl
-          ? await (await fetch(hostedUrl)).blob()
-          : await exportPartAsStlBlob(part);
-        zip.file(`${part}.stl`, blob);
+        zip.file(`${part}.stl`, await getPartPrintStl(part));
       } catch (error) {
         console.warn('STL export failed for', part, error);
       }
