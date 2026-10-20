@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ASSET_MANIFEST } from './asset-manifest.js';
 import { PRESETS as presets, normalizeMixPartColor } from './presets.js';
-import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer } from './slicer-preference.js';
+import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer, getEffectiveSlicer, canOpenDesktopSlicer } from './slicer-preference.js';
 import { sendToPrusa } from './prusa-export.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
@@ -221,6 +221,7 @@ const moreToggle = document.getElementById('more-toggle');
 const moreMenu = document.getElementById('more-menu');
 const moreFactoryResetBtn = document.getElementById('moreFactoryResetBtn');
 const moreDownloadStlBtn = document.getElementById('moreDownloadStlBtn');
+const morePrintBuildBtn = document.getElementById('morePrintBuildBtn');
 const moreDownloadGlbBtn = document.getElementById('moreDownloadGlbBtn');
 const moreDownloadStepBtn = document.getElementById('moreDownloadStepBtn');
 const settingsToggle = document.getElementById('settingsToggle');
@@ -1221,6 +1222,10 @@ function setupMoreMenu() {
     closeMoreMenu();
     resetToFactory();
   });
+  morePrintBuildBtn?.addEventListener('click', () => {
+    closeMoreMenu();
+    printWholeBuild();
+  });
   moreDownloadStlBtn.addEventListener('click', () => {
     closeMoreMenu();
     downloadSelectionStl();
@@ -1337,7 +1342,7 @@ function updateSlicerUi() {
     settingsToggle.setAttribute('aria-label', `Settings — preferred slicer: ${label}`);
   }
 
-  syncPrintButtonBranding(slicer, label);
+  syncPrintButtonBranding();
 }
 
 function updateProjectionUi() {
@@ -1372,7 +1377,7 @@ function updateDownloadFormatUi() {
 // appears — called once at bootstrap and again any time the preference
 // changes. Logo assets: assets/icons/{prusaslicer,orcaslicer}-logo.png (see
 // SLICER_LOGO_SRC near the top of the file).
-function syncPrintButtonBranding(slicer = getPreferredSlicer(), label = SLICER_LABELS[slicer]) {
+function syncPrintButtonBranding(slicer = getEffectiveSlicer(), label = SLICER_LABELS[slicer]) {
   const icon = `<img class="slicer-logo-img" src="${SLICER_LOGO_SRC[slicer]}" alt="" aria-hidden="true">`;
 
   document.querySelectorAll('[data-role="print"]').forEach((btn) => {
@@ -1386,6 +1391,8 @@ function syncPrintButtonBranding(slicer = getPreferredSlicer(), label = SLICER_L
     printBuildBtn.title = `Print whole build in ${label}`;
     printBuildBtn.setAttribute('aria-label', `Print whole build in ${label}`);
   }
+  const morePrintLabel = morePrintBuildBtn?.querySelector('[data-role="print-build-label"]');
+  if (morePrintLabel) morePrintLabel.textContent = `Print build with ${label}`;
 }
 
 function setupPaletteWiring() {
@@ -3248,7 +3255,7 @@ function setupGlobalClickHandler() {
       // PrusaSlicer / EasyPrint: upload an STL to Prusa and hand off to the
       // links it returns (see prusa-export.js) — works for every part, hosted
       // file or not, since the loaded mesh can always be exported.
-      const preferredSlicer = getPreferredSlicer();
+      const preferredSlicer = getEffectiveSlicer();
       if (preferredSlicer !== 'orca') {
         await sendPartToPrusa(part, preferredSlicer);
         return;
@@ -3502,7 +3509,7 @@ async function sendPartToPrusa(part, target) {
         : await exportPartAsStlBlob(part);
       return new File([blob], filename, { type: 'model/stl' });
     },
-    onSuccess: (label) => toast(`${getPartDisplayName(part)} sent to ${label}.`, 'ok', 1600),
+    onSuccess: (label) => toast(`${getPartDisplayName(part)} ready for ${label}.`, 'ok', 1600),
     onError: (error) => {
       console.error(error);
       toast(error?.message || `Could not send ${getPartDisplayName(part)} to Prusa.`, 'err', 3200);
@@ -3569,7 +3576,7 @@ async function printWholeBuild() {
     return;
   }
 
-  const slicer = getPreferredSlicer();
+  const slicer = getEffectiveSlicer();
   await sendToPrusa({
     target: slicer,
     title: `Sending build to ${SLICER_LABELS[slicer]}`,
@@ -3583,7 +3590,7 @@ async function printWholeBuild() {
       );
       return new File([blob], 'hp-robot-build.3mf', { type: 'model/3mf' });
     },
-    onSuccess: (label) => toast(`Build (${pieces.length} parts) sent to ${label}.`, 'ok', 1800),
+    onSuccess: (label) => toast(`Build (${pieces.length} parts) ready for ${label}.`, 'ok', 1800),
     onError: (error) => {
       console.error(error);
       toast(error?.message || 'Could not send the build to the slicer.', 'err', 3200);
@@ -3834,6 +3841,9 @@ function isTouchCapable() {
 function syncTouchCapableClass() {
   document.documentElement.classList.toggle('touch-capable', isTouchCapable());
 }
+// Phones/tablets: Print always means EasyPrint, so the Preferred Slicer
+// choice is hidden (see slicer-preference.js canOpenDesktopSlicer).
+document.documentElement.classList.toggle('no-desktop-slicer', !canOpenDesktopSlicer());
 syncTouchCapableClass();
 try {
   window.matchMedia('(any-pointer: coarse)').addEventListener('change', syncTouchCapableClass);

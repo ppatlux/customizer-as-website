@@ -375,6 +375,10 @@
               <span class="material-icons">more_horiz</span>
             </button>
             <div id="more-menu" role="menu" aria-label="More actions">
+              <button id="morePrintBuildBtn" role="menuitem">
+                <span class="material-icons">print</span>
+                <span data-role="print-build-label">Print build with EasyPrint</span>
+              </button>
               <button id="moreFactoryResetBtn" role="menuitem">
                 <span class="material-icons">restart_alt</span>
                 <span>Reset Build</span>
@@ -396,9 +400,9 @@
           <!-- General settings entry point (see #settings-overlay) — Preferred
                Slicer, Camera, GLB/STEP downloads, and the Quick Guide all live
                there instead of each growing this toolbar one icon at a time.
-               Desktop-only: [data-role="print"] itself is hidden on touch (a
-               phone has no slicer app to send anything to), and #more-menu
-               above already covers GLB/STEP downloads for touch devices. -->
+               Desktop-only: phones always print with EasyPrint (no choice to
+               make), and #more-menu above covers whole-build print and
+               GLB/STEP downloads for touch devices. -->
           <button id="settingsToggle" class="btn btn--lg action-desktop-cluster" title="Settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-overlay">
             <span class="material-icons">settings</span>
           </button>

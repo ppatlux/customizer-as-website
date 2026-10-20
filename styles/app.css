@@ -1976,13 +1976,10 @@ html.touch-capable .model-hover-popup-arrow .material-icons{ font-size:22px; }
 html.touch-capable .model-hover-popup-icon .material-icons{ font-size:20px; }
 html.touch-capable .model-hover-popup-name{ font-size:13px; padding:0 6px; }
 
-/* "Send to slicer" is meaningless on any touch device — there's no desktop
-   OrcaSlicer/PrusaSlicer to hand the model to. The <=1024px phone block hides
-   these already; this extends the same to landscape tablets on the desktop
-   layout (the on-model popup's print button, each Parts-row print button) and
-   drops the now-inert Preferred Slicer choice from Settings. */
-html.touch-capable [data-role="print"]{ display:none !important; }
-html.touch-capable #settings-slicer-section{ display:none; }
+/* Phones/tablets print with EasyPrint (web) only — drop the now-inert
+   Preferred Slicer choice. Touch laptops keep it: they can run a desktop
+   slicer (see canOpenDesktopSlicer in slicer-preference.js). */
+html.no-desktop-slicer #settings-slicer-section{ display:none; }
 
 /* The top offset on both side columns reserves room for the Essential/Advanced
    switch that used to float there — but on the desktop layout it's reparented
@@ -2564,14 +2561,6 @@ body.hp-lock-scroll{
   .color-picker-sv-thumb{ width:18px; height:18px; }
   .color-picker-hue{ height:20px; }
   .color-picker-hue-thumb{ width:22px; height:22px; }
-
-  /* Sending to a desktop slicer app (OrcaSlicer/PrusaSlicer) is meaningless on a
-     phone with no slicer installed — drop those controls instead of showing
-     buttons that can never do anything here. #settingsToggle itself is
-     already covered by .action-desktop-cluster below. */
-  [data-role="print"]{
-    display:none !important;
-  }
 
   /* Fold the lower-priority actions (factory reset, file downloads) into one
      overflow button so the touch toolbar stays short enough to never grow wide

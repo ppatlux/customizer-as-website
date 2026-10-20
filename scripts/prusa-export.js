@@ -11,6 +11,8 @@
 // files that only exist in the browser, like a whole-build 3MF. Links expire
 // after 30 minutes; uploads are capped at 100 MB.
 
+import { canOpenDesktopSlicer } from './slicer-preference.js';
+
 const IMPORT_URL = 'https://slicer.printables.com/import';
 const MAX_BYTES = 100 * 1000 * 1000;
 const SOURCE_NAME = 'HP Robots Customizer';
@@ -175,7 +177,13 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
     activeController = null;
     onSuccess(label);
 
-    if (isEasyPrint) {
+    if (isEasyPrint && !canOpenDesktopSlicer()) {
+      // Phones/tablets: no window.open — mobile browsers block it once the
+      // upload's await has spent the tap's user activation, and only a link
+      // the user actually taps can be handed to an app that claims
+      // printables.com links. So go straight to the Continue button.
+      statusEl.textContent = 'Ready! Tap the button to open it in EasyPrint. The link expires in 30 minutes.';
+    } else if (isEasyPrint) {
       // The upload's await usually costs the click's user activation, so a
       // popup blocker may eat this — the Continue link stays as the fallback.
       const win = window.open(href, '_blank');

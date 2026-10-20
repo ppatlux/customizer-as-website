@@ -39,6 +39,12 @@ the Camera projection toggle, GLB/STEP downloads, and the Quick Guide launcher; 
   30 minutes, so a repeat click on the same part within 25 minutes reuses the earlier upload.
   Every returned URL is checked to really point at printables.com / slicer.printables.com before
   it's followed. The endpoint isn't publicly documented — if it changes, this is the one file to fix.
+- **Phones and tablets** (`canOpenDesktopSlicer()` in `slicer-preference.js`, by platform — touch
+  laptops still count as desktop) always print with EasyPrint, which runs in the mobile browser; the
+  Preferred Slicer choice is hidden there. The part rows show the EasyPrint button and the "…" menu
+  has "Print build with EasyPrint". After the upload the dialog shows a "Continue to EasyPrint"
+  button instead of auto-opening a tab: mobile browsers block `window.open` after an async upload,
+  and only a link the user taps can be handed to an installed app that claims printables.com links.
 - **OrcaSlicer**: a bare `orcaslicer://open?file=<url>` link to our own hosted STL (or STEP
   fallback). Its handler has no allowlist, so no upload is needed.
 
