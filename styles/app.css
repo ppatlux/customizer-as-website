@@ -2239,13 +2239,13 @@ html.touch-capable .left-tools{
   background:#fff;
   border-radius:12px;
   border:1px solid var(--stroke);
-  min-width:180px;
-  min-height:180px;
+  min-width:220px;
+  min-height:220px;
 }
 #ar-qr-holder img, #ar-qr-holder canvas, #ar-qr-holder table{
   display:block;
-  width:180px;
-  height:180px;
+  width:220px;
+  height:220px;
 }
 .ar-note{
   margin:14px 0 0 0;
