@@ -784,7 +784,8 @@ body.lesson-mode-body #viewer-container{
    right. */
 body.lesson-mode-body #consent-overlay,
 body.lesson-mode-body #ar-overlay,
-body.lesson-mode-body #settings-overlay{
+body.lesson-mode-body #settings-overlay,
+body.lesson-mode-body #prusa-overlay{
   position:fixed;
   inset:auto;
   left:var(--lg-gap);
@@ -797,20 +798,23 @@ body.lesson-mode-body #settings-overlay{
 }
 body.lesson-mode-body[data-lesson-collapse="editor"] #consent-overlay,
 body.lesson-mode-body[data-lesson-collapse="editor"] #ar-overlay,
-body.lesson-mode-body[data-lesson-collapse="editor"] #settings-overlay{
+body.lesson-mode-body[data-lesson-collapse="editor"] #settings-overlay,
+body.lesson-mode-body[data-lesson-collapse="editor"] #prusa-overlay{
   top:calc(var(--lg-gap) * 2 + var(--lg-bar));
 }
 /* Viewer collapsed to a strip - nothing to dim there, fall back to the column. */
 body.lesson-mode-body[data-lesson-collapse="viewer"] #consent-overlay,
 body.lesson-mode-body[data-lesson-collapse="viewer"] #ar-overlay,
-body.lesson-mode-body[data-lesson-collapse="viewer"] #settings-overlay{
+body.lesson-mode-body[data-lesson-collapse="viewer"] #settings-overlay,
+body.lesson-mode-body[data-lesson-collapse="viewer"] #prusa-overlay{
   top:var(--lg-gap);
 }
 /* Cap the dialog card to the pane it now lives in (it's otherwise 600px wide /
    85vh tall - bigger than the card). #consent-text already scrolls internally. */
 body.lesson-mode-body #consent-card,
 body.lesson-mode-body #ar-card,
-body.lesson-mode-body #settings-card{
+body.lesson-mode-body #settings-card,
+body.lesson-mode-body #prusa-card{
   max-width:100%;
   max-height:100%;
 }
