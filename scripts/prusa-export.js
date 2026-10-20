@@ -13,6 +13,10 @@
 
 import { canOpenDesktopSlicer } from './slicer-preference.js';
 
+// Matches print-build.js COMMON_SLOT_LIMIT (kept separate so this module
+// doesn't pull in three.js just for a number).
+const COMMON_SLOT_LIMIT = 5;
+
 const IMPORT_URL = 'https://slicer.printables.com/import';
 const MAX_BYTES = 100 * 1000 * 1000;
 const SOURCE_NAME = 'HP Robots Customizer';
@@ -97,7 +101,10 @@ const TARGETS = {
 
 // Drives #prusa-overlay (index.html) through upload → handoff. `target` is
 // 'prusa' | 'easyprint' | 'orca'; `title` overrides the dialog heading (e.g.
-// a whole build vs one part). `getFile` is
+// a whole build vs one part). `getFile` resolves to a File, or to
+// { file, slots, fitsBed } to list the filament slots (colour per slot) in
+// the dialog and warn when the pieces don't fit one 25 x 21 cm bed.
+// `getFile` is
 // only called on a cache miss; `cacheKey` should identify the exact geometry
 // being sent (e.g. the hosted STL URL). Resolves once the dialog is done with,
 // whether the handoff succeeded, failed or was cancelled — errors are shown
@@ -113,6 +120,7 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
   const progress = document.getElementById('prusa-progress');
   const cancelBtn = document.getElementById('prusa-cancel');
   const continueLink = document.getElementById('prusa-continue');
+  const slotsEl = document.getElementById('prusa-slots');
   const isEasyPrint = target === 'easyprint';
   const { label, href: hrefFor } = TARGETS[target] || TARGETS.prusa;
 
@@ -142,6 +150,7 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
   progress.hidden = false;
   progress.value = 0;
   continueLink.hidden = true;
+  if (slotsEl) { slotsEl.hidden = true; slotsEl.replaceChildren(); }
   cancelBtn.textContent = 'Cancel';
   overlay.addEventListener('keydown', onKeydown);
   cancelBtn.addEventListener('click', onCancel);
@@ -149,9 +158,15 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
   overlay.focus();
 
   try {
-    let json = cacheKey && getCachedUpload(cacheKey);
+    const cached = cacheKey && getCachedUpload(cacheKey);
+    let json = cached?.json;
+    let slots = cached?.slots;
+    let fitsBed = cached?.fitsBed;
     if (!json) {
-      const file = await getFile();
+      const made = await getFile();
+      const file = made instanceof Blob ? made : made.file;
+      slots = made instanceof Blob ? null : made.slots;
+      fitsBed = made instanceof Blob ? undefined : made.fitsBed;
       statusEl.textContent = 'Uploading to Printables (Prusa)… 0%';
       json = await uploadToPrusa(file, {
         signal: controller.signal,
@@ -163,8 +178,9 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
             : `Uploading to Printables (Prusa)… ${Math.round(percent)}%`;
         }
       });
-      if (cacheKey) uploadCache.set(cacheKey, { json, expires: Date.now() + CACHE_MS });
+      if (cacheKey) uploadCache.set(cacheKey, { json, slots, fitsBed, expires: Date.now() + CACHE_MS });
     }
+    showSlots(slotsEl, slots, fitsBed);
 
     const href = hrefFor(json);
     continueLink.href = href;
@@ -207,10 +223,44 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
   }
 }
 
+// Colour legend: which filament goes in which slot. Only worth showing when
+// there is more than one colour (one colour = any single-filament printer).
+function showSlots(el, slots, fitsBed) {
+  if (!el) return;
+  if (fitsBed === false) {
+    const note = document.createElement('p');
+    note.className = 'prusa-slots-warn';
+    note.textContent = "Too many pieces for one 25 x 21 cm bed — in the slicer, press Arrange (A) or print in batches.";
+    el.append(note);
+    el.hidden = false;
+  }
+  if (!slots || slots.length < 2) return;
+  const title = document.createElement('p');
+  title.className = 'prusa-slots-title';
+  title.textContent = 'Load these filaments for a multi-colour print:';
+  const list = document.createElement('ol');
+  for (const { slot, hex, name } of slots) {
+    const item = document.createElement('li');
+    const swatch = document.createElement('span');
+    swatch.className = 'prusa-slot-swatch';
+    swatch.style.background = hex;
+    item.append(swatch, `Slot ${slot}: ${name}`);
+    list.append(item);
+  }
+  el.append(title, list);
+  if (slots.length > COMMON_SLOT_LIMIT) {
+    const warn = document.createElement('p');
+    warn.className = 'prusa-slots-warn';
+    warn.textContent = `${slots.length} colours — most multi-material printers hold ${COMMON_SLOT_LIMIT}. Merge some slots in the slicer.`;
+    el.append(warn);
+  }
+  el.hidden = false;
+}
+
 function getCachedUpload(cacheKey) {
   const entry = uploadCache.get(cacheKey);
   if (!entry) return null;
-  if (entry.expires > Date.now()) return entry.json;
+  if (entry.expires > Date.now()) return entry;
   uploadCache.delete(cacheKey);
   return null;
 }

@@ -2396,6 +2396,14 @@ a.rotate-btn[hidden]{ display:none; }
 #prusa-progress::-webkit-progress-value{ background:var(--brand); border-radius:999px; transition:width .15s ease; }
 #prusa-progress::-moz-progress-bar{ background:var(--brand); border-radius:999px; }
 #prusa-progress[hidden]{ display:none; }
+#prusa-slots[hidden]{ display:none; }
+#prusa-slots{ font-size:13px; color:var(--text); }
+.prusa-slots-title{ margin:0 0 6px; font-weight:600; }
+#prusa-slots ol{ margin:0; padding:0; list-style:none; display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:4px 12px; }
+#prusa-slots li{ display:flex; align-items:center; gap:8px; }
+.prusa-slot-swatch{ width:14px; height:14px; border-radius:4px; flex-shrink:0; box-shadow:inset 0 0 0 1px var(--stroke-strong); }
+.prusa-slots-warn{ margin:8px 0 0; color:var(--muted); font-size:12px; }
+.prusa-slots-warn:first-child{ margin:0 0 10px; }
 
 #viewer-container.is-maximized{
   position:fixed !important;

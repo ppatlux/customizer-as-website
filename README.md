@@ -63,6 +63,19 @@ mesh) and:
   ("Motion (2/4)"), one spread-out STL for downloads (PrusaSlicer: "Split to objects").
 OrcaSlicer also goes through the Prusa upload now, so it receives the split 3MF too.
 
+**Colours.** Every 3MF sent to a slicer carries the customizer colours as filament slots (most-used
+colour = slot 1). Each body's main colour sets its object filament; a body painted in several
+colours (per-mesh paint) gets the rest as per-triangle MMU painting. Written for PrusaSlicer /
+EasyPrint (`Metadata/Slic3r_PE_model.config` extruder + `slic3rpe:mmu_segmentation`, verified by
+slicing with PrusaSlicer 2.9.2 CLI, slots 1-5) and for Bambu Studio / OrcaSlicer
+(`model_settings.config` + `paint_color`, slot colours in `project_settings.config`; not verified).
+The slicer takes the actual filament colours from the user's loaded filaments, so the dialog lists
+"Slot N: colour" and object names carry the colour ("Top – Blue"). Single-filament printers ignore
+the slots. A part painted in several colours prints from the viewer mesh (a hosted STL can't carry
+the paint); otherwise from its hosted STL in the part colour. STL downloads have no colour.
+Pieces are skyline-packed onto a 250 × 210 mm (MK4) bed; if they don't fit, the dialog says to use
+Arrange or print in batches — command-line/server-side slicing skips pieces off the bed.
+
 **Print whole build** (print icon in the bottom toolbar, `printWholeBuild()` in `app.js` +
 `scripts/print-build.js`) builds one 3MF in the browser from every visible part (plus the active
 mix's `extras`, minus manifest entries marked `print: false` — PCBs, displays, encoders), each split

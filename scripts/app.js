@@ -47,6 +47,12 @@ function setPreferredDownloadFormat(format) {
 }
 
 const COLOR_OPTIONS = ['#231F20', '#549EF7', '#00D072', '#FFBD3B', '#A89EFA', '#CE4A4A', '#E6E6E6', '#FFFFFF'];
+// Names for the palette swatches — print files label each piece and filament
+// slot with these ("Top – Blue"); a custom picker colour shows as its hex.
+const COLOR_NAMES = {
+  '#231F20': 'Black', '#549EF7': 'Blue', '#00D072': 'Green', '#FFBD3B': 'Yellow',
+  '#A89EFA': 'Purple', '#CE4A4A': 'Red', '#E6E6E6': 'Light grey', '#FFFFFF': 'White'
+};
 // Default part color — must stay one of COLOR_OPTIONS' own swatches so a
 // freshly loaded/reset part visually matches a selectable palette entry.
 const DEFAULT_PART_COLOR = '#E6E6E6';
@@ -152,7 +158,7 @@ const remoteStepSets = Object.fromEntries(
 );
 
 // Hosted print STLs, same file-naming scheme as .step/.glb. Not every variant
-// has one; getPartPrintPositions() probes with firstExistingUrl() and falls
+// has one; getPartPrintSource() probes with firstExistingUrl() and falls
 // back to the mesh already loaded in the viewer.
 const stlSets = Object.fromEntries(
   Object.entries(localModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.stl'))])
@@ -3444,19 +3450,21 @@ async function fetchFirstAvailable(urls) {
 // hosted file before falling back to something else — unlike
 // getAssetCandidates(), which only tells you a URL COULD be constructed by
 // pattern, not that anything actually lives there.
-// One part -> a 3MF with each of its bodies as a separate object.
+// One part -> a 3MF with each of its bodies as a separate object, coloured
+// with the part's colours as filament slots.
 async function sendPartToPrusa(part, target) {
   const filename = `${getPartFileBase(part)}.3mf`;
   await sendToPrusa({
     target,
-    // First candidate pins down the exact variant (mix extras included), so a
+    // Exact variant (first candidate, mix extras included) + its colours, so a
     // repeat click within the link lifetime reuses the earlier upload.
-    cacheKey: `part:${getAssetCandidates(part, currentIdx[part] ?? 0, 'glb')[0] || part}`,
+    cacheKey: `part:${getPrintKey(part)}`,
     getFile: async () => {
       const { buildPrint3mf } = await import('./print-build.js');
-      const positions = await getPartPrintPositions(part);
-      const { blob } = await buildPrint3mf([{ name: getPartDisplayName(part), positions }], { title: getPartDisplayName(part) });
-      return new File([blob], filename, { type: 'model/3mf' });
+      const source = await getPartPrintSource(part);
+      const { blob, slots, fitsBed } = await buildPrint3mf([{ name: getPartDisplayName(part), ...source }],
+        { title: getPartDisplayName(part), colorNames: COLOR_NAMES });
+      return { file: new File([blob], filename, { type: 'model/3mf' }), slots, fitsBed };
     },
     onSuccess: (label) => toast(`${getPartDisplayName(part)} ready for ${label}.`, 'ok', 1600),
     onError: (error) => {
@@ -3479,25 +3487,46 @@ async function firstExistingUrl(urls) {
   return null;
 }
 
-// A part's print geometry as a Z-up triangle soup: the hosted .stl when one
-// exists (the designer's print file), otherwise the mesh shown in the viewer.
-// Either way print-build.js then splits it into separate bodies — many models
-// combine several printed pieces (both wheels, an arm pair, a top + its
-// diffuser) because that's how they look assembled.
-async function getPartPrintPositions(part) {
+// A part's colour as shown: a per-mesh paint override, else the part colour.
+function getPartHex(part, mesh = null) {
+  const override = mesh && getMeshOverrides(part)?.[mesh.userData.meshIndex];
+  return (override || `#${(modelCols[part] || new THREE.Color(DEFAULT_PART_COLOR)).getHexString()}`).toUpperCase();
+}
+
+// Variant + colours of a part — what decides its print file (cache key).
+function getPrintKey(part) {
+  const variant = getAssetCandidates(part, currentIdx[part] ?? 0, 'glb')[0] || part;
+  return `${variant}#${getPartHex(part)}#${JSON.stringify(getMeshOverrides(part) || {})}`;
+}
+
+// A part's print geometry as a Z-up triangle soup plus its colour(s): the
+// hosted .stl when one exists (the designer's print file) in the part's
+// colour — unless pieces of it are painted differently, which only the
+// viewer mesh can carry — otherwise the mesh shown in the viewer, coloured
+// per mesh. Either way print-build.js then splits it into separate bodies —
+// many models combine several printed pieces (both wheels, an arm pair, a
+// top + its diffuser) because that's how they look assembled.
+async function getPartPrintSource(part) {
   const { positionsFromStl, positionsFromObject } = await import('./print-build.js');
-  const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part] ?? 0, 'stl'));
-  if (hostedUrl) return positionsFromStl(await (await fetch(hostedUrl)).arrayBuffer());
+  const base = getPartHex(part);
+  const painted = Object.values(getMeshOverrides(part) || {}).some((hex) => hex && hex.toUpperCase() !== base);
+  if (!painted) {
+    const hostedUrl = await firstExistingUrl(getAssetCandidates(part, currentIdx[part] ?? 0, 'stl'));
+    if (hostedUrl) {
+      return { positions: await positionsFromStl(await (await fetch(hostedUrl)).arrayBuffer()), color: base };
+    }
+  }
   const model = loadedMods[part];
   if (!model) throw new Error(`${getPartDisplayName(part)} is not loaded`);
-  return positionsFromObject(model);
+  return positionsFromObject(model, (mesh) => getPartHex(part, mesh));
 }
 
 // Print-ready STL for downloads: same split + flat layout as the slicer
 // upload, in one file (bodies spread apart; "Split to objects" separates them).
+// STL has no colour, so that part is dropped.
 async function getPartPrintStl(part) {
   const { buildPrintStl } = await import('./print-build.js');
-  return buildPrintStl(await getPartPrintPositions(part)).blob;
+  return buildPrintStl((await getPartPrintSource(part)).positions).blob;
 }
 
 // Every visible printable piece of the current build: the standard parts plus
@@ -3510,7 +3539,8 @@ function getPrintablePieces() {
 }
 
 // "Print whole build": one 3MF with every body of every visible piece as its
-// own object, laid out on the bed (print-build.js), uploaded to Prusa and handed to the
+// own object in its customizer colour (filament slots), laid out on the bed
+// (print-build.js), uploaded to Prusa and handed to the
 // preferred slicer — OrcaSlicer included, via Prusa's temporary file URL,
 // since a browser-built file has no URL of ours to give it.
 async function printWholeBuild() {
@@ -3530,18 +3560,19 @@ async function printWholeBuild() {
   await sendToPrusa({
     target: slicer,
     title: `Sending build to ${SLICER_LABELS[slicer]}`,
-    // Same pieces in the same variants -> same geometry; colors don't matter.
-    cacheKey: `build:${pieces.map((key) => getAssetCandidates(key, currentIdx[key] ?? 0, 'glb')[0] || key).join('|')}`,
+    // Same pieces in the same variants and colours -> same print file.
+    cacheKey: `build:${pieces.map(getPrintKey).join('|')}`,
     getFile: async () => {
       const { buildPrint3mf } = await import('./print-build.js');
       const named = await Promise.all(pieces.map(async (key) => ({
         name: getPartDisplayName(key),
-        positions: await getPartPrintPositions(key)
+        ...(await getPartPrintSource(key))
       })));
-      const { blob } = await buildPrint3mf(named,
-        { title: activePresetKey && presets[activePresetKey]?.label ? `HP Robot – ${presets[activePresetKey].label}` : 'HP Robot' }
-      );
-      return new File([blob], 'hp-robot-build.3mf', { type: 'model/3mf' });
+      const { blob, slots, fitsBed } = await buildPrint3mf(named, {
+        title: activePresetKey && presets[activePresetKey]?.label ? `HP Robot – ${presets[activePresetKey].label}` : 'HP Robot',
+        colorNames: COLOR_NAMES
+      });
+      return { file: new File([blob], 'hp-robot-build.3mf', { type: 'model/3mf' }), slots, fitsBed };
     },
     onSuccess: (label) => toast(`Build (${pieces.length} parts) ready for ${label}.`, 'ok', 1800),
     onError: (error) => {
