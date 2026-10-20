@@ -42,6 +42,17 @@ the Camera projection toggle, GLB/STEP downloads, and the Quick Guide launcher; 
 - **OrcaSlicer**: a bare `orcaslicer://open?file=<url>` link to our own hosted STL (or STEP
   fallback). Its handler has no allowlist, so no upload is needed.
 
+**Print whole build** (print icon in the bottom toolbar, `printWholeBuild()` in `app.js` +
+`scripts/print-build.js`) builds one 3MF in the browser from the meshes in the scene: one named
+object per visible part (plus the active mix's `extras`, minus manifest entries marked
+`print: false` — PCBs, displays, encoders), welded, turned Z-up, grounded and laid out side by side
+around the MK3/MK4 bed centre. It goes through the same Prusa upload; OrcaSlicer gets Prusa's
+temporary file URL too, since a browser-built file has no URL of ours. Parts keep their
+assembly orientation — rotate any that print better another way in the slicer.
+
+Scene exports (`exportPartAsStlBlob`, Model Placer's STL save) are rotated Y-up → Z-up so parts
+land upright in a slicer; hosted CAD STLs already are. `firstExistingUrl()` skips 0-byte files.
+
 The engraving tool (`engrave.html`) only offers a plain "Download STL" button — no local setup,
 no custom protocol, no helper scripts. Send the downloaded file to your slicer manually.
 

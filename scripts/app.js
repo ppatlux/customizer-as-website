@@ -137,6 +137,11 @@ const modelSets = localModelSets;
 const mixExtraUrls = new Map(
   (ASSET_MANIFEST.mixonly || []).map((entry) => [entry.file, `./assets/models/${entry.folder}/${entry.file}`])
 );
+// Mix pieces marked `print: false` in the manifest (electronics shown for
+// context) — left out of "Print whole build".
+const nonPrintableMixExtras = new Set(
+  (ASSET_MANIFEST.mixonly || []).filter((entry) => entry.print === false).map((entry) => entry.file)
+);
 
 const stepSets = Object.fromEntries(
   Object.entries(localModelSets).map(([part, files]) => [part, files.map((file) => file.replace(/\.glb$/i, '.step'))])
@@ -211,6 +216,7 @@ const variantGridTitle = document.getElementById('variant-grid-title');
 const variantGridBody = document.getElementById('variant-grid-body');
 const exitMaxBtn = document.getElementById('exit-maximize');
 const dlPrimary = document.getElementById('download-primary');
+const printBuildBtn = document.getElementById('printBuildBtn');
 const moreToggle = document.getElementById('more-toggle');
 const moreMenu = document.getElementById('more-menu');
 const moreFactoryResetBtn = document.getElementById('moreFactoryResetBtn');
@@ -723,6 +729,7 @@ function bootstrap() {
   setupPresetMenu();
   setupPanels();
   setupDownloadMenu();
+  printBuildBtn?.addEventListener('click', printWholeBuild);
   setupMoreMenu();
   setupSettingsMenu();
   setupPaletteWiring();
@@ -1368,6 +1375,11 @@ function syncPrintButtonBranding(slicer = getPreferredSlicer(), label = SLICER_L
     btn.title = `Send to ${label}`;
     btn.setAttribute('aria-label', part ? `Send ${getPartDisplayName(part)} to ${label}` : `Send to ${label}`);
   });
+
+  if (printBuildBtn) {
+    printBuildBtn.title = `Print whole build in ${label}`;
+    printBuildBtn.setAttribute('aria-label', `Print whole build in ${label}`);
+  }
 }
 
 function setupPaletteWiring() {
@@ -3496,7 +3508,8 @@ async function firstExistingUrl(urls) {
   for (const url of urls) {
     try {
       const response = await fetch(url, { method: 'HEAD' });
-      if (response.ok) return url;
+      // A 0-byte file is a failed Model Placer write, not a print file.
+      if (response.ok && response.headers.get('content-length') !== '0') return url;
     } catch {
       // try the next candidate
     }
@@ -3511,9 +3524,65 @@ async function exportPartAsStlBlob(part) {
   const model = loadedMods[part];
   if (!model) throw new Error(`${part} is not loaded`);
   const { STLExporter } = await import('three/addons/exporters/STLExporter.js');
-  const exporter = new STLExporter();
-  const result = exporter.parse(model, { binary: true });
+  // The scene is Y-up but STL/slicers are Z-up — export a clone under a +90°
+  // X turn so the part lands upright on the bed instead of on its back (the
+  // hosted CAD STLs are already Z-up). Mix pieces carry their group's lift.
+  const upright = new THREE.Group();
+  upright.rotation.x = Math.PI / 2;
+  const clone = model.clone(true);
+  if (model.parent === mixExtrasGroup) clone.position.y += mixExtrasGroup.position.y;
+  upright.add(clone);
+  upright.updateMatrixWorld(true);
+  const result = new STLExporter().parse(upright, { binary: true });
   return new Blob([result], { type: 'model/stl' });
+}
+
+// Every visible printable piece of the current build: the standard parts plus
+// the active mix's standalone pieces, minus the `print: false` electronics.
+function getPrintablePieces() {
+  const parts = Object.keys(modelSets).filter((part) => partVis[part] && loadedMods[part]);
+  const extras = activeMixExtras.filter((file) =>
+    loadedMods[file] && partVis[file] !== false && !nonPrintableMixExtras.has(file));
+  return [...parts, ...extras];
+}
+
+// "Print whole build": one 3MF with each visible piece as its own object,
+// laid out on the bed (print-build.js), uploaded to Prusa and handed to the
+// preferred slicer — OrcaSlicer included, via Prusa's temporary file URL,
+// since a browser-built file has no URL of ours to give it.
+async function printWholeBuild() {
+  const pieces = getPrintablePieces();
+  if (!pieces.length) {
+    toast('No visible printable parts.', 'warn', 1800);
+    return;
+  }
+
+  try {
+    await showConsentPopup();
+  } catch {
+    return;
+  }
+
+  const slicer = getPreferredSlicer();
+  await sendToPrusa({
+    target: slicer,
+    title: `Sending build to ${SLICER_LABELS[slicer]}`,
+    // Same pieces in the same variants -> same geometry; colors don't matter.
+    cacheKey: `build:${pieces.map((key) => getAssetCandidates(key, currentIdx[key] ?? 0, 'glb')[0] || key).join('|')}`,
+    getFile: async () => {
+      const { buildPrint3mf } = await import('./print-build.js');
+      const { blob } = await buildPrint3mf(
+        pieces.map((key) => ({ name: getPartDisplayName(key), object: loadedMods[key] })),
+        { title: activePresetKey && presets[activePresetKey]?.label ? `HP Robot – ${presets[activePresetKey].label}` : 'HP Robot' }
+      );
+      return new File([blob], 'hp-robot-build.3mf', { type: 'model/3mf' });
+    },
+    onSuccess: (label) => toast(`Build (${pieces.length} parts) sent to ${label}.`, 'ok', 1800),
+    onError: (error) => {
+      console.error(error);
+      toast(error?.message || 'Could not send the build to the slicer.', 'err', 3200);
+    }
+  });
 }
 
 function saveStateToLocal() {
@@ -5936,6 +6005,7 @@ function startTour(force = false) {
     { target: '#top-visibility', dock: 'parts', essential: true, title: 'Visibility', body: 'Temporarily hide or show a single part to see how it affects the build.' },
     { target: '#visibilityModeBtn', dock: 'parts', title: 'Hide / show parts', body: 'Preview several hidden parts at once -- they turn into clickable blue ghosts you can tap to toggle. Press V anytime to jump straight into this mode.' },
     { target: '#top-controls [data-role="print"]', dock: 'parts', essential: true, title: 'Direct 3D Print', body: 'Open the current part directly in your preferred slicer — pick PrusaSlicer, EasyPrint or OrcaSlicer in Settings.' },
+    { target: '#printBuildBtn', title: 'Print whole build', body: 'Send every visible part at once — laid out on the print bed as separate objects — to your preferred slicer.' },
     { target: '#download-primary', title: 'Export', body: 'Download STL instantly, or open Settings for GLB and STEP.' },
     { target: '#settingsToggle', title: 'Settings', body: 'Preferred slicer, camera projection, GLB/STEP downloads, and this guide all live here.' }
   ];

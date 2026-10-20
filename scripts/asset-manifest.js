@@ -9,6 +9,8 @@
 // robot arms, …) whose geometry doesn't fit a normal part slot. Files live in
 // assets/models/_mixonly/. tools/model-placer.html authors both the models
 // (Category "mixonly") and the mixes that use them.
+// `print: false` marks a piece that isn't 3D printed (PCBs, displays, encoders
+// shown for context) — "Print whole build" leaves it out of the print file.
 export const ASSET_MANIFEST = {
     top: [
     { file: 'Top-HP-logo.glb', folder: 'top', source: 'https://hprobots.com/wp-content/uploads/2025/08/Top-HP-logo.glb' },
@@ -126,14 +128,14 @@ export const ASSET_MANIFEST = {
   // Standalone models for special mixes — see the header comment. Referenced by
   // filename from a preset's `extras: [...]`. Populated by tools/model-placer.
   mixonly: [
-    { file: 'bottom_extend_pcb_r1_1_.glb', folder: '_mixonly', source: '' },
+    { file: 'bottom_extend_pcb_r1_1_.glb', folder: '_mixonly', source: '', print: false },
     { file: 'top_matrix_double-butttons_v2.glb', folder: '_mixonly', source: '' },
-    { file: 'HP_KnobEncoder_R1.glb', folder: '_mixonly', source: '' },
+    { file: 'HP_KnobEncoder_R1.glb', folder: '_mixonly', source: '', print: false },
     { file: 'bottom_jig1x1_2_.glb', folder: '_mixonly', source: '' },
-    { file: 'top_oled_v3_2_.glb', folder: '_mixonly', source: '' },
-    { file: 'HP_KnobEncoder_R1_copy.glb', folder: '_mixonly', source: '' },
+    { file: 'top_oled_v3_2_.glb', folder: '_mixonly', source: '', print: false },
+    { file: 'HP_KnobEncoder_R1_copy.glb', folder: '_mixonly', source: '', print: false },
     { file: 'cube-frame.glb', folder: '_mixonly', source: '' },
-    { file: 'top_pcb_v1.glb', folder: '_mixonly', source: '' },
+    { file: 'top_pcb_v1.glb', folder: '_mixonly', source: '', print: false },
     { file: 'Top_lightsdiffuser_cube.glb', folder: '_mixonly', source: '' },
     { file: 'Top-sensor-single_cube_1.glb', folder: '_mixonly', source: '' },
     { file: 'Top-sensor-single_cube_2.glb', folder: '_mixonly', source: '' },
