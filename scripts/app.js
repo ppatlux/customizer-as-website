@@ -94,6 +94,16 @@ const MODEL_Y_OFFSET = 30;
 const SPACER_DROP = 16;
 const SPACER_AFFECTED_PARTS = ['bottom', 'wheels', 'arms', 'bumper'];
 const STATE_KEY = 'hp_robot_customizer_state';
+// Caps how many toasts can be stacked up on screen at once -- rapid repeat
+// clicks on something like the randomize button used to queue one toast per
+// click with nothing capping the pile-up, so a burst of clicks left a wall
+// of them stacked on screen long after the clicking stopped. Dropping the
+// oldest as a new one arrives keeps the stack readable no matter how fast
+// they come in, without changing timing/behavior for the normal case.
+// Declared up here, not next to toast(): bootstrap() runs during module
+// evaluation and can toast (e.g. "Loaded shared build"), and reading a const
+// before its declaration has run throws.
+const TOAST_MAX_VISIBLE = 3;
 const COLOR_HISTORY_KEY = 'hp_robot_color_history';
 const COLOR_HISTORY_MAX = 10;
 const TOUR_VERSION = 'standalone-v1';
@@ -3349,14 +3359,8 @@ function navigateWithFade(url) {
   window.setTimeout(() => window.location.assign(url), 180);
 }
 
-// Caps how many toasts can be stacked up on screen at once -- rapid repeat
-// clicks on something like the randomize button used to queue one toast per
-// click with nothing capping the pile-up, so a burst of clicks left a wall
-// of them stacked on screen long after the clicking stopped. Dropping the
-// oldest as a new one arrives keeps the stack readable no matter how fast
-// they come in, without changing timing/behavior for the normal case.
-const TOAST_MAX_VISIBLE = 3;
-
+// TOAST_MAX_VISIBLE (the stack cap) is declared with the top-level constants
+// near STATE_KEY: toast() can run inside bootstrap(), before this point.
 function toast(message, type = 'ok', ms = 2000) {
   while (toastStack.children.length >= TOAST_MAX_VISIBLE) {
     toastStack.firstElementChild.remove();
