@@ -1,21 +1,23 @@
 :root{
-  /* Sourced directly from hprobots.com's own design tokens (--hpro-*), so the
-     customizer reads as the same product, not a generic tool wearing a borrowed
-     accent — yellow is specifically hprobots' color for the "create"/3D-print
-     side of the product (blue is used for other parts of the site). --brand/
-     --brand-ink drive every existing button/focus-ring/active state already,
-     so retargeting just these two repaints the whole app. A few spots that use
-     --brand as small TEXT on a light background (not a filled button) are
-     overridden to --hpro-navy alongside this — solid yellow text reads fine on
-     a button, but fails contrast as body-sized text on white. */
-  --brand: #FFC83D;
-  --brand-ink: #F5B414;
-  --brand-ghost: color-mix(in srgb, var(--brand) 12%, transparent);
+  /* UI chrome follows the HP Robots coding app (app.hprobots.com) — see
+     HP_Robots_App_Tool_UI_Guide.md: #ECF4F9 canvas, white round icon buttons
+     with slate icons, and Interface Blue (#3D7FFD) for every primary action and
+     selected/active state. --brand/--brand-ink drive all of those, with
+     --on-brand for text/icons sitting on a filled --brand background.
+     hprobots' yellow (--hpro-yellow) stays for the brand moments (loading
+     screen) and as the Paint tool's own colour, matching its yellow
+     screen-edge glow (#paint-mode-vignette); hide/show mode is the blue one. */
+  --brand: #3D7FFD;
+  --brand-ink: #2B6BE6;
+  --on-brand: #FFFFFF;
+  --brand-ghost: color-mix(in srgb, var(--brand) 10%, transparent);
   --hpro-yellow: #FFC83D;
   --hpro-mint: #8EE9C9;
   --hpro-navy: #25284F;
-  --canvas: #ffffff;
-  --dot-grid: rgba(185, 204, 216, 0.55);
+  --canvas: #ECF4F9;
+  /* Hairline border of the app's round icon buttons and floating cards —
+     lighter than --stroke, which stays for dividers and inputs. */
+  --line: #DCE6EE;
   --text: #000000;
   --muted: #515E80;
   --bg-start: #FFFFFF;
@@ -30,10 +32,11 @@
   --edge: 16px;
   --control-h: 44px;
   --row-gap: 12px;
-  /* #info-container's actual rendered height: its buttons (--control-h) plus its
-     own 8px top/bottom padding and 1px border. Used to reserve clearance above
-     the toolbar without hardcoding a second number that can drift out of sync. */
-  --toolbar-h: calc(var(--control-h) + 18px);
+  /* Round buttons in the top bar (#topbar) and the bottom-left view controls
+     (#view-controls), sized like the coding app's. The side panels start below
+     the top bar and stop above the view controls using these two. */
+  --topbar-h: 48px;
+  --toolbar-h: var(--topbar-h);
   --blur: 0px;
   --radius: 14px;
   --radius-lg: 16px;
@@ -72,12 +75,10 @@ body{
   margin:0;
   color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Roboto,Segoe UI,system-ui,Arial,sans-serif;
+  /* Flat app canvas, as in the coding app's editor. The 3D canvas renders
+     transparent (see the renderer setup in app.js), so this shows straight
+     through behind the robot. */
   background-color:var(--canvas);
-  /* Faint dot grid instead of flat white -- the 3D canvas itself renders
-     transparent (see the renderer setup in app.js) so this shows straight
-     through behind the robot, not just around the edges of the page. */
-  background-image:radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
-  background-size:24px 24px;
   overflow:hidden;
   /* Kills the browser's native double-tap-to-zoom on the UI chrome (buttons,
      sheet, top bar) — this is an app-like interface, not a content page, and
@@ -142,8 +143,6 @@ html.vt-fallback.vt-leaving body{
   position:relative;
   overflow:hidden;
   background-color:var(--canvas);
-  background-image:radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
-  background-size:24px 24px;
   isolation:isolate;
 }
 
@@ -163,17 +162,19 @@ html.vt-fallback.vt-leaving body{
   pointer-events:none;
 }
 
+/* White circle, hairline border, slate icon — the coding app's icon button. */
 .btn{
+  position:relative;
   display:flex;
   align-items:center;
   justify-content:center;
   cursor:pointer;
   user-select:none;
-  border:1px solid var(--stroke);
+  border:1px solid var(--line);
   background:var(--glass-bg);
   color:var(--muted);
   border-radius:50%;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);
+  box-shadow:var(--shadow-xs);
   transition:transform var(--transition), background var(--transition), box-shadow var(--transition), color var(--transition);
 }
 .btn:hover{ background:var(--glass-hover); transform:translateY(-1px); }
@@ -249,8 +250,8 @@ html.vt-fallback.vt-leaving body{
   z-index:var(--z-floating);
 }
 
-/* Desktop moves the wordmark down to sit opposite #info-container -- toolbar
-   bottom-left, watermark bottom-right -- now that #preset-menu has nothing
+/* Desktop moves the wordmark down to sit opposite #view-controls -- view
+   buttons bottom-left, watermark bottom-right -- now that #preset-menu has nothing
    else left in it (the preset picker moved into .right-dock's carousel and
    #preset-toggle is touch-only). Faded down to a watermark rather than a
    full-opacity logo since it's no longer doing the job of labeling an
@@ -407,9 +408,8 @@ html.vt-fallback.vt-leaving body{
   gap:0;
   padding:0 6px;
   background:var(--track);
-  border:1px solid var(--stroke);
+  border:none;
   border-radius:999px;
-  box-shadow:var(--shadow-sm);
 }
 @media (pointer: coarse) and (max-width: 1024px){
   #controls-toggle{
@@ -446,7 +446,7 @@ html.vt-fallback.vt-leaving body{
 }
 .toggle-btn.active{
   background:#FFFFFF;
-  color:var(--hpro-navy);
+  color:var(--brand);
   box-shadow:var(--shadow-xs);
 }
 
@@ -651,8 +651,8 @@ html.vt-fallback.vt-leaving body{
   box-shadow:var(--shadow-sm);
 }
 .preset-card.active{
-  border-color:var(--hpro-navy);
-  box-shadow:0 0 0 2px var(--hpro-navy) inset;
+  border-color:var(--brand);
+  box-shadow:0 0 0 2px var(--brand) inset;
 }
 .preset-card-thumb{
   width:100%;
@@ -688,8 +688,8 @@ html.vt-fallback.vt-leaving body{
   transition:background var(--transition), border-color var(--transition);
 }
 .preset-card-copy .material-icons{ font-size:14px; }
-.preset-card-copy:hover{ background:#FFFFFF; border-color:var(--hpro-navy); }
-.preset-card-copy:focus-visible{ outline:2px solid var(--hpro-navy); outline-offset:1px; }
+.preset-card-copy:hover{ background:#FFFFFF; border-color:var(--brand); color:var(--brand); }
+.preset-card-copy:focus-visible{ outline:2px solid var(--brand); outline-offset:1px; }
 .preset-card.active.has-mix-colors .preset-card-copy{ display:flex; }
 
 /* Advanced shows every part in the same single scrollable list, essential
@@ -783,13 +783,13 @@ html.vt-fallback.vt-leaving body{
   border:1px solid var(--brand);
   border-radius:999px;
   background:var(--brand);
-  color:var(--hpro-navy);
+  color:var(--on-brand);
   font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   letter-spacing:.04em;
   text-transform:none;
   cursor:pointer;
   transition:transform var(--transition), box-shadow var(--transition), background var(--transition);
-  box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
+  box-shadow:0 6px 14px color-mix(in srgb, var(--brand) 24%, transparent);
 }
 .top-engrave-btn:hover{
   transform:translateY(-1px);
@@ -836,7 +836,8 @@ html.vt-fallback.vt-leaving body{
    target one specific part instead. Plain flex column, not its own card —
    #global-paint-panel and #color-sidebar-toggle/#color-sidebar each carry
    their own chrome, same as #preset-menu does independently.
-   Height-capped to leave room for the bottom toolbar (#info-container),
+   Starts under the top bar (#topbar) and is height-capped to leave room for
+   the bottom-left view controls (#view-controls),
    same reasoning as .model-controls' own max-height on the opposite side.
    .global-paint-panel and the toggle button opt out of shrinking
    (flex-shrink:0 — they must always show in full); #color-sidebar is the one
@@ -846,7 +847,7 @@ html.vt-fallback.vt-leaving body{
 .left-tools{
   position:absolute;
   left:var(--edge);
-  top:calc(var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
+  top:calc(var(--edge) + var(--topbar-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
   display:flex;
   flex-direction:column;
   align-items:stretch;
@@ -861,8 +862,8 @@ html.vt-fallback.vt-leaving body{
      higher z-index. Deriving both the top offset and the bottom reservation
      from the same spacing tokens the toolbar itself is built from (rather
      than a second guessed constant) keeps this correct if either changes. */
-  max-height:calc(100vh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
-  max-height:calc(100svh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  max-height:calc(100vh - (var(--edge) + var(--topbar-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  max-height:calc(100svh - (var(--edge) + var(--topbar-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
   overflow:hidden;
   z-index:var(--z-panels);
 }
@@ -897,13 +898,13 @@ html.vt-fallback.vt-leaving body{
   background:var(--glass-bg);
   padding:12px;
   border-radius:var(--radius-lg);
-  border:1px solid var(--stroke);
-  box-shadow:var(--shadow);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow-xs);
 }
-/* Prominent brand-bordered pill — deliberately the loudest button in this
-   column, since it's the primary way to change any color at all now. Gold
-   fill while active mirrors every other "this mode is on" state in the app
-   (.bucket-toggle-btn.active, etc). */
+/* Prominent pill — deliberately the loudest button in this column, since it's
+   the primary way to change any color at all now. Paint mode keeps hprobots
+   yellow (not the blue --brand) so the button, its P chip and the yellow
+   screen-edge glow all say "paint"; hide/show mode is the blue one. */
 .global-paint-toggle-btn{
   display:flex;
   align-items:center;
@@ -911,7 +912,7 @@ html.vt-fallback.vt-leaving body{
   gap:8px;
   height:38px;
   padding:0 14px;
-  border:1px solid var(--brand);
+  border:1px solid var(--hpro-yellow);
   border-radius:999px;
   background:transparent;
   color:var(--text);
@@ -924,9 +925,9 @@ html.vt-fallback.vt-leaving body{
   transform:translateY(-1px);
 }
 .global-paint-toggle-btn.active{
-  background:var(--brand);
+  background:var(--hpro-yellow);
   color:var(--hpro-navy);
-  box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
+  box-shadow:0 8px 18px color-mix(in srgb, var(--hpro-yellow) 28%, transparent);
 }
 .global-paint-toggle-btn .material-icons{
   font-size:18px;
@@ -951,9 +952,9 @@ html.vt-fallback.vt-leaving body{
   height:var(--control-h);
   padding:0 12px;
   background:var(--glass-bg);
-  border:1px solid var(--stroke);
+  border:1px solid var(--line);
   border-radius:var(--radius-lg);
-  box-shadow:var(--shadow-sm);
+  box-shadow:var(--shadow-xs);
   color:var(--text);
   font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   cursor:pointer;
@@ -974,12 +975,12 @@ html.vt-fallback.vt-leaving body{
   transform:rotate(180deg);
 }
 /* #visibilityModeBtn reuses this same pill but toggles on/off rather than
-   expanding -- same gold-fill-while-on treatment as .global-paint-toggle-btn
-   above, so "this mode is currently active" reads consistently app-wide. */
+   expanding -- filled blue while on, matching its blue screen-edge glow
+   (#visibility-edit-vignette), the way Paint fills yellow. */
 .color-sidebar-toggle-btn.active{
   background:var(--brand);
   border-color:var(--brand);
-  color:var(--hpro-navy);
+  color:var(--on-brand);
   box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
 }
 
@@ -1009,19 +1010,22 @@ html.touch-capable .shortcut-kbd{ display:none; }
   color:#2f6fd6;
 }
 .shortcut-kbd--yellow{
-  border:1px solid var(--brand-ink);
-  background:color-mix(in srgb, var(--brand) 25%, white);
+  border:1px solid #F5B414;
+  background:color-mix(in srgb, var(--hpro-yellow) 25%, white);
   color:#7a5b00;
 }
-/* Both host buttons swap to a solid brand-yellow fill while active (see
-   .color-sidebar-toggle-btn.active above and .global-paint-toggle-btn.active
-   below) -- the yellow badge would disappear into that background, so it
-   flips to an outline treatment instead of staying filled. */
-.global-paint-toggle-btn.active .shortcut-kbd--yellow,
-.color-sidebar-toggle-btn.active .shortcut-kbd--yellow{
+/* Both host buttons swap to a solid fill while active (yellow for Paint, blue
+   for hide/show — see the .active rules above) — a filled badge would vanish
+   into it, so it flips to an outline in the button's own text colour. */
+.global-paint-toggle-btn.active .shortcut-kbd--yellow{
   background:transparent;
   border-color:var(--hpro-navy);
   color:var(--hpro-navy);
+}
+.color-sidebar-toggle-btn.active .shortcut-kbd--blue{
+  background:transparent;
+  border-color:var(--on-brand);
+  color:var(--on-brand);
 }
 
 /* One always-visible dock on the right replacing the old pair of independent
@@ -1038,7 +1042,7 @@ html.touch-capable .shortcut-kbd{ display:none; }
      to it -- the couple dozen pixels this reserves above the dock are unused
      on this side (nothing else sits at the top-right any more), but a small
      shared gap beats visibly mismatched columns. */
-  top:calc(var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
+  top:calc(var(--edge) + var(--topbar-h) + var(--row-gap) + env(safe-area-inset-top, 0px));
   right:var(--edge);
   width:352px;
   display:flex;
@@ -1047,10 +1051,10 @@ html.touch-capable .shortcut-kbd{ display:none; }
   background:var(--glass-bg);
   padding:12px;
   border-radius:var(--radius-lg);
-  border:1px solid var(--stroke);
-  box-shadow:var(--shadow);
-  max-height:calc(100vh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
-  max-height:calc(100svh - (var(--edge) + var(--control-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  border:1px solid var(--line);
+  box-shadow:var(--shadow-xs);
+  max-height:calc(100vh - (var(--edge) + var(--topbar-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  max-height:calc(100svh - (var(--edge) + var(--topbar-h) + var(--row-gap) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
   z-index:var(--z-panels);
 }
 @media (pointer: coarse) and (max-width: 1024px){
@@ -1062,8 +1066,11 @@ html.touch-capable .shortcut-kbd{ display:none; }
 
 .right-dock-tabs{
   display:flex;
-  gap:6px;
+  gap:4px;
   flex:0 0 auto;
+  padding:4px;
+  background:var(--track);
+  border-radius:999px;
 }
 .right-dock-tab{
   flex:1 1 0;
@@ -1074,7 +1081,7 @@ html.touch-capable .shortcut-kbd{ display:none; }
   height:34px;
   padding:0 10px;
   background:transparent;
-  border:1px solid var(--stroke);
+  border:none;
   border-radius:999px;
   font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
   color:var(--muted);
@@ -1085,8 +1092,8 @@ html.touch-capable .shortcut-kbd{ display:none; }
   font-size:16px;
 }
 .right-dock-tab.active{
-  background:var(--track);
-  color:var(--hpro-navy);
+  background:#FFFFFF;
+  color:var(--brand);
   box-shadow:var(--shadow-xs);
 }
 .preset-panel-head{
@@ -1375,8 +1382,8 @@ html.touch-capable .shortcut-kbd{ display:none; }
   background:var(--glass-hover);
 }
 .bucket-toggle-btn.active{
-  background:var(--brand);
-  border-color:var(--brand);
+  background:var(--hpro-yellow);
+  border-color:var(--hpro-yellow);
   color:var(--hpro-navy);
 }
 .bucket-toggle-btn .material-icons{
@@ -1426,26 +1433,225 @@ html.touch-capable .shortcut-kbd{ display:none; }
   cursor:crosshair;
 }
 
-#info-container{
+/* ---- Top bar (#topbar) ----
+   The coding app's editor header: home + save + the build's name on the left,
+   round icon buttons on the right, "⋮" popping out a column of round buttons
+   (#more-menu) underneath it. The bar itself is click-through (only its two
+   groups take pointer events) so the strip between them still orbits the
+   model. Above the side panels and the phone sheet so the pop-out overlaps
+   them; below modals and toasts. */
+.topbar{
   position:absolute;
-  left:var(--edge);
-  bottom:calc(var(--edge) + env(safe-area-inset-bottom, 0px));
-  z-index:calc(var(--z-max) - 1);
+  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+  left:calc(var(--edge) + env(safe-area-inset-left, 0px));
+  right:calc(var(--edge) + env(safe-area-inset-right, 0px));
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  z-index:calc(var(--z-sheet) + 1);
+  pointer-events:none;
+}
+.topbar-group{
   display:flex;
   align-items:center;
   gap:10px;
-  padding:8px;
+  min-width:0;
+  pointer-events:auto;
+}
+.topbar-left{ flex:1 1 auto; }
+.topbar-right{ flex:0 0 auto; }
+.topbar .btn--lg{
+  width:var(--topbar-h);
+  height:var(--topbar-h);
+  flex-shrink:0;
+}
+.topbar-heading{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+  margin-left:4px;
+}
+.topbar-title{
+  min-width:0;
+  padding:4px 8px;
+  border:none;
+  border-radius:10px;
+  background:transparent;
+  color:var(--text);
+  font:700 24px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  letter-spacing:-.01em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  cursor:pointer;
+  transition:background var(--transition);
+}
+.topbar-title:hover{ background:color-mix(in srgb, #FFFFFF 70%, transparent); }
+.topbar-title:focus-visible{ outline:none; box-shadow:var(--focus-ring); }
+
+/* Unsaved-changes dot on the save button (see syncTopbar in app.js). */
+.topbar-dot{
+  position:absolute;
+  top:9px;
+  right:9px;
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  background:var(--brand);
+  box-shadow:0 0 0 2px var(--glass-bg);
+  display:none;
+}
+#quickSaveBtn.has-changes .topbar-dot{ display:block; }
+
+/* "⋮" pop-out: a vertical column of round buttons hanging under the toggle,
+   right-aligned with it, each with a label pill on its left — on hover/focus
+   with a mouse, always on touch (no hover there to discover it). */
+.topbar-more{ position:relative; flex-shrink:0; }
+/* While the menu is open, a light veil over everything else keeps its labels
+   readable where the column crosses the side panels / phone tool pills, and
+   swallows the dismissing click so it doesn't also hit what's underneath
+   (the click lands on #topbar, outside #more-group, which closes the menu —
+   see setupMoreMenu). Inside #topbar's stacking context, so it sits under
+   the bar's own buttons. */
+.topbar.menu-open::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  background:color-mix(in srgb, var(--canvas) 72%, transparent);
+  pointer-events:auto;
+  animation:fadeIn var(--transition-fast) ease-out both;
+}
+@keyframes fadeIn{
+  from{ opacity:0; }
+  to{ opacity:1; }
+}
+/* The phone's tool pills sit right where the column's first labels land —
+   hide them outright rather than leave them ghosting through the veil. */
+#viewer-container:has(.topbar.menu-open) #mobile-tools{ visibility:hidden; }
+.topbar-menu{
+  position:absolute;
+  top:calc(100% + 12px);
+  right:0;
+  display:none;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:12px;
+}
+.topbar-menu.open{ display:flex; }
+.topbar-menu-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:0;
+  border:none;
+  background:none;
+  font:inherit;
+  cursor:pointer;
+  outline:none;
+}
+.topbar-menu-icon{
+  width:var(--topbar-h);
+  height:var(--topbar-h);
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  border:1px solid var(--line);
   background:var(--glass-bg);
-  border:1px solid var(--stroke);
-  border-radius:var(--radius);
+  color:var(--muted);
   box-shadow:var(--shadow-sm);
-  transition:background var(--transition), transform var(--transition);
+  transition:background var(--transition), transform var(--transition), box-shadow var(--transition);
 }
-#action-buttons{
+.topbar-menu-item:hover .topbar-menu-icon{ background:var(--glass-hover); transform:translateY(-1px); }
+.topbar-menu-item:focus-visible .topbar-menu-icon{ box-shadow:var(--focus-ring); }
+/* The one primary action in the menu, filled Interface Blue like the coding
+   app's "+". */
+.topbar-menu-item--primary .topbar-menu-icon{
+  background:var(--brand);
+  border-color:var(--brand);
+  color:var(--on-brand);
+  box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 35%, transparent);
+}
+.topbar-menu-item--primary:hover .topbar-menu-icon{ background:var(--brand-ink); }
+.topbar-menu-label{
+  padding:7px 12px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--glass-bg);
+  box-shadow:var(--shadow-sm);
+  color:var(--text);
+  font:600 13px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  white-space:nowrap;
+  opacity:0;
+  transform:translateX(6px);
+  transition:opacity var(--transition-fast), transform var(--transition-fast);
+  pointer-events:none;
+}
+.topbar-menu-item:hover .topbar-menu-label,
+.topbar-menu-item:focus-visible .topbar-menu-label,
+html.touch-capable .topbar-menu-label{
+  opacity:1;
+  transform:none;
+}
+/* Items drop in one after another. */
+.topbar-menu.open .topbar-menu-item{ animation:topbarMenuIn 180ms cubic-bezier(.2,.8,.2,1) both; }
+.topbar-menu.open .topbar-menu-item:nth-child(2){ animation-delay:20ms; }
+.topbar-menu.open .topbar-menu-item:nth-child(3){ animation-delay:40ms; }
+.topbar-menu.open .topbar-menu-item:nth-child(4){ animation-delay:60ms; }
+.topbar-menu.open .topbar-menu-item:nth-child(5){ animation-delay:80ms; }
+.topbar-menu.open .topbar-menu-item:nth-child(6){ animation-delay:100ms; }
+.topbar-menu.open .topbar-menu-item:nth-child(7){ animation-delay:120ms; }
+.topbar-menu.open .topbar-menu-item:nth-child(n+8){ animation-delay:140ms; }
+@keyframes topbarMenuIn{
+  from{ opacity:0; transform:translateY(-8px) scale(.9); }
+  to{ opacity:1; transform:none; }
+}
+
+/* Wide vs compact. Compact = phones (the touch layout) and narrow windows:
+   the .topbar-wide buttons fold into the menu, where their .menu-compact
+   stand-ins appear. Settings isn't on phones at all (they always print with
+   EasyPrint; their downloads are menu items). */
+.menu-compact{ display:none; }
+@media (pointer: coarse) and (max-width: 1024px), (max-width: 760px){
+  .topbar-wide{ display:none !important; }
+  .menu-compact{ display:flex; }
+  .topbar .combo-chip{ display:none; }
+}
+@media (pointer: coarse) and (max-width: 1024px){
+  .menu-not-phone{ display:none; }
+}
+@media (max-width: 1100px){
+  .topbar .combo-chip{ display:none; }
+}
+/* Phones: a little smaller so name + 4 buttons fit a 360px screen. */
+@media (pointer: coarse) and (max-width: 1024px){
+  :root{ --topbar-h: 44px; }
+  .topbar{ gap:8px; }
+  .topbar-group{ gap:8px; }
+  .topbar-heading{ margin-left:0; }
+  .topbar-title{ font-size:18px; padding:4px 6px; }
+}
+
+/* ---- Bottom-left view controls (#view-controls) ----
+   Zoom in / out / recenter, like the coding app's canvas cluster. Phones use
+   pinch-to-zoom, and their bottom edge belongs to the sheet. */
+.view-controls{
+  position:absolute;
+  left:calc(var(--edge) + env(safe-area-inset-left, 0px));
+  bottom:calc(var(--edge) + env(safe-area-inset-bottom, 0px));
   display:flex;
-  align-items:center;
   gap:10px;
+  z-index:var(--z-toolbar);
 }
+.view-controls .btn--lg{ width:var(--topbar-h); height:var(--topbar-h); }
+@media (pointer: coarse) and (max-width: 1024px){
+  .view-controls{ display:none; }
+}
+
 /* One block per setting group — see .settings-section usage in index.html
    for the full list (Preferred Slicer, Camera, Downloads, Help). Add more
    groups here later instead of growing the toolbar itself. */
@@ -1484,8 +1690,7 @@ html.touch-capable .shortcut-kbd{ display:none; }
   display:flex;
   gap:3px;
   padding:3px;
-  background:var(--glass-bg);
-  border:1px solid var(--stroke);
+  background:var(--track);
   border-radius:12px;
 }
 .settings-switch-option{
@@ -1513,11 +1718,11 @@ html.touch-capable .shortcut-kbd{ display:none; }
   max-width:100%;
 }
 .settings-switch-option .material-icons{ font-size:18px; }
-.settings-switch-option:hover{ background:var(--glass-hover); }
+.settings-switch-option:hover{ background:color-mix(in srgb, #FFFFFF 50%, transparent); }
 .settings-switch-option[aria-checked="true"]{
   background:var(--glass-strong);
-  color:var(--text);
-  box-shadow:var(--shadow);
+  color:var(--brand);
+  box-shadow:var(--shadow-xs);
 }
 /* Inert option — visible but not selectable. */
 .settings-switch-option[aria-disabled="true"]{
@@ -1539,57 +1744,16 @@ html.touch-capable .shortcut-kbd{ display:none; }
   flex-shrink:0;
 }
 
-/* Mobile-only overflow menu (Factory Reset + Downloads). Hidden on pointer:fine
-   devices, where those actions have their own dedicated buttons instead. */
-.action-mobile-cluster{ display:none; }
-/* display intentionally omitted here — it must stay governed by
-   .action-mobile-cluster (display:none, flipped to flex on pointer:coarse)
-   rather than being forced on unconditionally by this ID selector. */
-#more-group{
-  position:relative;
-  height:var(--control-h);
-}
-#more-menu{
-  display:none;
-  position:absolute;
-  bottom:calc(100% + 10px);
-  right:0;
-  min-width:200px;
-  max-width:92vw;
-  background:var(--glass-strong);
-  border:1px solid var(--stroke-strong);
-  border-radius:12px;
-  box-shadow:var(--shadow-lg);
-  overflow:hidden;
-  z-index:var(--z-max);
-  animation:menuPop var(--transition-fast) ease-out both;
-}
-#more-menu.open{ display:block; }
-#more-menu button{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  width:100%;
-  padding:10px 12px;
-  background:transparent;
-  border:none;
-  text-align:left;
-  cursor:pointer;
-  font-size:13px;
-  color:var(--text);
-  transition:background var(--transition);
-}
-#more-menu button:hover{ background:var(--glass-hover); }
-#more-menu .material-icons{ font-size:18px; color:var(--muted); }
-
 .combo-chip{
   margin-left:6px;
   padding:6px 10px;
   border-radius:999px;
   font:700 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
-  background:color-mix(in srgb, var(--hpro-yellow) 22%, var(--glass-bg));
-  border:1px solid color-mix(in srgb, var(--hpro-yellow) 55%, var(--stroke));
-  color:#8A5A00;
+  background:var(--track);
+  border:none;
+  color:var(--muted);
+  white-space:nowrap;
+  flex-shrink:0;
 }
 
 .toast-stack{
@@ -1832,6 +1996,247 @@ html.touch-capable .vis-banner-exit--tap{ display:inline; }
   color:var(--text);
 }
 
+/* ---- My builds (#builds-overlay) ----
+   Same overlay/card chrome as #settings-overlay above; see setupSavedBuilds
+   in app.js and scripts/saved-builds.js. */
+#builds-overlay{
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:color-mix(in srgb, #000 24%, transparent);
+  -webkit-backdrop-filter:blur(2px) saturate(130%);
+  backdrop-filter:blur(2px) saturate(130%);
+  z-index:var(--z-max);
+  pointer-events:auto;
+}
+#builds-overlay.show{ display:flex; }
+#builds-card{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  width:min(480px, 100%);
+  max-height:min(640px, 88vh);
+  padding:calc(20px + env(safe-area-inset-top, 0px)) 20px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-radius:16px;
+  border:1px solid var(--stroke-strong);
+  background:var(--glass-strong);
+  box-shadow:var(--shadow-lg);
+}
+#builds-title{
+  margin:0 0 14px 0;
+  padding-right:40px;
+  font:700 16px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+.builds-save{ flex-shrink:0; }
+.builds-save-row{
+  display:flex;
+  gap:8px;
+}
+#builds-name{
+  flex:1;
+  min-width:0;
+  height:40px;
+  padding:0 12px;
+  border:1px solid var(--stroke);
+  border-radius:10px;
+  background:var(--glass-bg);
+  color:var(--text);
+  /* 16px stops iOS Safari zooming the page on focus. */
+  font:500 16px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+#builds-name:focus{ outline:none; border-color:var(--brand); box-shadow:var(--focus-ring); }
+.builds-primary-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:40px;
+  padding:0 14px;
+  border:none;
+  border-radius:10px;
+  background:var(--brand);
+  color:var(--on-brand);
+  font:700 13.5px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), transform var(--transition);
+}
+.builds-primary-btn:hover{ background:var(--brand-ink); }
+.builds-primary-btn:active{ transform:translateY(1px); }
+.builds-primary-btn:disabled{ opacity:.6; cursor:progress; }
+.builds-primary-btn .material-icons{ font-size:18px; }
+.builds-link-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  max-width:100%;
+  margin-top:8px;
+  padding:6px 8px;
+  border:none;
+  border-radius:8px;
+  background:transparent;
+  color:var(--brand);
+  font:600 13px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+}
+.builds-link-btn[hidden]{ display:none; }
+.builds-link-btn:hover{ background:var(--glass-hover); }
+.builds-link-btn .material-icons{ font-size:17px; flex-shrink:0; }
+.builds-link-btn span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.builds-status{
+  margin:8px 0 0;
+  padding:8px 10px;
+  border-radius:8px;
+  font:600 12.5px/1.35 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:#17603A;
+  background:color-mix(in srgb, var(--ok) 16%, var(--glass-bg));
+}
+.builds-status[hidden]{ display:none; }
+.builds-status[data-type="err"]{ color:#9B1410; background:color-mix(in srgb, var(--err) 12%, var(--glass-bg)); }
+.builds-status[data-type="warn"]{ color:#7A5200; background:color-mix(in srgb, var(--warn) 20%, var(--glass-bg)); }
+
+.builds-list-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  margin-top:16px;
+  padding-top:14px;
+  border-top:1px solid var(--stroke);
+  flex-shrink:0;
+}
+.builds-count{ font:600 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui; color:var(--muted); }
+.builds-list{
+  list-style:none;
+  margin:0 -6px;
+  padding:0 6px 2px;
+  overflow-y:auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.builds-list:empty{ display:none; }
+.build-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:6px;
+  border:1px solid var(--stroke);
+  border-radius:12px;
+  background:var(--glass-bg);
+  transition:background var(--transition), border-color var(--transition);
+}
+.build-item:hover{ background:var(--glass-hover); }
+.build-item.is-active{ border-color:var(--brand); background:var(--brand-ghost); }
+.build-open{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex:1;
+  min-width:0;
+  padding:0;
+  border:none;
+  background:transparent;
+  text-align:left;
+  cursor:pointer;
+  color:inherit;
+  border-radius:8px;
+}
+.build-open:focus-visible{ outline:none; box-shadow:var(--focus-ring); }
+div.build-open{ cursor:default; } /* the rename row (see startRenameBuild) */
+.build-thumb{
+  width:56px;
+  height:56px;
+  flex-shrink:0;
+  border-radius:9px;
+  background-color:var(--canvas);
+  border:1px solid var(--line);
+  object-fit:contain;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted);
+}
+.build-meta{ min-width:0; display:flex; flex-direction:column; gap:3px; }
+.build-name{
+  font:700 14px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.build-date{ font:500 12px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui; color:var(--muted); }
+.build-rename-input{
+  width:100%;
+  height:30px;
+  padding:0 8px;
+  border:1px solid var(--brand);
+  border-radius:8px;
+  background:var(--glass-strong);
+  color:var(--text);
+  font:700 14px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+.build-actions{ display:flex; gap:2px; flex-shrink:0; }
+.build-action{
+  width:34px;
+  height:34px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:none;
+  border-radius:50%;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition);
+}
+.build-action:hover{ background:var(--glass-press); color:var(--text); }
+.build-action .material-icons{ font-size:18px; }
+/* Two-step delete: first tap arms it (red, "Delete?"), second confirms. */
+.build-action--delete.is-armed{
+  width:auto;
+  padding:0 10px;
+  border-radius:999px;
+  background:var(--err);
+  color:#fff;
+  font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+.builds-empty{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  margin:6px 0 0;
+  padding:22px 16px;
+  border:1px dashed var(--stroke);
+  border-radius:12px;
+  text-align:center;
+  font:500 13px/1.45 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+}
+.builds-empty[hidden]{ display:none; }
+.builds-empty .material-icons{ font-size:26px; color:var(--stroke-strong); }
+.builds-storage-note{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin:12px 0 0;
+  flex-shrink:0;
+  font:500 12px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+}
+.builds-storage-note .material-icons{ font-size:16px; }
+@media (pointer: coarse){
+  .build-action{ width:40px; height:40px; }
+  .build-thumb{ width:52px; height:52px; }
+}
+@media (prefers-reduced-motion: reduce){
+  #builds-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+}
+
 .settings-footer{
   display:flex;
   align-items:flex-start;
@@ -1981,19 +2386,16 @@ html.touch-capable .model-hover-popup-name{ font-size:13px; padding:0 6px; }
    slicer (see canOpenDesktopSlicer in slicer-preference.js). */
 html.no-desktop-slicer #settings-slicer-section{ display:none; }
 
-/* The top offset on both side columns reserves room for the Essential/Advanced
-   switch that used to float there — but on the desktop layout it's reparented
-   into the right dock (see setupRightDockTabs), so the gap is dead space. A
-   tablet's viewport is much shorter than a desktop monitor, and the left
+/* A tablet's viewport is much shorter than a desktop monitor, and the left
    column's own content (paint panel + hue/SV picker + two toggles) then runs
    past the bottom — with overflow:hidden the last button ("Hide / show parts")
-   just gets clipped with no way to reach it. Pull both columns up to the top
-   edge and let the left one scroll. */
+   just gets clipped with no way to reach it. Tighten the gap under the top bar
+   and let the left one scroll. */
 html.touch-capable .left-tools,
 html.touch-capable .right-dock{
-  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
-  max-height:calc(100vh - (var(--edge) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
-  max-height:calc(100svh - (var(--edge) + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  top:calc(var(--edge) + var(--topbar-h) + 8px + env(safe-area-inset-top, 0px));
+  max-height:calc(100vh - (var(--edge) + var(--topbar-h) + 8px + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
+  max-height:calc(100svh - (var(--edge) + var(--topbar-h) + 8px + env(safe-area-inset-top, 0px)) - (var(--edge) + var(--toolbar-h) + var(--row-gap) + env(safe-area-inset-bottom, 0px)));
 }
 html.touch-capable .left-tools{
   overflow-y:auto;
@@ -2113,14 +2515,14 @@ html.touch-capable .left-tools{
   color:var(--text);
 }
 .variant-grid-item.active .variant-name{
-  color:var(--hpro-navy);
+  color:var(--brand-ink);
 }
 .variant-check{
   position:absolute;
   top:3px;
   right:3px;
   font-size:16px !important;
-  color:var(--hpro-navy);
+  color:var(--on-brand);
   background:var(--brand);
   border-radius:50%;
   animation:check-pop 320ms cubic-bezier(.34,1.56,.64,1) both;
@@ -2345,8 +2747,8 @@ html.touch-capable .left-tools{
 .rotate-btn.primary{
   background:var(--brand);
   border-color:var(--brand);
-  color:var(--hpro-navy);
-  box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 45%, transparent);
+  color:var(--on-brand);
+  box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 35%, transparent);
 }
 .rotate-btn.primary:hover{
   background:var(--brand-ink);
@@ -2359,7 +2761,7 @@ a.rotate-btn{
   text-decoration:none;
   color:inherit;
 }
-a.rotate-btn.primary{ color:var(--hpro-navy); }
+a.rotate-btn.primary{ color:var(--on-brand); }
 a.rotate-btn[hidden]{ display:none; }
 
 #prusa-card{
@@ -2421,16 +2823,9 @@ body.hp-lock-scroll{
   overflow:hidden !important;
   touch-action:none;
 }
-#exit-maximize{
-  position:absolute;
-  top:calc(var(--edge) + env(safe-area-inset-top, 0px));
-  right:calc(var(--edge) + env(safe-area-inset-right, 0px));
-  z-index:var(--z-max);
-  display:none;
-}
-#viewer-container.is-maximized #exit-maximize{
-  display:inline-flex;
-}
+/* Lives in the top bar (see #topbar), only while maximized. */
+#exit-maximize{ display:none; }
+#viewer-container.is-maximized #exit-maximize{ display:flex; }
 
 .tour-tip{
   position:fixed;
@@ -2496,8 +2891,8 @@ body.hp-lock-scroll{
 .tour-btn.primary{
   background:var(--brand);
   border-color:var(--brand);
-  color:var(--hpro-navy);
-  box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 45%, transparent);
+  color:var(--on-brand);
+  box-shadow:0 6px 16px color-mix(in srgb, var(--brand) 35%, transparent);
 }
 .tour-btn.primary:hover{
   background:var(--brand-ink);
@@ -2570,16 +2965,10 @@ body.hp-lock-scroll{
   .color-picker-hue{ height:20px; }
   .color-picker-hue-thumb{ width:22px; height:22px; }
 
-  /* Fold the lower-priority actions (factory reset, file downloads) into one
-     overflow button so the touch toolbar stays short enough to never grow wide
-     enough to reach under the parts panel. */
-  #action-buttons{ gap:8px; }
-  .action-desktop-cluster{ display:none !important; }
-  .action-mobile-cluster{ display:flex !important; }
 
   /* ---- Mobile bottom sheet ----
-     app.js's setupMobileSheet() moves the real #info-container and both
-     .model-controls panels into this sheet (see index.html's #mobile-sheet
+     app.js's setupMobileSheet() moves the real .model-controls panel and the
+     mixes carousel into this sheet (see index.html's #mobile-sheet
      shell) — not copies, the same elements — so every existing control
      (color pills, palettes, counters, the download/more menus...) keeps
      working with zero duplicated logic. This block only restyles them from
@@ -2662,19 +3051,6 @@ body.hp-lock-scroll{
     overflow:hidden;
   }
 
-  .mobile-sheet-actions{
-    flex:none;
-    display:none;
-    /* No extra env(safe-area-inset-bottom) padding here — #mobile-sheet's own
-       `bottom` offset above already clears that, so adding it again here
-       would double-count it and pad the actions row more than intended. */
-    padding:6px 12px;
-    border-top:1px solid var(--stroke);
-  }
-  .mobile-sheet[data-state="expanded"] .mobile-sheet-actions{
-    display:block;
-  }
-
   /* .model-controls no longer carries any card chrome or position of its own
      (see the base rule) — the sheet itself is already the "card" — so the
      only thing left to reflow here is its spacing. Which sub-panel is active
@@ -2717,40 +3093,17 @@ body.hp-lock-scroll{
     box-shadow:none;
   }
 
-  /* Reflow the reparented toolbar into one horizontally-scrollable strip
-     instead of a multi-row grid — a wrapped 2-row button grid alone was
-     costing as much vertical space as the entire part list. */
-  .mobile-sheet-actions #info-container{
-    position:static;
-    display:flex;
-    flex-wrap:nowrap;
-    align-items:center;
-    gap:10px;
-    padding:0;
-    background:none;
-    border:none;
-    box-shadow:none;
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
-  }
-  .mobile-sheet-actions #action-buttons{
-    flex-wrap:nowrap;
-    flex-shrink:0;
-  }
-  .mobile-sheet-actions .combo-chip{
-    flex-shrink:0;
-    white-space:nowrap;
-    margin-left:0;
-  }
-
   /* ---- Sheet tab bar (Mixes / Parts) — the touch counterpart of the desktop
      .right-dock-tabs. data-tab on #mobile-sheet decides which page shows and
      follows the last interaction (see setMobileSheetTab). ---- */
   .mobile-sheet-tabs{
     flex:none;
     display:flex;
-    gap:6px;
-    padding:0 12px 6px;
+    gap:4px;
+    margin:0 12px 6px;
+    padding:4px;
+    background:var(--track);
+    border-radius:999px;
   }
   .mobile-sheet-tab{
     flex:1 1 0;
@@ -2759,18 +3112,18 @@ body.hp-lock-scroll{
     justify-content:center;
     gap:6px;
     height:34px;
-    border:1px solid var(--stroke);
+    border:none;
     border-radius:999px;
-    background:var(--glass-bg);
+    background:transparent;
     color:var(--muted);
     font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
     cursor:pointer;
   }
   .mobile-sheet-tab .material-icons{ font-size:18px; }
   .mobile-sheet-tab.active{
-    background:var(--hpro-yellow);
-    border-color:var(--hpro-navy);
-    color:var(--hpro-navy);
+    background:#FFFFFF;
+    color:var(--brand);
+    box-shadow:var(--shadow-xs);
   }
 
   /* No Essential/Advanced split on phones — the Parts tab always shows every
@@ -2834,8 +3187,8 @@ body.hp-lock-scroll{
      base .preset-card.active.has-mix-colors rule already shows it there). */
   .mobile-sheet:not([data-state="expanded"]) .mobile-sheet-mixes .preset-card.active.has-mix-colors .preset-card-copy{ display:none; }
   .mobile-sheet-mixes .preset-card.active{
-    background:color-mix(in srgb, var(--hpro-yellow) 22%, #FFFFFF);
-    box-shadow:0 0 0 2px var(--hpro-navy) inset, var(--shadow-sm);
+    background:color-mix(in srgb, var(--brand) 8%, #FFFFFF);
+    box-shadow:0 0 0 2px var(--brand) inset, var(--shadow-sm);
   }
 
   /* Expanded + Mixes: a full gallery grid instead of the one-row strip. Scoped
@@ -2864,7 +3217,8 @@ body.hp-lock-scroll{
 
   #mobile-tools{
     position:absolute;
-    top:calc(var(--edge) + env(safe-area-inset-top, 0px));
+    /* Under the top bar (#topbar). */
+    top:calc(var(--edge) + var(--topbar-h) + 10px + env(safe-area-inset-top, 0px));
     right:calc(var(--edge) + env(safe-area-inset-right, 0px));
     display:flex;
     flex-wrap:wrap;
@@ -2882,23 +3236,27 @@ body.hp-lock-scroll{
     align-items:center;
     gap:6px;
     border-radius:999px;
-    border:1px solid var(--stroke);
+    border:1px solid var(--line);
     background:var(--glass-strong);
-    box-shadow:var(--shadow-sm);
+    box-shadow:var(--shadow-xs);
     color:var(--text);
     font:600 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
     white-space:nowrap;
   }
   #mobile-tools #visibilityModeBtn .material-icons,
   #mobile-tools #globalPaintBtn .material-icons{ font-size:18px; }
-  /* Active = gold fill for BOTH, same as desktop (.global-paint-toggle-btn.active
-     / .color-sidebar-toggle-btn.active) — "this mode is on" reads consistently;
-     the yellow-vs-blue mode distinction lives in the screen-edge vignette. */
-  #mobile-tools #globalPaintBtn.active,
+  /* Active = the same fills as desktop: yellow for Paint, blue for hide/show,
+     each matching its screen-edge glow. */
+  #mobile-tools #globalPaintBtn.active{
+    background:var(--hpro-yellow);
+    border-color:var(--hpro-yellow);
+    color:var(--hpro-navy);
+    box-shadow:0 8px 18px color-mix(in srgb, var(--hpro-yellow) 28%, transparent);
+  }
   #mobile-tools #visibilityModeBtn.active{
     background:var(--brand);
     border-color:var(--brand);
-    color:var(--hpro-navy);
+    color:var(--on-brand);
     box-shadow:0 8px 18px color-mix(in srgb, var(--brand) 28%, transparent);
   }
 
@@ -2946,9 +3304,9 @@ body.hp-lock-scroll{
     line-height:1.35;
   }
 
-  /* Push the hide/show-mode banner clear of the top bar. */
+  /* Push the hide/show-mode banner clear of the top bar + the tools row. */
   #visibility-edit-banner{
-    top:calc(var(--edge) + var(--control-h) + 14px + env(safe-area-inset-top, 0px));
+    top:calc(var(--edge) + var(--topbar-h) + 10px + var(--control-h) + 14px + env(safe-area-inset-top, 0px));
   }
 }
 
@@ -3013,10 +3371,6 @@ body.hp-lock-scroll{
 }
 
 @media (max-width: 640px){
-  #info-container{
-    top:calc(var(--edge) + env(safe-area-inset-top, 0px));
-    bottom:auto;
-  }
   .model-controls{
     left:var(--edge);
     width:auto;
@@ -3045,6 +3399,5 @@ body.hp-lock-scroll{
    the browser morphs these in place across the navigation instead of crossfading them. */
 @media (prefers-reduced-motion: no-preference){
   #preset-menu{ view-transition-name: hp-nav-header; }
-  #info-container{ view-transition-name: hp-status-bar; }
   #panel-essential{ view-transition-name: hp-settings-panel; }
 }
