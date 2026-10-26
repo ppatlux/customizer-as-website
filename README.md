@@ -22,7 +22,7 @@ For each `.glb` listed in `scripts/asset-manifest.js`, also place matching `.ste
 ## Send to Slicer
 
 The per-part "Print" buttons send the current part to the "Preferred Slicer" chosen in the
-Settings modal (`#settings-overlay` in `index.html`, gear icon in the bottom toolbar — also home to
+Settings modal (`#settings-overlay` in `index.html`, "⋮" → Settings in the top bar — also home to
 the Camera projection toggle, GLB/STEP downloads, and the Quick Guide launcher; see
 `.settings-section` in `app.css` for adding more groups there later), backed by
 `scripts/slicer-preference.js`. PrusaSlicer is the default.
@@ -42,7 +42,7 @@ the Camera projection toggle, GLB/STEP downloads, and the Quick Guide launcher; 
   it's followed. The endpoint isn't publicly documented — if it changes, this is the one file to fix.
 - **Phones and tablets** (`canOpenDesktopSlicer()` in `slicer-preference.js`, by platform — touch
   laptops still count as desktop) always print with EasyPrint, which runs in the mobile browser; the
-  Preferred Slicer choice is hidden there. The part rows show the EasyPrint button and the "…" menu
+  Preferred Slicer choice is hidden there. The part rows show the EasyPrint button and the top bar's "⋮" menu
   has "Print build with EasyPrint". After the upload the dialog shows a "Continue to EasyPrint"
   button instead of auto-opening a tab: mobile browsers block `window.open` after an async upload,
   and only a link the user taps can be handed to an installed app that claims printables.com links.
@@ -77,7 +77,7 @@ the paint); otherwise from its hosted STL in the part colour. STL downloads have
 Pieces are skyline-packed onto a 250 × 210 mm (MK4) bed; if they don't fit, the dialog says to use
 Arrange or print in batches — command-line/server-side slicing skips pieces off the bed.
 
-**Print whole build** (print icon in the bottom toolbar, `printWholeBuild()` in `app.js` +
+**Print whole build** (print icon in the top bar, `printWholeBuild()` in `app.js` +
 `scripts/print-build.js`) builds one 3MF in the browser from every visible part (plus the active
 mix's `extras`, minus manifest entries marked `print: false` — PCBs, displays, encoders), each split
 into its bodies as above and laid out around the MK3/MK4 bed centre. It goes through the same Prusa
@@ -122,9 +122,10 @@ That file is authored with an internal-only tool that is not part of this repo.
 
 ## Saved Builds
 
-"My builds" (bookmark icon in the toolbar; "…" → My builds on phones) lets people name and
-save the robot on screen and come back to it later: load it, rename it, share a link to it,
-delete it, or update it after changing it. Each saved build has a small thumbnail rendered
+"My builds" (the home button in the top bar) lets people name and save the robot on screen
+and come back to it later: load it, rename it, share a link to it, delete it, or update it
+after changing it. The top bar shows the loaded build's name, and its save button saves
+straight into that build (a dot marks unsaved changes) or asks for a name first. Each saved build has a small thumbnail rendered
 from the visible parts.
 
 - **What's saved** is `getShareState()` in `scripts/app.js`, the same data a share link

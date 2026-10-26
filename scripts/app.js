@@ -233,7 +233,6 @@ const dlPrimary = document.getElementById('download-primary');
 const printBuildBtn = document.getElementById('printBuildBtn');
 const moreToggle = document.getElementById('more-toggle');
 const moreMenu = document.getElementById('more-menu');
-const moreFactoryResetBtn = document.getElementById('moreFactoryResetBtn');
 const moreDownloadStlBtn = document.getElementById('moreDownloadStlBtn');
 const morePrintBuildBtn = document.getElementById('morePrintBuildBtn');
 const moreDownloadGlbBtn = document.getElementById('moreDownloadGlbBtn');
@@ -242,7 +241,8 @@ const settingsToggle = document.getElementById('settingsToggle');
 const settingsOverlay = document.getElementById('settings-overlay');
 const settingsClose = document.getElementById('settings-close');
 const savedBuildsBtn = document.getElementById('savedBuildsBtn');
-const moreSavedBuildsBtn = document.getElementById('moreSavedBuildsBtn');
+const quickSaveBtn = document.getElementById('quickSaveBtn');
+const topbarTitle = document.getElementById('topbar-title');
 const buildsOverlay = document.getElementById('builds-overlay');
 const buildsClose = document.getElementById('builds-close');
 const buildsSaveForm = document.getElementById('builds-save-form');
@@ -526,6 +526,13 @@ try { activeSavedBuildId = localStorage.getItem(ACTIVE_BUILD_KEY) || null; } cat
 
 let savedBuildsCache = [];
 let buildsRenderToken = 0;
+// The record activeSavedBuildId points at, cached for the top bar's title and
+// unsaved-changes dot (see syncTopbar), which re-check on every edit.
+let activeSavedRecord = null;
+let topbarSyncQueued = false;
+// Bottom-left view controls (see setupViewControls).
+let viewTween = 0;
+let homeView = null;
 let openPalette = null;
 let openPaletteOriginalParent = null;
 let __isMaximized = false;
@@ -781,6 +788,7 @@ function bootstrap() {
   setupMoreMenu();
   setupSettingsMenu();
   setupSavedBuilds();
+  setupViewControls();
   setupPaletteWiring();
   setupColorPickerDrag();
   setupColorPickerHexInput();
@@ -948,7 +956,10 @@ function setupFullscreen() {
 
   function updateFullscreenUI() {
     const active = inNativeFullscreen() || __isMaximized;
-    fullscreenBtn.innerHTML = `<span class="material-icons">${active ? 'fullscreen_exit' : 'fullscreen'}</span>`;
+    const icon = fullscreenBtn.querySelector('[data-role="icon"]');
+    const label = fullscreenBtn.querySelector('[data-role="label"]');
+    if (icon) icon.textContent = active ? 'fullscreen_exit' : 'fullscreen';
+    if (label) label.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
     fullscreenBtn.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
     fullscreenBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
   }
@@ -1139,21 +1150,19 @@ function toggleMobileSheet() {
   setMobileSheetState(mobileSheetEl.dataset.state === 'expanded' ? 'peek' : 'expanded');
 }
 
-// Moves the real #info-container and the #panel-essential .model-controls
-// panel into the mobile bottom sheet instead of rendering separate copies —
-// every existing control (color pills, palettes, counters, the more/download
-// menus...) keeps working with zero duplicated logic, it just lives in a new
-// DOM location.
+// Moves the real #panel-essential .model-controls panel and the mixes carousel
+// into the mobile bottom sheet instead of rendering separate copies — every
+// existing control (color pills, palettes, counters...) keeps working with
+// zero duplicated logic, it just lives in a new DOM location. The actions
+// toolbar is the top bar on every device, so it stays put.
 function setupMobileSheet() {
   mobileSheetEl = document.getElementById('mobile-sheet');
   mobileSheetHandleEl = document.getElementById('mobile-sheet-handle');
   const listHost = document.getElementById('mobile-sheet-list');
-  const actionsHost = document.getElementById('mobile-sheet-actions');
   const mixesHost = document.getElementById('mobile-sheet-mixes');
-  const infoContainerEl = document.getElementById('info-container');
   const presetCarousel = document.getElementById('preset-carousel');
 
-  if (!mobileSheetEl || !mobileSheetHandleEl || !listHost || !actionsHost || !mixesHost || !infoContainerEl) return;
+  if (!mobileSheetEl || !mobileSheetHandleEl || !listHost || !mixesHost) return;
 
   mobileLayoutActive = true;
   // Parts tab shows every part, always — no Essential/Advanced split on phones
@@ -1163,7 +1172,6 @@ function setupMobileSheet() {
   // Mixes tab: the same carousel the desktop dock builds, just reparented and
   // restyled as a horizontal swipe strip (see the coarse CSS block).
   if (presetCarousel) mixesHost.appendChild(presetCarousel);
-  actionsHost.appendChild(infoContainerEl);
 
   // The two GLOBAL model modes live in the desktop #left-tools column, which is
   // hidden on touch — reparent their controls into the phone top bar. Both
@@ -1250,9 +1258,12 @@ function setupDownloadMenu() {
   });
 }
 
-// Mobile-only overflow menu standing in for factoryResetBtn + #download-primary,
-// which are hidden on touch devices (see .action-desktop-cluster in app.css).
-// Reuses the exact same underlying actions, just behind one combined button.
+// The top bar's "⋮" pop-out (#more-menu): a column of round buttons under the
+// toggle, like the coding app's. Some items are the real buttons (New build =
+// #factoryResetBtn, #fullscreenBtn, #settingsToggle) with their own handlers;
+// .menu-compact items only show where the bar is too narrow for its own
+// buttons (see app.css) — the download/print ones have handlers here, and
+// [data-forward] ones simply click the bar button they stand in for.
 function setupMoreMenu() {
   if (!moreToggle) return;
 
@@ -1263,51 +1274,101 @@ function setupMoreMenu() {
     else openMoreMenu();
   });
 
-  moreFactoryResetBtn.addEventListener('click', () => {
-    closeMoreMenu();
-    resetToFactory();
+  // Capture phase: some items' own handlers stop propagation (settings), and
+  // every item should close the menu either way.
+  moreMenu.addEventListener('click', (event) => {
+    if (event.target.closest('[role="menuitem"]')) closeMoreMenu();
+  }, true);
+
+  moreMenu.querySelectorAll('[data-forward]').forEach((item) => {
+    item.addEventListener('click', () => document.getElementById(item.dataset.forward)?.click());
   });
-  morePrintBuildBtn?.addEventListener('click', () => {
-    closeMoreMenu();
-    printWholeBuild();
-  });
-  moreSavedBuildsBtn?.addEventListener('click', () => {
-    closeMoreMenu();
-    openSavedBuilds();
-  });
-  moreDownloadStlBtn.addEventListener('click', () => {
-    closeMoreMenu();
-    downloadSelectionStl();
-  });
-  moreDownloadGlbBtn.addEventListener('click', () => {
-    closeMoreMenu();
-    downloadSelection('glb');
-  });
-  moreDownloadStepBtn.addEventListener('click', () => {
-    closeMoreMenu();
-    downloadSelection('step');
-  });
+  morePrintBuildBtn?.addEventListener('click', printWholeBuild);
+  moreDownloadStlBtn?.addEventListener('click', downloadSelectionStl);
+  moreDownloadGlbBtn?.addEventListener('click', () => downloadSelection('glb'));
+  moreDownloadStepBtn?.addEventListener('click', () => downloadSelection('step'));
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('#more-group')) return;
-    // Reparented to the top-level host while open (see mountFloatingPopup),
-    // so it's no longer a descendant of #more-group — needs its own check.
-    if (event.target.closest('#more-menu')) return;
     closeMoreMenu();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !moreMenu.classList.contains('open')) return;
+    closeMoreMenu();
+    moreToggle.focus();
   });
 }
 
 function openMoreMenu() {
-  mountFloatingPopup(moreMenu);
   moreMenu.classList.add('open');
-  positionFloatingPopup(moreMenu, moreToggle.getBoundingClientRect(), 'right');
   moreToggle.setAttribute('aria-expanded', 'true');
+  // Backdrop veil while open (see .topbar.menu-open in app.css).
+  document.getElementById('topbar')?.classList.add('menu-open');
 }
 
 function closeMoreMenu() {
   if (!moreMenu) return;
   moreMenu.classList.remove('open');
   moreToggle.setAttribute('aria-expanded', 'false');
+  document.getElementById('topbar')?.classList.remove('menu-open');
+}
+
+// Bottom-left zoom in / zoom out / recenter (#view-controls), like the coding
+// app's canvas controls. Each animates the camera a short way; OrbitControls
+// picks the new position up on its next update() in animate(). Recenter goes
+// back to the opening framing captured here at bootstrap (controls.saveState
+// can't be used — toggleProjection re-saves it on every camera switch).
+// viewTween / homeView are declared with the module state near the top:
+// setupViewControls() runs inside bootstrap(), before this point in the file.
+
+function setupViewControls() {
+  homeView = {
+    target: controls.target.clone(),
+    direction: camera.position.clone().sub(controls.target).normalize(),
+    distance: camera.position.distanceTo(controls.target)
+  };
+  document.getElementById('zoomInBtn')?.addEventListener('click', () => zoomView(1 / 1.3));
+  document.getElementById('zoomOutBtn')?.addEventListener('click', () => zoomView(1.3));
+  document.getElementById('recenterBtn')?.addEventListener('click', recenterView);
+}
+
+// factor < 1 zooms in. Perspective dollies along the view direction (kept
+// within OrbitControls' min/maxDistance); orthographic scales camera.zoom.
+function zoomView(factor) {
+  if (camera.isOrthographicCamera) {
+    const zoom = THREE.MathUtils.clamp(camera.zoom / factor, controls.minZoom, controls.maxZoom);
+    tweenView({ zoom });
+    return;
+  }
+  const offset = camera.position.clone().sub(controls.target);
+  const distance = THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance);
+  tweenView({ position: controls.target.clone().addScaledVector(offset.normalize(), distance) });
+}
+
+function recenterView() {
+  if (!homeView) return;
+  const position = homeView.target.clone().addScaledVector(homeView.direction, homeView.distance);
+  tweenView({ position, target: homeView.target.clone(), zoom: camera.isOrthographicCamera ? 1 : undefined });
+}
+
+function tweenView({ position, target, zoom }) {
+  cancelAnimationFrame(viewTween);
+  const from = { position: camera.position.clone(), target: controls.target.clone(), zoom: camera.zoom };
+  const duration = prefersReducedMotion ? 0 : 260;
+  const start = performance.now();
+  const step = (now) => {
+    const t = duration ? Math.min(1, (now - start) / duration) : 1;
+    const k = 1 - Math.pow(1 - t, 3); // ease-out
+    if (position) camera.position.lerpVectors(from.position, position, k);
+    if (target) controls.target.lerpVectors(from.target, target, k);
+    if (zoom !== undefined) {
+      camera.zoom = from.zoom + (zoom - from.zoom) * k;
+      camera.updateProjectionMatrix();
+    }
+    controls.update();
+    if (t < 1) viewTween = requestAnimationFrame(step);
+  };
+  viewTween = requestAnimationFrame(step);
 }
 
 // A proper modal (not an anchored dropdown) since it now holds several
@@ -3643,6 +3704,7 @@ function saveStateToLocal() {
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
   } catch {}
+  scheduleTopbarSync();
 }
 
 function applySavedState(saved) {
@@ -3870,6 +3932,57 @@ function setActiveSavedBuild(id) {
     if (activeSavedBuildId) localStorage.setItem(ACTIVE_BUILD_KEY, activeSavedBuildId);
     else localStorage.removeItem(ACTIVE_BUILD_KEY);
   } catch {}
+  refreshActiveSavedRecord();
+}
+
+// ---- Top bar: the build's name + the save button ----
+// Title = the loaded saved build's name ("Untitled robot" otherwise); the
+// save button gets a dot while that build has unsaved changes.
+async function refreshActiveSavedRecord() {
+  const id = activeSavedBuildId;
+  let record = null;
+  try {
+    record = id ? await getBuild(id) : null;
+  } catch {}
+  if (id !== activeSavedBuildId) return; // changed again while reading
+  activeSavedRecord = record;
+  syncTopbar();
+}
+
+function scheduleTopbarSync() {
+  if (topbarSyncQueued) return;
+  topbarSyncQueued = true;
+  requestAnimationFrame(() => {
+    topbarSyncQueued = false;
+    syncTopbar();
+  });
+}
+
+function syncTopbar() {
+  if (!topbarTitle || !quickSaveBtn) return;
+  const record = activeSavedRecord;
+  const name = record?.name || 'Untitled robot';
+  const changed = !!record && !sameBuildState(record.state, getShareState());
+  topbarTitle.textContent = name;
+  topbarTitle.title = record ? `“${name}” — open My builds` : 'Open My builds';
+  quickSaveBtn.classList.toggle('has-changes', changed);
+  const label = !record ? 'Save build' : changed ? `Save changes to “${name}”` : `“${name}” is saved`;
+  quickSaveBtn.title = label;
+  quickSaveBtn.setAttribute('aria-label', label);
+}
+
+// No saved build loaded -> ask for a name (My builds, name field focused).
+// Otherwise save straight into it, like the coding app's save button.
+function quickSaveBuild() {
+  if (!activeSavedRecord) {
+    openSavedBuilds({ focusName: true });
+    return;
+  }
+  if (sameBuildState(activeSavedRecord.state, getShareState())) {
+    toast(`“${escapeHtml(activeSavedRecord.name)}” is already saved`, 'ok', 1400);
+    return;
+  }
+  updateActiveSavedBuild();
 }
 
 // toast() renders its message as HTML, so anything user-typed (build names)
@@ -3924,6 +4037,8 @@ function setupSavedBuilds() {
     event.preventDefault();
     saveCurrentAsNewBuild();
   });
+  quickSaveBtn?.addEventListener('click', quickSaveBuild);
+  topbarTitle?.addEventListener('click', () => openSavedBuilds());
   buildsUpdateBtn.addEventListener('click', updateActiveSavedBuild);
 
   // Re-render on any change — this tab's own saves, another tab's (storage
@@ -3932,11 +4047,13 @@ function setupSavedBuilds() {
     if (activeSavedBuildId) {
       getBuild(activeSavedBuildId).then((record) => { if (!record) setActiveSavedBuild(null); }).catch(() => {});
     }
+    refreshActiveSavedRecord();
     if (buildsOverlay.classList.contains('show')) renderSavedBuilds();
   });
+  refreshActiveSavedRecord();
 }
 
-function openSavedBuilds() {
+function openSavedBuilds({ focusName = false } = {}) {
   // A saved build is the whole robot, so the panel would be confusing while
   // a paint/visibility tool is still armed underneath it.
   setBucketMode(null);
@@ -3948,8 +4065,9 @@ function openSavedBuilds() {
   buildsNameInput.value = '';
   renderSavedBuilds().then(() => {
     if (!buildsOverlay.classList.contains('show')) return;
-    // Phones: don't pop the keyboard over the list just for opening the panel.
-    if (isTouchCapable()) buildsClose?.focus();
+    // Phones: don't pop the keyboard over the list just for opening the panel —
+    // only when the user is here to name a new save.
+    if (isTouchCapable() && !focusName) buildsClose?.focus();
     else buildsNameInput.focus();
   });
 }
@@ -6634,7 +6752,7 @@ function startTour(force = false) {
     { target: '#top-controls [data-role="print"]', dock: 'parts', essential: true, title: 'Direct 3D Print', body: 'Open the current part directly in your preferred slicer — pick PrusaSlicer, EasyPrint or OrcaSlicer in Settings.' },
     { target: '#printBuildBtn', title: 'Print whole build', body: 'Send every visible part at once — laid out on the print bed as separate objects — to your preferred slicer.' },
     { target: '#download-primary', title: 'Export', body: 'Download STL instantly, or open Settings for GLB and STEP.' },
-    { target: '#settingsToggle', title: 'Settings', body: 'Preferred slicer, camera projection, GLB/STEP downloads, and this guide all live here.' }
+    { target: '#more-toggle', title: 'More', body: 'Start a new build, go fullscreen, or open Settings — preferred slicer, camera projection, GLB/STEP downloads, and this guide.' }
   ];
 
   const tip = document.createElement('div');
