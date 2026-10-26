@@ -8,6 +8,7 @@ This project extracts the robot customizer from the original WordPress shortcode
 - `styles/app.css` - app styling
 - `scripts/app.js` - app behavior and Three.js setup
 - `scripts/asset-manifest.js` - local model asset mapping
+- `scripts/saved-builds.js` - storage for "My builds" (local today, swappable for an account later; see Saved Builds)
 - `assets/models/` - model files, grouped into one subfolder per part: `top/`, `middle/`, `face/`, `bottom/`, `motion/`, `hat/`, `arms/`, `spacer/`, `bumper/`
 - `assets/asset-manifest.json` - source-to-local asset reference list
 - `customizer.php` - original WordPress source kept for reference
@@ -118,6 +119,47 @@ part/variant/visibility only. Their preview-thumbnail colours are stored separat
 in the app still loads every part in the default colour. With no `mix-colors.json` (or an
 empty one) every thumbnail falls back to the default part colour, matching the live app.
 That file is authored with an internal-only tool that is not part of this repo.
+
+## Saved Builds
+
+"My builds" (bookmark icon in the toolbar; "…" → My builds on phones) lets people name and
+save the robot on screen and come back to it later: load it, rename it, share a link to it,
+delete it, or update it after changing it. Each saved build has a small thumbnail rendered
+from the visible parts.
+
+- **What's saved** is `getShareState()` in `scripts/app.js`, the same data a share link
+  carries, plus the active mix key. Loading goes through `applySavedState()` like a share
+  link does, then `applyBuildState()` reloads only the parts whose variant changed.
+- **Where it's saved** is decided by `scripts/saved-builds.js`, never by `app.js`. Today
+  that's always this browser's `localStorage` (`hp_robot_saved_builds`, up to 60 builds of
+  a few KB each), so builds stay on one device and one browser.
+
+### Adding sign-in later
+
+The storage module is built so accounts can be added without touching the UI. A
+server-backed store only needs the same async methods as `createLocalBuildStore()`:
+`list()`, `get(id)`, `put(record)`, `remove(id)`, plus an optional `subscribe(fn)` and
+`kind: 'remote'`. After the user signs in, call `setBuildStore(remoteStore)`; on sign-out,
+call `setBuildStore(getLocalBuildStore())`. The panel re-renders on its own, and its
+footer switches to "Saved to your account".
+
+Records already carry what syncing needs: a client-generated UUID `id` (a build keeps its
+identity when uploaded) and `updatedAt` (last write wins when the local and remote copies
+differ). On first sign-in, upload the local builds the account doesn't have yet.
+
+For the HP Robots account used by app.hprobots.com (Firebase Authentication, project
+`com-moravia-consulting-otto`), the remote store would either:
+- call new endpoints on `https://api.app.hprobots.com/v1` with
+  `Authorization: Bearer <Firebase ID token>`, the same way the coding app calls its
+  `/project` endpoints. The API's CORS currently allows only `https://app.hprobots.com`,
+  so the customizer's origin must be added; or
+- read and write Firestore under `users/{uid}/builds/{id}`, with security rules limiting
+  each user to their own documents.
+
+The Firebase project also needs the customizer's domain in Authentication → Authorized
+domains. Firebase keeps sign-in per origin, so on a different domain users sign in once
+in each app. Hosting the customizer under `app.hprobots.com/...`, or handing over a
+custom token from the coding app, avoids that.
 
 ## Local Run
 

@@ -1832,6 +1832,249 @@ html.touch-capable .vis-banner-exit--tap{ display:inline; }
   color:var(--text);
 }
 
+/* ---- My builds (#builds-overlay) ----
+   Same overlay/card chrome as #settings-overlay above; see setupSavedBuilds
+   in app.js and scripts/saved-builds.js. */
+#builds-overlay{
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:color-mix(in srgb, #000 24%, transparent);
+  -webkit-backdrop-filter:blur(2px) saturate(130%);
+  backdrop-filter:blur(2px) saturate(130%);
+  z-index:var(--z-max);
+  pointer-events:auto;
+}
+#builds-overlay.show{ display:flex; }
+#builds-card{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  width:min(480px, 100%);
+  max-height:min(640px, 88vh);
+  padding:calc(20px + env(safe-area-inset-top, 0px)) 20px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-radius:16px;
+  border:1px solid var(--stroke-strong);
+  background:var(--glass-strong);
+  box-shadow:var(--shadow-lg);
+}
+#builds-title{
+  margin:0 0 14px 0;
+  padding-right:40px;
+  font:700 16px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+}
+.builds-save{ flex-shrink:0; }
+.builds-save-row{
+  display:flex;
+  gap:8px;
+}
+#builds-name{
+  flex:1;
+  min-width:0;
+  height:40px;
+  padding:0 12px;
+  border:1px solid var(--stroke);
+  border-radius:10px;
+  background:var(--glass-bg);
+  color:var(--text);
+  /* 16px stops iOS Safari zooming the page on focus. */
+  font:500 16px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+#builds-name:focus{ outline:none; border-color:var(--hpro-navy); box-shadow:var(--focus-ring); }
+.builds-primary-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:40px;
+  padding:0 14px;
+  border:none;
+  border-radius:10px;
+  background:var(--brand);
+  color:var(--hpro-navy);
+  font:700 13.5px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+  transition:background var(--transition), transform var(--transition);
+}
+.builds-primary-btn:hover{ background:var(--brand-ink); }
+.builds-primary-btn:active{ transform:translateY(1px); }
+.builds-primary-btn:disabled{ opacity:.6; cursor:progress; }
+.builds-primary-btn .material-icons{ font-size:18px; }
+.builds-link-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  max-width:100%;
+  margin-top:8px;
+  padding:6px 8px;
+  border:none;
+  border-radius:8px;
+  background:transparent;
+  color:var(--hpro-navy);
+  font:600 13px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  cursor:pointer;
+}
+.builds-link-btn[hidden]{ display:none; }
+.builds-link-btn:hover{ background:var(--glass-hover); }
+.builds-link-btn .material-icons{ font-size:17px; flex-shrink:0; }
+.builds-link-btn span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.builds-status{
+  margin:8px 0 0;
+  padding:8px 10px;
+  border-radius:8px;
+  font:600 12.5px/1.35 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:#17603A;
+  background:color-mix(in srgb, var(--ok) 16%, var(--glass-bg));
+}
+.builds-status[hidden]{ display:none; }
+.builds-status[data-type="err"]{ color:#9B1410; background:color-mix(in srgb, var(--err) 12%, var(--glass-bg)); }
+.builds-status[data-type="warn"]{ color:#7A5200; background:color-mix(in srgb, var(--warn) 20%, var(--glass-bg)); }
+
+.builds-list-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  margin-top:16px;
+  padding-top:14px;
+  border-top:1px solid var(--stroke);
+  flex-shrink:0;
+}
+.builds-count{ font:600 11px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui; color:var(--muted); }
+.builds-list{
+  list-style:none;
+  margin:0 -6px;
+  padding:0 6px 2px;
+  overflow-y:auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.builds-list:empty{ display:none; }
+.build-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:6px;
+  border:1px solid var(--stroke);
+  border-radius:12px;
+  background:var(--glass-bg);
+  transition:background var(--transition), border-color var(--transition);
+}
+.build-item:hover{ background:var(--glass-hover); }
+.build-item.is-active{ border-color:var(--brand-ink); background:var(--brand-ghost); }
+.build-open{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex:1;
+  min-width:0;
+  padding:0;
+  border:none;
+  background:transparent;
+  text-align:left;
+  cursor:pointer;
+  color:inherit;
+  border-radius:8px;
+}
+.build-open:focus-visible{ outline:none; box-shadow:var(--focus-ring); }
+div.build-open{ cursor:default; } /* the rename row (see startRenameBuild) */
+.build-thumb{
+  width:56px;
+  height:56px;
+  flex-shrink:0;
+  border-radius:9px;
+  background-color:var(--canvas);
+  background-image:radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
+  background-size:10px 10px;
+  border:1px solid var(--stroke);
+  object-fit:contain;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted);
+}
+.build-meta{ min-width:0; display:flex; flex-direction:column; gap:3px; }
+.build-name{
+  font:700 14px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--text);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.build-date{ font:500 12px/1.2 -apple-system,BlinkMacSystemFont,Inter,system-ui; color:var(--muted); }
+.build-rename-input{
+  width:100%;
+  height:30px;
+  padding:0 8px;
+  border:1px solid var(--hpro-navy);
+  border-radius:8px;
+  background:var(--glass-strong);
+  color:var(--text);
+  font:700 14px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+.build-actions{ display:flex; gap:2px; flex-shrink:0; }
+.build-action{
+  width:34px;
+  height:34px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:none;
+  border-radius:50%;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+  transition:background var(--transition), color var(--transition);
+}
+.build-action:hover{ background:var(--glass-press); color:var(--text); }
+.build-action .material-icons{ font-size:18px; }
+/* Two-step delete: first tap arms it (red, "Delete?"), second confirms. */
+.build-action--delete.is-armed{
+  width:auto;
+  padding:0 10px;
+  border-radius:999px;
+  background:var(--err);
+  color:#fff;
+  font:700 12px/1 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+}
+.builds-empty{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  margin:6px 0 0;
+  padding:22px 16px;
+  border:1px dashed var(--stroke);
+  border-radius:12px;
+  text-align:center;
+  font:500 13px/1.45 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+}
+.builds-empty[hidden]{ display:none; }
+.builds-empty .material-icons{ font-size:26px; color:var(--stroke-strong); }
+.builds-storage-note{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin:12px 0 0;
+  flex-shrink:0;
+  font:500 12px/1.3 -apple-system,BlinkMacSystemFont,Inter,system-ui;
+  color:var(--muted);
+}
+.builds-storage-note .material-icons{ font-size:16px; }
+@media (pointer: coarse){
+  .build-action{ width:40px; height:40px; }
+  .build-thumb{ width:52px; height:52px; }
+}
+@media (prefers-reduced-motion: reduce){
+  #builds-overlay{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+}
+
 .settings-footer{
   display:flex;
   align-items:flex-start;

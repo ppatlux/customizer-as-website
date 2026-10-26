@@ -5,6 +5,7 @@ import { ASSET_MANIFEST } from './asset-manifest.js';
 import { PRESETS as presets, normalizeMixPartColor } from './presets.js';
 import { SLICER_LABELS, getPreferredSlicer, setPreferredSlicer, getEffectiveSlicer, canOpenDesktopSlicer } from './slicer-preference.js';
 import { sendToPrusa } from './prusa-export.js';
+import { listBuilds, getBuild, createBuild, updateBuild, deleteBuild, onBuildsChanged, getBuildStore } from './saved-builds.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 // Accelerated raycasting for every Mesh. The paint-bucket / hover hit-test
@@ -230,6 +231,20 @@ const moreDownloadStepBtn = document.getElementById('moreDownloadStepBtn');
 const settingsToggle = document.getElementById('settingsToggle');
 const settingsOverlay = document.getElementById('settings-overlay');
 const settingsClose = document.getElementById('settings-close');
+const savedBuildsBtn = document.getElementById('savedBuildsBtn');
+const moreSavedBuildsBtn = document.getElementById('moreSavedBuildsBtn');
+const buildsOverlay = document.getElementById('builds-overlay');
+const buildsClose = document.getElementById('builds-close');
+const buildsSaveForm = document.getElementById('builds-save-form');
+const buildsNameInput = document.getElementById('builds-name');
+const buildsSaveBtn = document.getElementById('builds-save-btn');
+const buildsUpdateBtn = document.getElementById('builds-update-btn');
+const buildsUpdateLabel = document.getElementById('builds-update-label');
+const buildsList = document.getElementById('builds-list');
+const buildsEmpty = document.getElementById('builds-empty');
+const buildsCount = document.getElementById('builds-count');
+const buildsStorageNote = document.getElementById('builds-storage-note');
+const buildsStatus = document.getElementById('builds-status');
 const startTourBtn = document.getElementById('startTourBtn');
 const essBtn = document.getElementById('show-essential');
 const advBtn = document.getElementById('show-advanced');
@@ -488,6 +503,19 @@ function getGhostEdgesGeometry(geometry) {
 let activePresetKey = 'starter';
 let isApplyingPreset = false;
 let restoredFromLocal = false;
+
+// My builds (see setupSavedBuilds).
+const ACTIVE_BUILD_KEY = 'hp_robot_active_saved_build';
+
+// The saved build the on-screen robot was loaded from / last saved as, so the
+// panel can offer "Update <name>" instead of only "save another copy".
+// Persisted so it survives a reload (the build itself already does, via
+// saveStateToLocal). Cleared by a share link, factory reset or deleting it.
+let activeSavedBuildId = null;
+try { activeSavedBuildId = localStorage.getItem(ACTIVE_BUILD_KEY) || null; } catch {}
+
+let savedBuildsCache = [];
+let buildsRenderToken = 0;
 let openPalette = null;
 let openPaletteOriginalParent = null;
 let __isMaximized = false;
@@ -742,6 +770,7 @@ function bootstrap() {
   printBuildBtn?.addEventListener('click', printWholeBuild);
   setupMoreMenu();
   setupSettingsMenu();
+  setupSavedBuilds();
   setupPaletteWiring();
   setupColorPickerDrag();
   setupColorPickerHexInput();
@@ -761,6 +790,9 @@ function bootstrap() {
 
   const restoredFromShareLink = tryRestoreFromUrl();
   if (!restoredFromShareLink) tryRestoreFromLocal();
+  // Someone else's shared build isn't the user's saved one, even if they had
+  // one loaded before — don't offer to overwrite it with this.
+  if (restoredFromShareLink) setActiveSavedBuild(null);
 
   if (restoredFromLocal) {
     // applySavedState() (called by the two restore attempts above) only sets
@@ -1228,6 +1260,10 @@ function setupMoreMenu() {
   morePrintBuildBtn?.addEventListener('click', () => {
     closeMoreMenu();
     printWholeBuild();
+  });
+  moreSavedBuildsBtn?.addEventListener('click', () => {
+    closeMoreMenu();
+    openSavedBuilds();
   });
   moreDownloadStlBtn.addEventListener('click', () => {
     closeMoreMenu();
@@ -2608,6 +2644,16 @@ function disposeThumbObject(object) {
 // renderPresetThumbnail so the "axes swapped" precise-bounding-box fix and
 // the camera-framing math only exist in one place.
 function snapshotThumbnail(object) {
+  const dataUrl = renderThumbnailCanvas(object).toDataURL('image/png');
+  disposeThumbObject(object);
+  return dataUrl;
+}
+
+// The framing + render half of snapshotThumbnail, without disposing anything —
+// captureBuildThumbnail() renders clones of the live scene's parts, whose
+// geometry/materials are shared with the viewer and must survive. Returns the
+// thumb renderer's canvas (preserveDrawingBuffer, so it stays readable).
+function renderThumbnailCanvas(object) {
   const { scene: rScene, camera: rCamera, renderer: rRenderer } = getThumbRenderer();
 
   // precise=true forces a fresh bounding box from actual vertex positions.
@@ -2631,10 +2677,8 @@ function snapshotThumbnail(object) {
 
   rScene.add(object);
   rRenderer.render(rScene, rCamera);
-  const dataUrl = rRenderer.domElement.toDataURL('image/png');
   rScene.remove(object);
-  disposeThumbObject(object);
-  return dataUrl;
+  return rRenderer.domElement;
 }
 
 // Renders one variant's GLB to a small PNG data URL for the picker grid, caching
@@ -3658,32 +3702,39 @@ function tryRestoreFromLocal() {
   }
 }
 
-// Compact, URL-safe base64 of the same shape saveStateToLocal() persists, so a
-// shared link and a locally-saved session decode through the same path.
-function getShareStateJsonBytes() {
-  const state = {
+// The build on screen as plain data — the same shape saveStateToLocal()
+// persists (minus presetKey), so a shared link, a saved build (see
+// scripts/saved-builds.js) and a locally-restored session all go back in
+// through applySavedState(). JSON round-trip so the result is a detached
+// snapshot, not live references into modelMeshCols/partVis.
+function getShareState() {
+  return JSON.parse(JSON.stringify({
     currentIdx,
     partVis,
     modelCols: Object.fromEntries(Object.entries(modelCols).map(([part, color]) => [part, `#${color.getHexString()}`])),
     modelMeshCols,
     mixExtras: activeMixExtras
-  };
+  }));
+}
+
+// Compact, URL-safe base64 of getShareState().
+function getShareStateJsonBytes(state = getShareState()) {
   return new TextEncoder().encode(JSON.stringify(state));
 }
 
-function encodeShareState() {
-  return bytesToBase64Url(getShareStateJsonBytes());
+function encodeShareState(state) {
+  return bytesToBase64Url(getShareStateJsonBytes(state));
 }
 
 function decodeShareState(param) {
   return JSON.parse(new TextDecoder().decode(base64UrlToBytes(param)));
 }
 
-function getShareUrl() {
+function getShareUrl(state) {
   const url = new URL(window.location.href);
   url.search = '';
   url.hash = '';
-  url.searchParams.set('c', encodeShareState());
+  url.searchParams.set('c', encodeShareState(state));
   return url.href;
 }
 
@@ -3758,8 +3809,11 @@ function tryRestoreFromUrl() {
   }
 }
 
-async function copyShareLink() {
-  const url = getShareUrl();
+// `state` defaults to the build on screen; the My builds panel passes a saved
+// build's state to share that one without loading it first, and its own
+// `notify` (see buildsNotify) since toasts sit under its backdrop.
+async function copyShareLink(state, notify = (message) => toast(message, 'ok', 1800)) {
+  const url = getShareUrl(state);
 
   // On any touch device the native share sheet (Messages/WhatsApp/email/...)
   // is the expected action for a share tap, not a silent clipboard copy —
@@ -3776,7 +3830,7 @@ async function copyShareLink() {
 
   try {
     await navigator.clipboard.writeText(url);
-    toast('Share link copied to clipboard!', 'ok', 1800);
+    notify('Share link copied to clipboard!');
     return;
   } catch {}
 
@@ -3789,10 +3843,533 @@ async function copyShareLink() {
     textarea.select();
     document.execCommand('copy');
     textarea.remove();
-    toast('Share link copied to clipboard!', 'ok', 1800);
+    notify('Share link copied to clipboard!');
   } catch {
     window.prompt('Copy this link to share your build:', url);
   }
+}
+
+// ---------------------------------------------------------------------------
+// My builds — named, saved configurations people can come back to.
+//
+// Storage lives behind scripts/saved-builds.js (this browser's localStorage
+// today; a signed-in account later, by swapping the store there). This
+// section only knows records: { id, name, state, thumbnail, preset, ... },
+// where `state` is getShareState() — the same data a share link carries.
+
+// State for this section is declared up with the rest of the module state
+// (see ACTIVE_BUILD_KEY) — bootstrap() runs before this point in the file.
+
+function setActiveSavedBuild(id) {
+  activeSavedBuildId = id || null;
+  try {
+    if (activeSavedBuildId) localStorage.setItem(ACTIVE_BUILD_KEY, activeSavedBuildId);
+    else localStorage.removeItem(ACTIVE_BUILD_KEY);
+  } catch {}
+}
+
+// toast() renders its message as HTML, so anything user-typed (build names)
+// must be escaped before it goes in one.
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
+}
+
+function sameBuildState(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// Feedback for actions taken in the panel: inline while it's open (toasts
+// render under its backdrop), a toast otherwise. `message` is plain text.
+let buildsStatusTimer = 0;
+function buildsNotify(message, type = 'ok') {
+  if (!buildsOverlay?.classList.contains('show')) {
+    toast(escapeHtml(message), type, type === 'ok' ? 1600 : 3200);
+    return;
+  }
+  buildsStatus.textContent = message;
+  buildsStatus.dataset.type = type;
+  buildsStatus.hidden = false;
+  clearTimeout(buildsStatusTimer);
+  buildsStatusTimer = setTimeout(() => { buildsStatus.hidden = true; }, type === 'ok' ? 2200 : 5000);
+}
+
+function setupSavedBuilds() {
+  if (!buildsOverlay) return;
+
+  savedBuildsBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openSavedBuilds();
+  });
+
+  buildsClose?.addEventListener('click', closeSavedBuilds);
+  // On document, not the overlay: re-rendering the list (after a delete or
+  // rename) drops focus to <body>, outside the overlay. Escape inside an open
+  // rename field cancels just the rename (handled there).
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !buildsOverlay.classList.contains('show')) return;
+    if (event.target.closest?.('.build-rename-input')) return;
+    closeSavedBuilds();
+  });
+  buildsOverlay.addEventListener('click', (event) => {
+    if (event.target === buildsOverlay) closeSavedBuilds();
+  });
+
+  buildsSaveForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveCurrentAsNewBuild();
+  });
+  buildsUpdateBtn.addEventListener('click', updateActiveSavedBuild);
+
+  // Re-render on any change — this tab's own saves, another tab's (storage
+  // event), or a future sign-in swapping the store underneath.
+  onBuildsChanged(() => {
+    if (activeSavedBuildId) {
+      getBuild(activeSavedBuildId).then((record) => { if (!record) setActiveSavedBuild(null); }).catch(() => {});
+    }
+    if (buildsOverlay.classList.contains('show')) renderSavedBuilds();
+  });
+}
+
+function openSavedBuilds() {
+  // A saved build is the whole robot, so the panel would be confusing while
+  // a paint/visibility tool is still armed underneath it.
+  setBucketMode(null);
+  if (visibilityEditMode) exitVisibilityEditMode();
+
+  // Overlays live inside #viewer-container so they also show in fullscreen.
+  buildsOverlay.classList.add('show');
+  savedBuildsBtn?.setAttribute('aria-expanded', 'true');
+  buildsNameInput.value = '';
+  renderSavedBuilds().then(() => {
+    if (!buildsOverlay.classList.contains('show')) return;
+    // Phones: don't pop the keyboard over the list just for opening the panel.
+    if (isTouchCapable()) buildsClose?.focus();
+    else buildsNameInput.focus();
+  });
+}
+
+function closeSavedBuilds() {
+  if (!buildsOverlay) return;
+  buildsOverlay.classList.remove('show');
+  savedBuildsBtn?.setAttribute('aria-expanded', 'false');
+}
+
+function suggestBuildName() {
+  const preset = presets[activePresetKey];
+  const base = preset && activePresetKey !== 'starter' ? preset.label : 'My robot';
+  const taken = new Set(savedBuildsCache.map((record) => record.name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base} ${n}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+  return base;
+}
+
+function formatBuildDate(ms) {
+  const date = new Date(ms);
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return 'Just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return `Today, ${time}`;
+  if (date.toDateString() === yesterday.toDateString()) return `Yesterday, ${time}`;
+  return date.toLocaleDateString([], { day: 'numeric', month: 'short', year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+
+async function renderSavedBuilds() {
+  const myToken = ++buildsRenderToken;
+  let records = [];
+  try {
+    records = await listBuilds();
+  } catch (error) {
+    console.error('Could not read saved builds', error);
+    buildsNotify('Could not load your saved builds.', 'err');
+  }
+  if (myToken !== buildsRenderToken) return; // a newer render started meanwhile
+  savedBuildsCache = records;
+
+  const current = getShareState();
+  const active = records.find((record) => record.id === activeSavedBuildId) || null;
+  const activeIsUnchanged = !!active && sameBuildState(active.state, current);
+
+  buildsNameInput.placeholder = suggestBuildName();
+  buildsUpdateBtn.hidden = !active || activeIsUnchanged;
+  if (active) buildsUpdateLabel.textContent = `Update “${active.name}” with these changes`;
+
+  buildsCount.textContent = records.length ? String(records.length) : '';
+  buildsEmpty.hidden = records.length > 0;
+  buildsStorageNote.querySelector('span:last-child').textContent = getBuildStore().kind === 'local'
+    ? 'Saved in this browser on this device.'
+    : 'Saved to your account.';
+
+  buildsList.replaceChildren(...records.map((record) => renderBuildItem(record, record.id === activeSavedBuildId && activeIsUnchanged)));
+  // Deleting/renaming re-renders the row that had focus; keep focus in the
+  // dialog instead of letting it fall back to <body> behind it.
+  if (buildsOverlay.classList.contains('show') && !buildsOverlay.contains(document.activeElement)) {
+    buildsOverlay.focus({ preventScroll: true });
+  }
+}
+
+function renderBuildItem(record, isCurrent) {
+  const item = document.createElement('li');
+  item.className = 'build-item' + (isCurrent ? ' is-active' : '');
+  item.dataset.id = record.id;
+
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'build-open';
+  open.title = isCurrent ? 'This is the build on screen' : `Load “${record.name}”`;
+
+  let thumb;
+  if (record.thumbnail) {
+    thumb = document.createElement('img');
+    thumb.src = record.thumbnail;
+    thumb.alt = '';
+    thumb.loading = 'lazy';
+  } else {
+    thumb = document.createElement('span');
+    thumb.className = 'material-icons';
+    thumb.textContent = 'smart_toy';
+    thumb.setAttribute('aria-hidden', 'true');
+  }
+  thumb.classList.add('build-thumb');
+
+  const meta = document.createElement('span');
+  meta.className = 'build-meta';
+  const name = document.createElement('span');
+  name.className = 'build-name';
+  name.textContent = record.name;
+  const date = document.createElement('span');
+  date.className = 'build-date';
+  date.textContent = isCurrent ? 'On screen now' : formatBuildDate(record.updatedAt);
+  meta.append(name, date);
+  open.append(thumb, meta);
+  open.addEventListener('click', () => loadSavedBuild(record));
+
+  const actions = document.createElement('div');
+  actions.className = 'build-actions';
+  actions.append(
+    makeBuildAction('edit', `Rename “${record.name}”`, () => startRenameBuild(item, record)),
+    makeBuildAction('link', `Share a link to “${record.name}”`, () => copyShareLink(record.state, buildsNotify)),
+    makeDeleteBuildAction(record)
+  );
+
+  item.append(open, actions);
+  return item;
+}
+
+function makeBuildAction(icon, label, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'build-action';
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.innerHTML = `<span class="material-icons">${icon}</span>`;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+// Two-step delete (tap arms it for 3 s, tap again to confirm) instead of a
+// blocking confirm() — same pattern on desktop and touch.
+function makeDeleteBuildAction(record) {
+  const label = `Delete “${record.name}”`;
+  let disarmTimer = 0;
+  const disarm = () => {
+    button.classList.remove('is-armed');
+    button.innerHTML = '<span class="material-icons">delete</span>';
+    button.setAttribute('aria-label', label);
+  };
+  const button = makeBuildAction('delete', label, async () => {
+    if (!button.classList.contains('is-armed')) {
+      button.classList.add('is-armed');
+      button.textContent = 'Delete?';
+      button.setAttribute('aria-label', `Confirm: ${label}`);
+      clearTimeout(disarmTimer);
+      disarmTimer = setTimeout(disarm, 3000);
+      return;
+    }
+    clearTimeout(disarmTimer);
+    try {
+      await deleteBuild(record.id);
+      if (record.id === activeSavedBuildId) setActiveSavedBuild(null);
+      buildsNotify(`Deleted “${record.name}”`);
+    } catch (error) {
+      console.error(error);
+      disarm();
+      buildsNotify('Could not delete that build.', 'err');
+    }
+  });
+  button.classList.add('build-action--delete');
+  return button;
+}
+
+// Swaps the row's load <button> for a plain row holding a text field (an
+// input can't live inside a button), and back again when done.
+function startRenameBuild(item, record) {
+  const open = item.querySelector('.build-open');
+  if (!open || open.tagName !== 'BUTTON') return;
+
+  const row = document.createElement('div');
+  row.className = 'build-open';
+  const meta = document.createElement('span');
+  meta.className = 'build-meta';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'build-rename-input';
+  input.maxLength = 60;
+  input.value = record.name;
+  input.setAttribute('aria-label', 'Build name');
+  meta.append(input);
+  row.append(open.querySelector('.build-thumb').cloneNode(true), meta);
+  open.replaceWith(row);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return;
+    done = true;
+    const next = input.value.trim();
+    if (!commit || !next || next === record.name) {
+      row.replaceWith(open);
+      return;
+    }
+    try {
+      // Only the name changes — the saved robot itself is left as it was.
+      await updateBuild(record.id, { name: next });
+    } catch (error) {
+      console.error(error);
+      buildsNotify('Could not rename that build.', 'err');
+      renderSavedBuilds();
+    }
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+    if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+function describeSaveError(error) {
+  if (error?.code === 'limit') return error.message;
+  if (error?.name === 'QuotaExceededError' || /quota/i.test(error?.message || '')) {
+    return 'Your browser storage is full. Delete a saved build and try again.';
+  }
+  return 'Could not save this build.';
+}
+
+async function saveCurrentAsNewBuild() {
+  const name = buildsNameInput.value.trim() || buildsNameInput.placeholder || suggestBuildName();
+  buildsSaveBtn.disabled = true;
+  try {
+    const record = await createBuild({
+      name,
+      state: getShareState(),
+      thumbnail: captureBuildThumbnail(),
+      preset: activePresetKey
+    });
+    setActiveSavedBuild(record.id);
+    buildsNameInput.value = '';
+    buildsNotify(`Saved “${record.name}”`);
+  } catch (error) {
+    console.error('Save build failed', error);
+    buildsNotify(describeSaveError(error), 'err');
+  } finally {
+    buildsSaveBtn.disabled = false;
+  }
+}
+
+async function updateActiveSavedBuild() {
+  if (!activeSavedBuildId) return;
+  buildsUpdateBtn.disabled = true;
+  try {
+    const record = await updateBuild(activeSavedBuildId, {
+      state: getShareState(),
+      thumbnail: captureBuildThumbnail(),
+      preset: activePresetKey
+    });
+    buildsNotify(`Updated “${record.name}”`);
+  } catch (error) {
+    console.error('Update build failed', error);
+    buildsNotify(describeSaveError(error), 'err');
+    renderSavedBuilds();
+  } finally {
+    buildsUpdateBtn.disabled = false;
+  }
+}
+
+function loadSavedBuild(record) {
+  try {
+    applyBuildState(record.state, record.preset);
+  } catch (error) {
+    console.error('Failed to load saved build', error);
+    toast('Could not load that build.', 'err', 2400);
+    return;
+  }
+  setActiveSavedBuild(record.id);
+  closeSavedBuilds();
+  toast(`Loaded “${escapeHtml(record.name)}”`, 'ok', 1400);
+}
+
+// Puts a whole saved state on screen in place — what bootstrap's restore pass
+// does on page load, but against an already-running scene: start from a clean
+// paint slate (so the saved paint replaces, rather than layers over, what's
+// on screen), apply the data, then reload only the parts whose variant
+// changed and re-show/hide the rest — same moves as applyPreset.
+function applyBuildState(state, presetKey) {
+  if (!state || typeof state !== 'object') throw new Error('Saved build has no state');
+  setBucketMode(null);
+  if (visibilityEditMode) exitVisibilityEditMode();
+
+  isApplyingPreset = true;
+  try {
+    const previousIdx = { ...currentIdx };
+    for (const key of Object.keys(modelMeshCols)) delete modelMeshCols[key];
+    for (const color of Object.values(modelCols)) color.set(DEFAULT_PART_COLOR);
+
+    // Default mixExtras to none: a saved build with no extras must clear the
+    // previous mix's, where applySavedState alone would leave them loaded.
+    applySavedState({ mixExtras: [], ...state });
+
+    for (const part of Object.keys(modelSets)) {
+      const visBtn = document.getElementById(`${part}-visibility`);
+      if (visBtn) visBtn.innerHTML = `<span class="material-icons">${partVis[part] ? 'visibility' : 'visibility_off'}</span>`;
+
+      const model = loadedMods[part];
+      // Spacer is only ever loaded while shown (see loadModel / resetToFactory).
+      if (part === 'spacer' && !partVis.spacer) {
+        if (model) {
+          scene.remove(model);
+          loadedMods.spacer = null;
+        }
+        continue;
+      }
+      if (!model || currentIdx[part] !== previousIdx[part]) {
+        loadModel(part, true);
+        continue;
+      }
+      model.visible = partVis[part];
+      if (partVis[part] && !model.parent) {
+        model.position.y = spacerYOffset(part);
+        scene.add(model);
+      }
+      applyColor(part);
+    }
+    // Extras that stayed loaded across the switch keep their old paint
+    // otherwise (new ones are painted by setMixExtras when they land).
+    for (const file of activeMixExtras) {
+      if (loadedMods[file]) applyColor(file);
+    }
+
+    refreshSpacerOffsets();
+    for (const part of Object.keys(modelSets)) {
+      updateBucketResetVisibility(part);
+      syncColorPickerUI(part);
+    }
+    updateGlobalResetVisibility();
+    refreshConflictBadges();
+    updateAllCounters();
+    updateComboChip();
+
+    if (presetKey && presets[presetKey]) {
+      activePresetKey = presetKey;
+      setPresetLabel(presets[presetKey].label);
+      syncPresetButtons(presetKey);
+    } else {
+      activePresetKey = 'custom';
+      setPresetLabel('Custom mix');
+      syncPresetButtons('');
+    }
+    syncShowcaseMode();
+    saveStateToLocal();
+    if (mobileLayoutActive) setMobileSheetState('peek');
+  } finally {
+    isApplyingPreset = false;
+  }
+}
+
+// Small preview of the build on screen for its saved-builds card: clones of
+// the visible parts, framed by the same offscreen renderer as the mix cards
+// (so every saved card looks alike regardless of the user's camera angle),
+// downscaled to keep each record small in storage. Clones share geometry and
+// materials with the live scene, so nothing here is disposed. Returns '' on
+// failure — a missing thumbnail never blocks saving.
+const BUILD_THUMB_SIZE = 160;
+
+function captureBuildThumbnail() {
+  try {
+    const group = new THREE.Group();
+    for (const part of Object.keys(modelSets)) {
+      const model = loadedMods[part];
+      if (!partVis[part] || !model?.parent) continue;
+      const clone = model.clone(true);
+      clone.visible = true;
+      clone.scale.setScalar(1); // in case a variant "pop" animation is mid-flight
+      group.add(clone);
+    }
+    mixExtrasGroup.children.forEach((child) => {
+      const clone = child.clone(true);
+      clone.position.y += mixExtrasGroup.position.y;
+      group.add(clone);
+    });
+    if (!group.children.length) return '';
+
+    const source = renderThumbnailCanvas(group);
+    // The shared framing leaves generous margins (it's sized for the bigger
+    // mix cards); crop to the robot's opaque pixels so it fills the small
+    // list tile instead of sitting at half size in the middle of it.
+    const crop = findOpaqueSquare(source, 0.08);
+    const out = document.createElement('canvas');
+    out.width = BUILD_THUMB_SIZE;
+    out.height = BUILD_THUMB_SIZE;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, crop.x, crop.y, crop.size, crop.size, 0, 0, BUILD_THUMB_SIZE, BUILD_THUMB_SIZE);
+    // WebP keeps transparency at a fraction of PNG's size; browsers that can't
+    // encode it hand back a PNG data URL instead, which is still fine.
+    return out.toDataURL('image/webp', 0.86);
+  } catch (error) {
+    console.error('Build thumbnail capture failed', error);
+    return '';
+  }
+}
+
+// Smallest square (plus `pad` × its side on each edge) around the
+// non-transparent pixels of `canvas`, clamped to the canvas. Falls back to
+// the whole canvas when nothing is drawn.
+function findOpaqueSquare(canvas, pad) {
+  const { width, height } = canvas;
+  const probe = document.createElement('canvas');
+  probe.width = width;
+  probe.height = height;
+  const probeCtx = probe.getContext('2d', { willReadFrequently: true });
+  probeCtx.drawImage(canvas, 0, 0);
+  const { data } = probeCtx.getImageData(0, 0, width, height);
+
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] < 8) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return { x: 0, y: 0, size: Math.min(width, height) };
+
+  const side = Math.max(maxX - minX, maxY - minY) + 1;
+  const size = Math.min(Math.round(side * (1 + pad * 2)), width, height);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const x = Math.round(Math.min(Math.max(centerX - size / 2, 0), width - size));
+  const y = Math.round(Math.min(Math.max(centerY - size / 2, 0), height - size));
+  return { x, y, size };
 }
 
 // max-width caps this to phone-sized viewports — pointer:coarse alone also
@@ -5810,6 +6387,7 @@ function resetToFactory() {
   setPresetLabel(presets.starter.label);
   syncPresetButtons('starter');
   saveStateToLocal();
+  setActiveSavedBuild(null);
   toast('Back to default build', 'ok', 1200);
 }
 
