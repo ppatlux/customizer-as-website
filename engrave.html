@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>HP Robots Engraving Tool</title>
   <meta name="description" content="SVG engraving editor for the HP Robots top template">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link rel="stylesheet" href="./styles/engrave.css?v=20260915">
+  <link rel="stylesheet" href="./styles/engrave.css?v=20261028a">
   <script>
     if (!('startViewTransition' in document)) {
       document.documentElement.classList.add('vt-fallback');
@@ -39,21 +39,49 @@
         </div>
       </div>
 
-      <div id="preset-menu" class="engrave-header-card" role="group" aria-label="Engraving header">
-        <button id="backCustomizerBtn" class="preset-toggle" type="button" aria-label="Back to customizer">
-          <span class="material-icons">arrow_back</span>
-          <span class="preset-label">Back to Customizer</span>
-        </button>
-        <span class="engrave-badge" id="partBadge">Blank top ready</span>
-      </div>
+      <!-- Top bar, same as the customizer's (#topbar in index.html): round back
+           button, page title and part chip on the left, the main action on
+           the right. -->
+      <header id="topbar" class="topbar" aria-label="Engraving">
+        <div class="topbar-group topbar-left">
+          <button id="backCustomizerBtn" class="btn btn--lg" type="button" title="Back to the customizer" aria-label="Back to the customizer">
+            <span class="material-icons">arrow_back</span>
+          </button>
+          <div class="topbar-heading">
+            <h1 class="topbar-title">Engrave top</h1>
+            <span class="combo-chip" id="partBadge">Blank top</span>
+          </div>
+        </div>
+        <div class="topbar-group topbar-right">
+          <!-- Stands in for #downloadStlBtn; engrave.js forwards the click and
+               mirrors its disabled state. -->
+          <button id="topDownloadBtn" class="btn btn--lg btn--primary" type="button" title="Download STL" aria-label="Download STL">
+            <span class="material-icons">download</span>
+          </button>
+        </div>
+      </header>
 
       <section class="engrave-stage-card">
         <div id="viewer" aria-label="Engraving preview"></div>
-        <div class="viewer-hint">
-          <span class="swatch model"></span><span>Base part</span>
-          <span class="swatch logo"></span><span>Logo cutter preview</span>
-        </div>
       </section>
+
+      <!-- Bottom-left view controls, as in the customizer. -->
+      <div id="view-controls" class="view-controls" role="group" aria-label="View">
+        <button id="zoomInBtn" class="btn btn--lg" type="button" title="Zoom in" aria-label="Zoom in">
+          <span class="material-icons">zoom_in</span>
+        </button>
+        <button id="zoomOutBtn" class="btn btn--lg" type="button" title="Zoom out" aria-label="Zoom out">
+          <span class="material-icons">zoom_out</span>
+        </button>
+        <button id="recenterBtn" class="btn btn--lg" type="button" title="Recenter view" aria-label="Recenter view">
+          <span class="material-icons">center_focus_strong</span>
+        </button>
+      </div>
+
+      <div class="viewer-hint" aria-hidden="true">
+        <span class="swatch model"></span><span>Top</span>
+        <span class="swatch logo"></span><span>Engraving</span>
+      </div>
 
       <div id="progressOverlay" class="engrave-progress-overlay" hidden aria-hidden="true">
         <div class="engrave-progress-card" role="status" aria-live="polite">
@@ -64,18 +92,21 @@
         </div>
       </div>
 
-      <div id="panel-essential" class="model-controls essential engrave-controls" role="group" aria-label="Engraving controls">
+      <!-- Right dock, the same card as the customizer's .right-dock: three
+           numbered steps. Moved into #mobile-sheet on phones (engrave.js). -->
+      <div id="panel-essential" class="model-controls engrave-controls" role="group" aria-label="Engraving controls">
         <div class="model-section">
-          <div class="model-controls-row">
-            <span class="model-label">1. Your Logo</span>
+          <div class="engrave-step-head">
+            <span class="engrave-step-num" aria-hidden="true">1</span>
+            <span class="engrave-step-title">Your logo</span>
           </div>
           <input id="svgFileInput" type="file" accept=".svg,image/svg+xml" hidden multiple>
-          <p class="engrave-note">Pick a ready-made shape, or upload your own SVG.</p>
+          <p class="engrave-note">Pick a shape, or upload your own SVG.</p>
           <div id="shapeLibraryGrid" class="engrave-shape-grid" aria-label="Built-in shapes" role="group"></div>
           <div class="engrave-button-row">
             <button id="uploadSvgBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button">
-              <span class="material-icons" aria-hidden="true">add_photo_alternate</span>
-              <span>Upload My Own SVG</span>
+              <span class="material-icons" aria-hidden="true">upload_file</span>
+              <span>Upload SVG</span>
             </button>
             <button id="removeSvgBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button" disabled>
               <span class="material-icons" aria-hidden="true">delete</span>
@@ -87,21 +118,22 @@
         </div>
 
         <div class="model-section">
-          <div class="model-controls-row">
-            <span class="model-label">2. Move &amp; Resize</span>
+          <div class="engrave-step-head">
+            <span class="engrave-step-num" aria-hidden="true">2</span>
+            <span class="engrave-step-title">Move &amp; resize</span>
           </div>
-          <div class="pill-container">
-            <button class="btn btn--sm btn--ghost engrave-mode-btn active" id="moveModeBtn" type="button" aria-label="Move logo">
-              <span class="material-icons">open_with</span>
+          <div class="engrave-tools" role="group" aria-label="Logo tools">
+            <button class="engrave-tool engrave-mode-btn active" id="moveModeBtn" type="button" aria-label="Move logo">
+              <span class="material-icons">open_with</span><span>Move</span>
             </button>
-            <button class="btn btn--sm btn--ghost engrave-mode-btn" id="rotateModeBtn" type="button" aria-label="Rotate logo">
-              <span class="material-icons">rotate_right</span>
+            <button class="engrave-tool engrave-mode-btn" id="rotateModeBtn" type="button" aria-label="Rotate logo">
+              <span class="material-icons">rotate_right</span><span>Rotate</span>
             </button>
-            <button id="centerLogoBtn" class="btn btn--sm btn--ghost" type="button" aria-label="Center logo">
-              <span class="material-icons">center_focus_strong</span>
+            <button id="centerLogoBtn" class="engrave-tool" type="button" aria-label="Center logo">
+              <span class="material-icons">filter_center_focus</span><span>Center</span>
             </button>
-            <button id="gizmoToggleBtn" class="btn btn--sm btn--ghost engrave-mode-btn" type="button" aria-label="Show on-model handles" aria-pressed="false">
-              <span class="material-icons">3d_rotation</span>
+            <button id="gizmoToggleBtn" class="engrave-tool engrave-mode-btn" type="button" aria-label="Show on-model handles" aria-pressed="false">
+              <span class="material-icons">3d_rotation</span><span>Handles</span>
             </button>
           </div>
           <label class="engrave-range-label" for="scaleRange">
@@ -117,11 +149,11 @@
               <span class="material-icons">add</span>
             </button>
           </div>
-          <p class="engrave-note">Drag the logo right on the model to move it, or use the size slider above.</p>
+          <p class="engrave-note">Drag the logo on the model to move it.</p>
           <details class="engrave-advanced">
             <summary>
               <span class="material-icons" aria-hidden="true">tune</span>
-              <span>Fine-tune with exact numbers</span>
+              <span>Exact position &amp; depth</span>
               <span class="material-icons engrave-advanced-caret" aria-hidden="true">expand_more</span>
             </summary>
             <div class="engrave-advanced-body">
@@ -182,17 +214,18 @@
         </div>
 
         <div class="model-section">
-          <div class="model-controls-row">
-            <span class="model-label">3. Save &amp; Print</span>
+          <div class="engrave-step-head">
+            <span class="engrave-step-num" aria-hidden="true">3</span>
+            <span class="engrave-step-title">Check &amp; download</span>
           </div>
           <div class="engrave-button-row">
             <button id="previewCutBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button">
               <span class="material-icons">visibility</span>
-              <span>Preview Cut</span>
+              <span>Preview cut</span>
             </button>
             <button id="backToEditBtn" class="top-engrave-btn top-engrave-btn--secondary" type="button" disabled>
               <span class="material-icons">edit</span>
-              <span>Back to Edit</span>
+              <span>Back to edit</span>
             </button>
           </div>
           <button id="downloadStlBtn" class="top-engrave-btn" type="button">
@@ -202,8 +235,10 @@
         </div>
       </div>
 
-      <div id="info-container" class="u-glass engrave-status-card" role="group" aria-label="Engraving status">
-        <span class="combo-chip" id="statusMessage">Loading blank top...</span>
+      <!-- Status line: a small floating pill at the bottom centre (moved into
+           the sheet on phones). -->
+      <div id="info-container" class="engrave-status-card" role="group" aria-label="Engraving status">
+        <span class="combo-chip" id="statusMessage" role="status" aria-live="polite">Loading blank top...</span>
       </div>
 
       <!-- Mobile-only (pointer:coarse) bottom sheet. On touch devices engrave.js
@@ -239,6 +274,6 @@
     }
   }
   </script>
-  <script type="module" src="./scripts/engrave.js?v=20260915"></script>
+  <script type="module" src="./scripts/engrave.js?v=20261028a"></script>
 </body>
 </html>

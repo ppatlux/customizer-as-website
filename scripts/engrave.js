@@ -9,7 +9,7 @@ import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import { ASSET_MANIFEST } from './asset-manifest.js';
 
 const SUPPORTED_PART = 'top';
-const DEFAULT_MODEL_FILE = 'Toplights_NOlogo.glb';
+const DEFAULT_MODEL_FILE = 'Top_lights_NOlogo.glb';
 const MODEL_Y_OFFSET = 30;
 const SVG_SURFACE_LIFT = 0.05;
 const DEFAULT_Z_OFFSET = 12.6;
@@ -92,7 +92,7 @@ camera.position.set(-90, 100, 120);
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio || 1);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.matchMedia?.('(pointer: coarse)').matches ? 1.5 : 2));
 renderer.setClearColor(0xecf4f9);
 renderer.shadowMap.enabled = true;
 viewer.appendChild(renderer.domElement);
@@ -185,6 +185,14 @@ let positionLimits = { x: 20, z: 20, yMin: -5.0, yMax: 5.0 };
 let isProcessing = false;
 let gizmoUserVisible = true;
 let mobileSheetEl = null;
+// View controls / framing state (see setupViewControls). Declared up here
+// because the setup calls below already reach the code that uses them.
+let lastFitBox = null;
+let cameraTween = 0;
+let viewOffsetTrack = 0;
+// Tallest free area seen (the sheet collapsed); while the sheet is expanded
+// the picture is scaled down by freeH / this so the part stays in view.
+let viewFreeHRef = 0;
 
 setupUi();
 setupResize();
@@ -202,7 +210,7 @@ function setupUi() {
   const supportsEngraving = requestedPart === SUPPORTED_PART;
 
   if (supportsEngraving) {
-    partBadge.textContent = partEntry.file.replace(/\.glb$/i, '');
+    partBadge.textContent = 'Blank top';
   } else {
     partBadge.textContent = 'Top part required';
     setStatus('warn', 'This tool currently supports only the top part.');
@@ -218,6 +226,8 @@ function setupUi() {
   backCustomizerBtn.addEventListener('click', () => {
     navigateWithFade('./index.html');
   });
+  setupTopbarDownload();
+  setupViewControls();
   uploadSvgBtn.addEventListener('click', () => svgFileInput.click());
   removeSvgBtn.addEventListener('click', removeActiveSvgLayer);
   svgFileInput.addEventListener('change', handleSvgUpload);
@@ -310,12 +320,13 @@ function setupMobileSheet() {
   if (!mobileSheetEl || !handle || !listHost || !panelEssential) return;
 
   listHost.appendChild(panelEssential);
-  if (infoContainerEl) listHost.appendChild(infoContainerEl);
+  if (infoContainerEl) listHost.prepend(infoContainerEl);
 
   function setState(state) {
     mobileSheetEl.dataset.state = state;
     handle.setAttribute('aria-expanded', String(state === 'expanded'));
     listHost.scrollTop = 0;
+    trackViewOffset();
   }
 
   let dragStartY = null;
@@ -365,11 +376,102 @@ function setupResize() {
     camera.aspect = width / Math.max(height, 1);
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
+    viewFreeHRef = 0; // re-measure for the new size
+    updateViewOffset();
     render();
   };
 
   window.addEventListener('resize', resize);
   resize();
+}
+
+// The round Download button in the top bar stands in for #downloadStlBtn:
+// it forwards the click and mirrors the real button's disabled state.
+function setupTopbarDownload() {
+  const topBtn = document.getElementById('topDownloadBtn');
+  if (!topBtn) return;
+  topBtn.addEventListener('click', () => downloadStlBtn.click());
+  const sync = () => { topBtn.disabled = downloadStlBtn.disabled; };
+  new MutationObserver(sync).observe(downloadStlBtn, { attributes: true, attributeFilter: ['disabled'] });
+  sync();
+}
+
+// ---- View controls + framing (same behaviour as the customizer) ----
+// Zoom in/out dolly the camera towards the target; Recenter re-frames the
+// part. The camera's view offset centres the picture in the area the panels
+// leave free: left of the dock on desktop, above the sheet on phones.
+function setupViewControls() {
+  const zoom = (factor) => {
+    const offset = camera.position.clone().sub(controls.target);
+    const distance = THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance);
+    tweenCamera(controls.target.clone().addScaledVector(offset.normalize(), distance), controls.target.clone());
+  };
+  document.getElementById('zoomInBtn')?.addEventListener('click', () => zoom(1 / 1.3));
+  document.getElementById('zoomOutBtn')?.addEventListener('click', () => zoom(1.3));
+  document.getElementById('recenterBtn')?.addEventListener('click', () => {
+    if (!lastFitBox) return;
+    const from = { position: camera.position.clone(), target: controls.target.clone() };
+    fitCameraToObject(lastFitBox);
+    const to = { position: camera.position.clone(), target: controls.target.clone() };
+    camera.position.copy(from.position);
+    controls.target.copy(from.target);
+    tweenCamera(to.position, to.target);
+  });
+}
+
+function tweenCamera(position, target) {
+  cancelAnimationFrame(cameraTween);
+  const from = { position: camera.position.clone(), target: controls.target.clone() };
+  const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 260;
+  const start = performance.now();
+  const step = (now) => {
+    const t = duration ? Math.min(1, (now - start) / duration) : 1;
+    const k = 1 - Math.pow(1 - t, 3);
+    camera.position.lerpVectors(from.position, position, k);
+    controls.target.lerpVectors(from.target, target, k);
+    controls.update();
+    render();
+    if (t < 1) cameraTween = requestAnimationFrame(step);
+  };
+  cameraTween = requestAnimationFrame(step);
+}
+
+function getFreeViewRect() {
+  const W = viewer.clientWidth || window.innerWidth;
+  const H = viewer.clientHeight || window.innerHeight;
+  const origin = viewer.getBoundingClientRect();
+  let left = 0;
+  let right = W;
+  let top = 0;
+  let bottom = H;
+  const topbar = document.getElementById('topbar');
+  if (topbar) top = topbar.getBoundingClientRect().bottom - origin.top;
+  if (mobileSheetEl?.offsetParent) {
+    bottom = mobileSheetEl.getBoundingClientRect().top - origin.top;
+  } else if (panelEssential?.offsetParent && W > 760) {
+    right = panelEssential.getBoundingClientRect().left - origin.left;
+  }
+  return { W, H, cx: (left + right) / 2, cy: (top + bottom) / 2, freeH: bottom - top };
+}
+
+function updateViewOffset() {
+  const { W, H, cx, cy, freeH } = getFreeViewRect();
+  if (!W || !H) return;
+  viewFreeHRef = Math.max(viewFreeHRef, freeH);
+  const k = viewFreeHRef ? Math.min(1, freeH / viewFreeHRef) : 1;
+  camera.setViewOffset(W, H, W / 2 - cx / k, H / 2 - cy / k, W / k, H / k);
+}
+
+// The sheet animates its height; keep the picture in step with it.
+function trackViewOffset() {
+  cancelAnimationFrame(viewOffsetTrack);
+  const end = performance.now() + 450;
+  const step = () => {
+    updateViewOffset();
+    render();
+    if (performance.now() < end) viewOffsetTrack = requestAnimationFrame(step);
+  };
+  step();
 }
 
 function disableEditorActions(disabled) {
@@ -1237,6 +1339,7 @@ function collectMergedGeometry(root) {
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(-90, 100, 120).normalize();
 
 function fitCameraToObject(box) {
+  lastFitBox = box.clone();
   const size = new THREE.Vector3();
   box.getSize(size);
 

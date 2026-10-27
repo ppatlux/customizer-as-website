@@ -3452,5 +3452,6 @@ body.hp-lock-scroll{
    the browser morphs these in place across the navigation instead of crossfading them. */
 @media (prefers-reduced-motion: no-preference){
   #preset-menu{ view-transition-name: hp-nav-header; }
+  #topbar{ view-transition-name: hp-topbar; }
   #panel-essential{ view-transition-name: hp-settings-panel; }
 }
