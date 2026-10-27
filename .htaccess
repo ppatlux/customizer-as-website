@@ -23,3 +23,15 @@
     Header always set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
 </IfModule>
+
+# Compress model files on the fly. This is lossless (the browser gets back the
+# exact same bytes), and the binary models shrink to roughly a third, which
+# matters most on phones. .3mf and .zip are already zip archives, and the app
+# checks STL sizes before using them, so those are left alone too.
+<IfModule mod_mime.c>
+  AddType model/gltf-binary .glb
+  AddType model/step .step .stp
+</IfModule>
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE model/gltf-binary model/step application/json image/svg+xml text/html text/css text/javascript application/javascript
+</IfModule>
