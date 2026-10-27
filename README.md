@@ -1,4 +1,4 @@
-# HP Robot Customizer
+# HP Robots Customizer
 
 A browser app for designing your own HP Robots Otto robot: pick a variant for each part, paint it,
 save and share the result, and send it straight to a 3D-printing slicer. It's a static site — plain

@@ -56,7 +56,7 @@ export const COMMON_SLOT_LIMIT = 5;
 // PrusaSlicer 2.9 honours the first (checked by slicing), ignores the second,
 // and a single-filament printer simply ignores both.
 // Resolves to { blob: 'model/3mf', count, slots: [{ slot, hex, name }], fitsBed }.
-export async function buildPrint3mf(pieces, { title = 'HP Robot', colorNames = {} } = {}) {
+export async function buildPrint3mf(pieces, { title = 'HP Robots', colorNames = {} } = {}) {
   const bodies = splitPieces(pieces);
   const slots = assignSlots(bodies, colorNames);
   const slotOf = new Map(slots.map((s) => [s.hex, s.slot]));

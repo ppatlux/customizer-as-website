@@ -3799,11 +3799,11 @@ async function sendPartToPrusa(part, target) {
 }
 
 // The name a print shows up under in EasyPrint / the slicer. A whole build:
-// the saved build's name, else the mix it came from, else "HP Robot". One
+// the saved build's name, else the mix it came from, else "HP Robots". One
 // part: the part and its variant, e.g. "Hat – Viking".
 function getBuildPrintName() {
   return activeSavedRecord?.name?.trim()
-    || (activePresetKey && presets[activePresetKey]?.label ? `HP Robot – ${presets[activePresetKey].label}` : 'HP Robot');
+    || (activePresetKey && presets[activePresetKey]?.label ? `HP Robots – ${presets[activePresetKey].label}` : 'HP Robots');
 }
 
 function getPartPrintName(part) {
@@ -4124,7 +4124,7 @@ async function copyShareLink(state, notify = (message) => toast(message, 'ok', 1
   // tablets in the desktop layout included, not just phones.
   if (isTouchCapable() && navigator.share) {
     try {
-      await navigator.share({ title: 'HP Robot Customizer', text: 'Check out my robot build', url });
+      await navigator.share({ title: 'HP Robots Customizer', text: 'Check out my robot build', url });
       return;
     } catch (error) {
       if (error?.name === 'AbortError') return; // user dismissed the share sheet, not a failure
