@@ -569,6 +569,14 @@ let paintHoverMesh = null;
 // process the latest queued pointermove for bucket-paint hover, batching the
 // (potentially expensive) raycast instead of running it on every raw event.
 let paintHoverFlush = null;
+// Exploded view (see the "Exploded view" section). Up here because animate()
+// runs from inside bootstrap().
+let explodeTarget = 0;   // 0 assembled, 1 exploded
+let explodeK = 0;        // eased amount currently shown
+let explodeFrom = 0;
+let explodeStart = 0;
+let explodeLayout = null; // { key, entries: [{ obj, offset }] }
+const explodeSaved = [];
 const variantThumbCache = {};
 const variantThumbPromises = {};
 const presetThumbCache = {};
@@ -789,6 +797,7 @@ function bootstrap() {
   setupSettingsMenu();
   setupSavedBuilds();
   setupViewControls();
+  setupExplodeView();
   setupPaletteWiring();
   setupColorPickerDrag();
   setupColorPickerHexInput();
@@ -2164,11 +2173,17 @@ function setupBucketTool() {
     paintPointer.set(ndcX, ndcY);
     paintRaycaster.setFromCamera(paintPointer, camera);
     let best = null;
-    for (const { part, model } of getPaintTargetGroups()) {
-      const hits = paintRaycaster.intersectObject(model, true);
-      if (hits.length && (!best || hits[0].distance < best.distance)) {
-        best = { part, mesh: hits[0].object, distance: hits[0].distance };
+    // Hit-test what's on screen: in exploded view that's the moved parts.
+    const exploded = applyExplodeOffsets();
+    try {
+      for (const { part, model } of getPaintTargetGroups()) {
+        const hits = paintRaycaster.intersectObject(model, true);
+        if (hits.length && (!best || hits[0].distance < best.distance)) {
+          best = { part, mesh: hits[0].object, distance: hits[0].distance };
+        }
       }
+    } finally {
+      if (exploded) restoreExplodeOffsets();
     }
     return best;
   }
@@ -6168,6 +6183,94 @@ function updatePartPops(now) {
   }
 }
 
+// ---- Exploded view ----
+// Pulls the parts apart so you can see how the robot goes together. Each
+// visible part moves away from the centre of the whole robot, in proportion
+// to how far its own centre already is from it: top and hat rise, bottom and
+// wheels drop, the face and bumper slide forward.
+//
+// The parts only move while a frame is drawn or a click is hit-tested
+// (applyExplodeOffsets ... restoreExplodeOffsets), so every other piece of
+// code — exports, printing, thumbnails, AR, saved builds — keeps seeing the
+// assembled robot.
+const EXPLODE_MS = 450;
+const EXPLODE_SPREAD_Y = 0.6;
+const EXPLODE_SPREAD_XZ = 0.7;
+
+function setExploded(on) {
+  const target = on ? 1 : 0;
+  if (target === explodeTarget) return;
+  explodeTarget = target;
+  explodeFrom = explodeK;
+  explodeStart = performance.now();
+  const btn = document.getElementById('explodeBtn');
+  if (btn) {
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', String(on));
+    const label = on ? 'Put the robot back together (E)' : 'Exploded view (E)';
+    btn.title = label;
+  }
+}
+
+function updateExplode(now) {
+  if (explodeK === explodeTarget) return;
+  const t = prefersReducedMotion ? 1 : Math.min(1, (now - explodeStart) / EXPLODE_MS);
+  explodeK = explodeFrom + (explodeTarget - explodeFrom) * easeOutCubic(t);
+  if (t >= 1) explodeK = explodeTarget;
+}
+
+// What moves: every visible part on screen (mix extras included, they're in
+// loadedMods too) plus any red clash overlay (a copy of a hidden part).
+function getExplodeLayout() {
+  const objects = [];
+  for (const model of [...Object.values(loadedMods), ...Object.values(activeGhosts)]) {
+    if (model?.parent && model.visible) objects.push(model);
+  }
+  const key = objects.map((obj) => obj.uuid).join('|');
+  if (explodeLayout?.key === key) return explodeLayout;
+
+  const box = new THREE.Box3();
+  const boxes = objects.map((obj) => new THREE.Box3().setFromObject(obj));
+  boxes.forEach((b) => box.union(b));
+  const centre = box.getCenter(new THREE.Vector3());
+  const entries = objects.map((obj, i) => {
+    const offset = boxes[i].getCenter(new THREE.Vector3()).sub(centre);
+    offset.set(offset.x * EXPLODE_SPREAD_XZ, offset.y * EXPLODE_SPREAD_Y, offset.z * EXPLODE_SPREAD_XZ);
+    return { obj, offset };
+  });
+  explodeLayout = { key, entries };
+  return explodeLayout;
+}
+
+function applyExplodeOffsets() {
+  if (explodeK <= 0 || explodeSaved.length) return false;
+  for (const { obj, offset } of getExplodeLayout().entries) {
+    explodeSaved.push([obj, obj.position.clone()]);
+    obj.position.addScaledVector(offset, explodeK);
+    obj.updateMatrixWorld(true);
+  }
+  return true;
+}
+
+function restoreExplodeOffsets() {
+  for (const [target, position] of explodeSaved) {
+    target.position.copy(position);
+    target.updateMatrixWorld(true);
+  }
+  explodeSaved.length = 0;
+}
+
+function setupExplodeView() {
+  document.getElementById('explodeBtn')?.addEventListener('click', () => setExploded(!explodeTarget));
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'e' && event.key !== 'E') return;
+    if (event.target.matches('input, textarea, [contenteditable]')) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    setExploded(!explodeTarget);
+    event.preventDefault();
+  });
+}
+
 // BVH construction (computeBoundsTree) is CPU-heavy and only needed for the
 // hover / paint-bucket raycasts, which never happen in the first moments after
 // a load. Building it inline in the load callback stalled the main thread hard
@@ -6910,8 +7013,11 @@ function animate() {
   controls.update();
   updatePartPops(performance.now());
   updateGhostAnimation(performance.now());
+  updateExplode(performance.now());
   paintHoverFlush?.();
+  const exploded = applyExplodeOffsets();
   renderer.render(scene, camera);
+  if (exploded) restoreExplodeOffsets();
 }
 
 // Swaps the active camera between perspective and orthographic, matching

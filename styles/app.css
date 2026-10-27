@@ -1648,6 +1648,9 @@ html.touch-capable .topbar-menu-label{
   z-index:var(--z-toolbar);
 }
 .view-controls .btn--lg{ width:var(--topbar-h); height:var(--topbar-h); }
+/* Exploded view on (#explodeBtn). */
+.view-controls .btn.active{ background:var(--brand); color:#fff; }
+.view-controls .btn.active:hover{ background:var(--brand-ink); }
 @media (pointer: coarse) and (max-width: 1024px){
   .view-controls{ display:none; }
 }
