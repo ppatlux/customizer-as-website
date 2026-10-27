@@ -87,7 +87,12 @@ evaluator.useGroups = false;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xecf4f9);
 
-const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+// Orthographic, like the customizer's default view. The old 75° perspective
+// camera this page used stretched the part like a wide-angle lens.
+// orthoHalfHeight = world units visible above/below the centre at zoom 1;
+// fitCameraToObject sets it so the part fills the free area.
+let orthoHalfHeight = 60;
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
 camera.position.set(-90, 100, 120);
 camera.lookAt(0, 0, 0);
 
@@ -148,6 +153,9 @@ const ground = new THREE.Mesh(
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
+// Hidden: the part floats on its own here, so its ground shadow read as a
+// stray grey square hanging below it.
+ground.visible = false;
 scene.add(ground);
 
 const previewMaterial = new THREE.MeshStandardMaterial({
@@ -373,8 +381,7 @@ function setupResize() {
   const resize = () => {
     const width = viewer.clientWidth || window.innerWidth;
     const height = viewer.clientHeight || window.innerHeight;
-    camera.aspect = width / Math.max(height, 1);
-    camera.updateProjectionMatrix();
+    updateOrthoFrustum(width, height);
     renderer.setSize(width, height, false);
     viewFreeHRef = 0; // re-measure for the new size
     updateViewOffset();
@@ -402,26 +409,36 @@ function setupTopbarDownload() {
 // leave free: left of the dock on desktop, above the sheet on phones.
 function setupViewControls() {
   const zoom = (factor) => {
-    const offset = camera.position.clone().sub(controls.target);
-    const distance = THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance);
-    tweenCamera(controls.target.clone().addScaledVector(offset.normalize(), distance), controls.target.clone());
+    tweenCamera(camera.position.clone(), controls.target.clone(),
+      THREE.MathUtils.clamp(camera.zoom * factor, controls.minZoom, controls.maxZoom));
   };
-  document.getElementById('zoomInBtn')?.addEventListener('click', () => zoom(1 / 1.3));
-  document.getElementById('zoomOutBtn')?.addEventListener('click', () => zoom(1.3));
+  document.getElementById('zoomInBtn')?.addEventListener('click', () => zoom(1.3));
+  document.getElementById('zoomOutBtn')?.addEventListener('click', () => zoom(1 / 1.3));
   document.getElementById('recenterBtn')?.addEventListener('click', () => {
     if (!lastFitBox) return;
-    const from = { position: camera.position.clone(), target: controls.target.clone() };
+    const from = { position: camera.position.clone(), target: controls.target.clone(), zoom: camera.zoom };
     fitCameraToObject(lastFitBox);
     const to = { position: camera.position.clone(), target: controls.target.clone() };
     camera.position.copy(from.position);
     controls.target.copy(from.target);
-    tweenCamera(to.position, to.target);
+    camera.zoom = from.zoom;
+    camera.updateProjectionMatrix();
+    tweenCamera(to.position, to.target, 1);
   });
 }
 
-function tweenCamera(position, target) {
+function updateOrthoFrustum(width = viewer.clientWidth || window.innerWidth, height = viewer.clientHeight || window.innerHeight) {
+  const aspect = width / Math.max(height, 1);
+  camera.left = -orthoHalfHeight * aspect;
+  camera.right = orthoHalfHeight * aspect;
+  camera.top = orthoHalfHeight;
+  camera.bottom = -orthoHalfHeight;
+  camera.updateProjectionMatrix();
+}
+
+function tweenCamera(position, target, zoom = camera.zoom) {
   cancelAnimationFrame(cameraTween);
-  const from = { position: camera.position.clone(), target: controls.target.clone() };
+  const from = { position: camera.position.clone(), target: controls.target.clone(), zoom: camera.zoom };
   const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 260;
   const start = performance.now();
   const step = (now) => {
@@ -429,6 +446,8 @@ function tweenCamera(position, target) {
     const k = 1 - Math.pow(1 - t, 3);
     camera.position.lerpVectors(from.position, position, k);
     controls.target.lerpVectors(from.target, target, k);
+    camera.zoom = from.zoom + (zoom - from.zoom) * k;
+    camera.updateProjectionMatrix();
     controls.update();
     render();
     if (t < 1) cameraTween = requestAnimationFrame(step);
@@ -451,7 +470,7 @@ function getFreeViewRect() {
   } else if (panelEssential?.offsetParent && W > 760) {
     right = panelEssential.getBoundingClientRect().left - origin.left;
   }
-  return { W, H, cx: (left + right) / 2, cy: (top + bottom) / 2, freeH: bottom - top };
+  return { W, H, cx: (left + right) / 2, cy: (top + bottom) / 2, freeW: right - left, freeH: bottom - top };
 }
 
 function updateViewOffset() {
@@ -570,7 +589,9 @@ function mountModel(sceneObject) {
   surfaceY = baseBox.max.y;
   ground.position.y = baseBox.min.y - 0.01;
 
-  fitCameraToObject(baseBox);
+  // Framed on what's actually drawn: some model files carry stray vertices
+  // no triangle uses, which pad baseBox well past the visible part.
+  fitCameraToObject(getDrawnBox(modelRoot));
   render();
   updateActionButtonsState();
 }
@@ -1338,22 +1359,43 @@ function collectMergedGeometry(root) {
 // the customizer and the engraving tool keeps the same sense of orientation.
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(-90, 100, 120).normalize();
 
+// World-space box of the triangles actually drawn (indexed vertices only).
+function getDrawnBox(object) {
+  const box = new THREE.Box3();
+  const point = new THREE.Vector3();
+  object.updateMatrixWorld(true);
+  object.traverse((child) => {
+    if (!child.isMesh || !child.geometry?.attributes?.position) return;
+    const position = child.geometry.attributes.position;
+    const index = child.geometry.index;
+    const count = index ? index.count : position.count;
+    for (let i = 0; i < count; i++) {
+      point.fromBufferAttribute(position, index ? index.getX(i) : i).applyMatrix4(child.matrixWorld);
+      box.expandByPoint(point);
+    }
+  });
+  return box.isEmpty() ? new THREE.Box3().setFromObject(object) : box;
+}
+
 function fitCameraToObject(box) {
   lastFitBox = box.clone();
   const size = new THREE.Vector3();
   box.getSize(size);
 
-  // Look at the part's mount point (same X/Z/Y anchor the main customizer
-  // uses for every part), not the mesh's own bounding-box center -- some
-  // top variants aren't perfectly centered on their own origin, which
-  // previously made the part appear to sit in a different spot on screen
-  // than it does in the main customizer.
-  const target = new THREE.Vector3(0, MODEL_Y_OFFSET, 0);
-  const maxSize = Math.max(size.x, size.y, size.z);
-  const distance = maxSize * 2.2;
+  // Orbit around the part's own centre, so it sits in the middle of the free
+  // area, and size the view so it fills about 70% of that area's shorter
+  // side (the bounding sphere keeps it inside while orbiting).
+  const target = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(1, size.length() / 2);
+  const { H, freeW, freeH } = getFreeViewRect();
+  const fitPx = Math.max(120, Math.min(freeW || H, viewFreeHRef || freeH || H)) * 0.7;
+  orthoHalfHeight = (radius * (H || 1)) / fitPx;
 
-  camera.position.copy(DEFAULT_VIEW_DIRECTION).multiplyScalar(distance).add(target);
+  camera.position.copy(DEFAULT_VIEW_DIRECTION).multiplyScalar(radius * 6).add(target);
   controls.target.copy(target);
+  camera.zoom = 1;
+  updateOrthoFrustum();
+  updateViewOffset();
   controls.update();
 }
 
