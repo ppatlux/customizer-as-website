@@ -3775,9 +3775,11 @@ async function fetchFirstAvailable(urls) {
 // One part -> a 3MF with each of its bodies as a separate object, coloured
 // with the part's colours as filament slots.
 async function sendPartToPrusa(part, target) {
-  const filename = `${getPartFileBase(part)}.3mf`;
+  const name = getPartPrintName(part);
+  const filename = `${toFileName(name, getPartFileBase(part))}.3mf`;
   await sendToPrusa({
     target,
+    projectName: name,
     // Exact variant (first candidate, mix extras included) + its colours, so a
     // repeat click within the link lifetime reuses the earlier upload.
     cacheKey: `part:${getPrintKey(part)}`,
@@ -3785,7 +3787,7 @@ async function sendPartToPrusa(part, target) {
       const { buildPrint3mf } = await import('./print-build.js');
       const source = await getPartPrintSource(part);
       const { blob, slots, fitsBed } = await buildPrint3mf([{ name: getPartDisplayName(part), ...source }],
-        { title: getPartDisplayName(part), colorNames: COLOR_NAMES });
+        { title: name, colorNames: COLOR_NAMES });
       return { file: new File([blob], filename, { type: 'model/3mf' }), slots, fitsBed };
     },
     onSuccess: (label) => toast(`${getPartDisplayName(part)} ready for ${label}.`, 'ok', 1600),
@@ -3794,6 +3796,26 @@ async function sendPartToPrusa(part, target) {
       toast(error?.message || `Could not send ${getPartDisplayName(part)} to the slicer.`, 'err', 3200);
     }
   });
+}
+
+// The name a print shows up under in EasyPrint / the slicer. A whole build:
+// the saved build's name, else the mix it came from, else "HP Robot". One
+// part: the part and its variant, e.g. "Hat – Viking".
+function getBuildPrintName() {
+  return activeSavedRecord?.name?.trim()
+    || (activePresetKey && presets[activePresetKey]?.label ? `HP Robot – ${presets[activePresetKey].label}` : 'HP Robot');
+}
+
+function getPartPrintName(part) {
+  const url = modelSets[part]?.[currentIdx[part]];
+  const variant = url ? prettyVariantLabel(part, url.split('/').pop()) : '';
+  return variant ? `${getPartDisplayName(part)} – ${variant}` : getPartDisplayName(part);
+}
+
+// A name safe to use as a file name ("Hat – Viking" -> "Hat - Viking").
+function toFileName(name, fallback) {
+  const safe = name.replace(/[–—]/g, '-').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '').replace(/\s+/g, ' ').trim();
+  return safe || fallback;
 }
 
 async function firstExistingUrl(urls) {
@@ -3879,9 +3901,11 @@ async function printWholeBuild() {
   }
 
   const slicer = getEffectiveSlicer();
+  const name = getBuildPrintName();
   await sendToPrusa({
     target: slicer,
     title: `Sending build to ${SLICER_LABELS[slicer]}`,
+    projectName: name,
     // Same pieces in the same variants and colours -> same print file.
     cacheKey: `build:${pieces.map(getPrintKey).join('|')}`,
     getFile: async () => {
@@ -3891,10 +3915,10 @@ async function printWholeBuild() {
         ...(await getPartPrintSource(key))
       })));
       const { blob, slots, fitsBed } = await buildPrint3mf(named, {
-        title: activePresetKey && presets[activePresetKey]?.label ? `HP Robot – ${presets[activePresetKey].label}` : 'HP Robot',
+        title: name,
         colorNames: COLOR_NAMES
       });
-      return { file: new File([blob], 'hp-robot-build.3mf', { type: 'model/3mf' }), slots, fitsBed };
+      return { file: new File([blob], `${toFileName(name, 'hp-robot-build')}.3mf`, { type: 'model/3mf' }), slots, fitsBed };
     },
     onSuccess: (label) => toast(`Build (${pieces.length} parts) ready for ${label}.`, 'ok', 1800),
     onError: (error) => {

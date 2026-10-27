@@ -26,7 +26,8 @@ const CACHE_MS = 25 * 60 * 1000;
 
 const uploadCache = new Map();
 
-export function uploadToPrusa(file, { signal, onProgress = () => {}, sourceUrl } = {}) {
+// `sourceName` is what Printables/EasyPrint shows as the project name.
+export function uploadToPrusa(file, { signal, onProgress = () => {}, sourceUrl, sourceName } = {}) {
   if (file.size > MAX_BYTES) {
     return Promise.reject(new Error('Prusa accepts models up to 100 MB. Download the STL instead.'));
   }
@@ -72,7 +73,7 @@ export function uploadToPrusa(file, { signal, onProgress = () => {}, sourceUrl }
 
     const form = new FormData();
     form.append('file', file, file.name);
-    form.append('file_source_name', SOURCE_NAME);
+    form.append('file_source_name', sourceName || SOURCE_NAME);
     if (sourceUrl) form.append('file_source_url', sourceUrl);
     xhr.send(form);
   });
@@ -101,7 +102,8 @@ const TARGETS = {
 
 // Drives #prusa-overlay (index.html) through upload → handoff. `target` is
 // 'prusa' | 'easyprint' | 'orca'; `title` overrides the dialog heading (e.g.
-// a whole build vs one part). `getFile` resolves to a File, or to
+// a whole build vs one part); `projectName` is the name EasyPrint shows for
+// the upload. `getFile` resolves to a File, or to
 // { file, slots, fitsBed } to list the filament slots (colour per slot) in
 // the dialog and warn when the pieces don't fit one 25 x 21 cm bed.
 // `getFile` is
@@ -111,7 +113,7 @@ const TARGETS = {
 // via `onError`, never thrown.
 let activeController = null;
 
-export async function sendToPrusa({ target, title: heading, cacheKey, getFile, onSuccess = () => {}, onError = () => {} }) {
+export async function sendToPrusa({ target, title: heading, projectName, cacheKey, getFile, onSuccess = () => {}, onError = () => {} }) {
   if (activeController) return;
 
   const overlay = document.getElementById('prusa-overlay');
@@ -158,6 +160,7 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
   overlay.focus();
 
   try {
+    if (cacheKey && projectName) cacheKey += `#${projectName}`;
     const cached = cacheKey && getCachedUpload(cacheKey);
     let json = cached?.json;
     let slots = cached?.slots;
@@ -171,6 +174,7 @@ export async function sendToPrusa({ target, title: heading, cacheKey, getFile, o
       json = await uploadToPrusa(file, {
         signal: controller.signal,
         sourceUrl: /^https?:$/.test(location.protocol) ? location.origin + location.pathname : undefined,
+        sourceName: projectName,
         onProgress: (percent) => {
           progress.value = percent;
           statusEl.textContent = percent >= 100
