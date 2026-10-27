@@ -2988,8 +2988,11 @@ body.hp-lock-scroll{
     display:flex;
     flex-direction:column;
     position:absolute;
-    left:0;
-    right:0;
+    /* Inset from the sides by the same margin as the top bar's buttons, so the
+       floating card lines up with them (edge to edge it looked unbalanced
+       against the gap below it). */
+    left:calc(var(--edge) + env(safe-area-inset-left, 0px));
+    right:calc(var(--edge) + env(safe-area-inset-right, 0px));
     /* Floats clear of the true bottom edge instead of sitting flush against
        it — flush left its content (and the handle above it) crowded right up
        against the screen edge / the device's home-indicator gesture area,
