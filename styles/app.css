@@ -181,6 +181,11 @@ html.vt-fallback.vt-leaving body{
 .btn:active{ transform:translateY(0); background:var(--glass-press); }
 .btn--lg{ width:var(--control-h); height:var(--control-h); }
 .btn--sm{ width:32px; height:32px; }
+/* Undo / redo with nothing to step to. Menu items dim their children: the
+   menu's drop-in animation (fill-mode both) owns the item's own opacity. */
+.btn:disabled{ opacity:.4; cursor:default; pointer-events:none; }
+.topbar-menu-item:disabled{ cursor:default; pointer-events:none; }
+.topbar-menu-item:disabled > *{ opacity:.4; }
 .btn--ghost{ background:transparent; }
 .btn--ghost:hover{ background:var(--glass-hover); }
 .btn--ghost:active{ background:var(--glass-press); }
