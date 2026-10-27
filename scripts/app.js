@@ -530,6 +530,12 @@ let buildsRenderToken = 0;
 // unsaved-changes dot (see syncTopbar), which re-check on every edit.
 let activeSavedRecord = null;
 let topbarSyncQueued = false;
+// Undo / redo (see the "Undo / redo" section). Up here because bootstrap()
+// already saves state, which schedules a history commit.
+const undoStack = [];
+const redoStack = [];
+let historyCurrent = null;
+let historyTimer = 0;
 // Bottom-left view controls (see setupViewControls).
 let viewTween = 0;
 let homeView = null;
@@ -788,6 +794,7 @@ function bootstrap() {
   setupMoreMenu();
   setupSettingsMenu();
   setupSavedBuilds();
+  setupUndoRedo();
   setupViewControls();
   setupPaletteWiring();
   setupColorPickerDrag();
@@ -845,6 +852,7 @@ function bootstrap() {
   animate();
   maybeAutostartTour();
   saveStateToLocal();
+  initHistory();
 }
 
 // Re-fits whichever camera (perspective or orthographic) is currently active
@@ -3705,6 +3713,7 @@ function saveStateToLocal() {
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
   } catch {}
   scheduleTopbarSync();
+  scheduleHistoryCommit();
 }
 
 function applySavedState(saved) {
@@ -3994,6 +4003,97 @@ function escapeHtml(text) {
 
 function sameBuildState(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// ---- Undo / redo ----
+// Every edit ends in saveStateToLocal(), which schedules a commit here. The
+// commit waits until edits pause for HISTORY_SETTLE_MS, so a colour-picker
+// drag or a quick burst of clicks becomes one step rather than dozens.
+// historyCurrent is the build as of the last commit; undoing moves it onto
+// redoStack and puts the previous one on screen through applyBuildState(),
+// the same path a saved build loads through.
+const HISTORY_LIMIT = 50;
+const HISTORY_SETTLE_MS = 400;
+
+function historySnapshot() {
+  return { state: getShareState(), preset: activePresetKey };
+}
+
+// Called once bootstrap() has the first build on screen.
+function initHistory() {
+  historyCurrent = historySnapshot();
+  syncHistoryButtons();
+}
+
+function scheduleHistoryCommit() {
+  if (!historyCurrent) return; // still starting up
+  clearTimeout(historyTimer);
+  historyTimer = setTimeout(commitHistory, HISTORY_SETTLE_MS);
+}
+
+function commitHistory() {
+  clearTimeout(historyTimer);
+  historyTimer = 0;
+  if (!historyCurrent) return;
+  const now = historySnapshot();
+  if (sameBuildState(now.state, historyCurrent.state)) {
+    historyCurrent.preset = now.preset;
+    return;
+  }
+  undoStack.push(historyCurrent);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+  historyCurrent = now;
+  syncHistoryButtons();
+}
+
+function stepHistory(from, to) {
+  commitHistory(); // an edit still settling becomes its own step first
+  if (!from.length) return;
+  const target = from.pop();
+  to.push(historyCurrent);
+  try {
+    applyBuildState(target.state, target.preset, { keepPaintMode: true });
+  } catch (error) {
+    console.error('Undo/redo failed', error);
+  }
+  // Paint mode can't stay on a part that the step just hid.
+  if (bucketModePart && bucketModePart !== GLOBAL_PAINT_KEY && !partVis[bucketModePart]) setBucketMode(null);
+  // Re-read rather than reuse `target`: applyBuildState may normalise the
+  // state (e.g. the hat/top rule), and the pending commit it scheduled must
+  // then find nothing new — otherwise it would wipe the redo stack.
+  clearTimeout(historyTimer);
+  historyTimer = 0;
+  historyCurrent = historySnapshot();
+  syncHistoryButtons();
+}
+
+function undo() { stepHistory(undoStack, redoStack); }
+function redo() { stepHistory(redoStack, undoStack); }
+
+function syncHistoryButtons() {
+  for (const [id, stack] of [['undoBtn', undoStack], ['redoBtn', redoStack], ['moreUndoBtn', undoStack], ['moreRedoBtn', redoStack]]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !stack.length;
+  }
+}
+
+function setupUndoRedo() {
+  document.getElementById('undoBtn')?.addEventListener('click', undo);
+  document.getElementById('redoBtn')?.addEventListener('click', redo);
+  document.getElementById('moreUndoBtn')?.addEventListener('click', undo);
+  document.getElementById('moreRedoBtn')?.addEventListener('click', redo);
+  // Ctrl/Cmd+Z undo; Ctrl/Cmd+Shift+Z or Ctrl+Y redo. Text fields keep
+  // their own undo.
+  document.addEventListener('keydown', (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    if (event.target.matches?.('input, textarea, [contenteditable]')) return;
+    const key = event.key.toLowerCase();
+    if (key === 'z' && !event.shiftKey) undo();
+    else if ((key === 'z' && event.shiftKey) || (key === 'y' && !event.shiftKey)) redo();
+    else return;
+    event.preventDefault();
+  });
 }
 
 // Feedback for actions taken in the panel: inline while it's open (toasts
@@ -4343,9 +4443,11 @@ function loadSavedBuild(record) {
 // paint slate (so the saved paint replaces, rather than layers over, what's
 // on screen), apply the data, then reload only the parts whose variant
 // changed and re-show/hide the rest — same moves as applyPreset.
-function applyBuildState(state, presetKey) {
+// keepPaintMode (undo/redo): stay in paint mode and leave the mobile sheet
+// where it is, so stepping back through edits doesn't interrupt painting.
+function applyBuildState(state, presetKey, { keepPaintMode = false } = {}) {
   if (!state || typeof state !== 'object') throw new Error('Saved build has no state');
-  setBucketMode(null);
+  if (!keepPaintMode) setBucketMode(null);
   if (visibilityEditMode) exitVisibilityEditMode();
 
   isApplyingPreset = true;
@@ -4409,7 +4511,7 @@ function applyBuildState(state, presetKey) {
     }
     syncShowcaseMode();
     saveStateToLocal();
-    if (mobileLayoutActive) setMobileSheetState('peek');
+    if (mobileLayoutActive && !keepPaintMode) setMobileSheetState('peek');
   } finally {
     isApplyingPreset = false;
   }

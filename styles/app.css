@@ -181,6 +181,9 @@ html.vt-fallback.vt-leaving body{
 .btn:active{ transform:translateY(0); background:var(--glass-press); }
 .btn--lg{ width:var(--control-h); height:var(--control-h); }
 .btn--sm{ width:32px; height:32px; }
+/* Undo / redo with nothing to step to. */
+.btn:disabled,
+.topbar-menu-item:disabled{ opacity:.4; cursor:default; pointer-events:none; }
 .btn--ghost{ background:transparent; }
 .btn--ghost:hover{ background:var(--glass-hover); }
 .btn--ghost:active{ background:var(--glass-press); }

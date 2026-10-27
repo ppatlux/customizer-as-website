@@ -411,6 +411,13 @@
             <span class="material-icons">save</span>
             <span class="topbar-dot" aria-hidden="true"></span>
           </button>
+          <!-- Undo / redo (setupUndoRedo). Phones get them in the "⋮" menu. -->
+          <button id="undoBtn" class="btn btn--lg topbar-wide" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+            <span class="material-icons">undo</span>
+          </button>
+          <button id="redoBtn" class="btn btn--lg topbar-wide" type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+            <span class="material-icons">redo</span>
+          </button>
           <div class="topbar-heading">
             <button id="topbar-title" class="topbar-title" type="button" title="My builds">Untitled robot</button>
             <span class="combo-chip" id="comboChip">Combos: —</span>
@@ -451,6 +458,14 @@
               <button id="factoryResetBtn" class="topbar-menu-item topbar-menu-item--primary" type="button" role="menuitem">
                 <span class="topbar-menu-label">New build</span>
                 <span class="topbar-menu-icon"><span class="material-icons">add</span></span>
+              </button>
+              <button id="moreUndoBtn" class="topbar-menu-item menu-compact" type="button" role="menuitem" disabled>
+                <span class="topbar-menu-label">Undo</span>
+                <span class="topbar-menu-icon"><span class="material-icons">undo</span></span>
+              </button>
+              <button id="moreRedoBtn" class="topbar-menu-item menu-compact" type="button" role="menuitem" disabled>
+                <span class="topbar-menu-label">Redo</span>
+                <span class="topbar-menu-icon"><span class="material-icons">redo</span></span>
               </button>
               <button class="topbar-menu-item menu-compact" type="button" role="menuitem" data-forward="randomizeBtn">
                 <span class="topbar-menu-label">Randomize</span>
