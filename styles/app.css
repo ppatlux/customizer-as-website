@@ -2959,7 +2959,9 @@ body.hp-lock-scroll{
    laptops matching pointer:coarse at full desktop width — see the
    .left-tools rule above for the full explanation. */
 @media (pointer: coarse) and (max-width: 1024px){
-  :root{ --control-h: 48px; --sheet-peek-h: 206px; }
+  /* Peek = 24px handle + 48px tab bar + one 132px mix card with its padding;
+     at 206 the card's top and bottom edges were clipped. */
+  :root{ --control-h: 48px; --sheet-peek-h: 220px; }
   .btn--sm{ width:40px; height:40px; }
   .toggle-btn{ padding:0 18px; }
   .color-swatch{ width:36px; height:36px; }
@@ -3057,6 +3059,22 @@ body.hp-lock-scroll{
   }
   .mobile-sheet[data-state="peek"] .mobile-sheet-list{
     overflow:hidden;
+    /* The next part's row peeks in below the first; fade it out so it reads
+       as "more below" rather than as something clipped. */
+    -webkit-mask-image:linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+    mask-image:linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+  }
+  /* Collapsed, the Parts page shows one part row; Top's Engrave button made
+     that row taller than the sheet and got cut off. It's back when expanded. */
+  .mobile-sheet[data-state="peek"] .mobile-sheet-list .top-engrave-btn{ display:none; }
+  /* The row's colour swatch: a 76x12 bar read as an empty text field (most
+     parts are light grey) — a round swatch reads as "colour". */
+  .mobile-sheet-list .color-pill--inline{
+    width:30px;
+    height:30px;
+    flex:none;
+    border:2px solid #FFFFFF !important; /* app.js sets a 1px border inline */
+    box-shadow:0 0 0 1px var(--stroke-strong), var(--shadow-xs);
   }
 
   /* .model-controls no longer carries any card chrome or position of its own
@@ -3167,7 +3185,7 @@ body.hp-lock-scroll{
     display:flex;
     align-items:center;
     gap:12px;
-    padding:6px 16px 12px;
+    padding:4px 16px 10px;
     scroll-padding-left:16px;
     overflow-x:auto;
     overflow-y:hidden;

@@ -288,6 +288,15 @@ renderer.shadowMap.enabled = true;
 // the parts change, not every time the camera orbits (see animate()).
 renderer.shadowMap.autoUpdate = false;
 
+// Phone layout state (setupMobileSheet / "Phone framing"). Declared this early
+// because the initial camera setup just below already calls
+// updateCameraProjection(), which reads it.
+let mobileLayoutActive = false;
+let mobileAutoFit = true; // until the user moves the camera themselves
+let mobileFitTimer = 0;
+let mobileFitFreeH = 0;   // free-area height the current fit was made for
+let mobileSheetTrack = 0;
+
 // ---- Render on demand ----
 // animate() only draws a frame when something on screen may have changed,
 // instead of 60 times a second while the robot just sits there (that kept
@@ -335,6 +344,7 @@ for (const method of ['add', 'remove']) {
   loader.load = (url, onLoad, ...rest) => originalLoad(url, (gltf) => {
     requestRender(INPUT_RENDER_MS);
     onLoad?.(gltf);
+    scheduleMobileFit();
   }, ...rest);
 }
 {
@@ -362,6 +372,7 @@ camera.lookAt(9, 23, -3);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.addEventListener('change', () => requestRender(0, { shadows: false }));
+controls.addEventListener('start', () => { mobileAutoFit = false; });
 controls.target.set(9, 23, -3);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
@@ -623,7 +634,6 @@ function runAfterFirstBuild(fn) {
   if (firstBuildDone) { setTimeout(fn, 0); return; }
   afterFirstBuildQueue.push(fn);
 }
-let mobileLayoutActive = false;
 let mobileSheetEl = null;
 let mobileSheetHandleEl = null;
 let renderingPaused = false;
@@ -947,6 +957,7 @@ function updateCameraProjection() {
     camera.bottom = -orthoViewSize;
   }
   camera.updateProjectionMatrix();
+  updateMobileViewOffset();
 }
 
 function setupResize() {
@@ -1218,12 +1229,127 @@ function setMobileSheetState(state, focusPart) {
     const listRect = listHost.getBoundingClientRect();
     listHost.scrollTop += rowRect.top - listRect.top;
     requestAnimationFrame(() => { mobileSheetEl.style.transition = ''; });
+    trackSheetForViewOffset();
     return;
   }
 
   mobileSheetEl.dataset.state = state;
   mobileSheetHandleEl?.setAttribute('aria-expanded', String(state === 'expanded'));
   if (listHost) listHost.scrollTop = 0;
+  trackSheetForViewOffset();
+}
+
+// ---- Phone framing ----
+// On phones the robot is drawn full-screen, but the top bar + tool pills
+// cover the top and the sheet covers the bottom. The camera's view offset
+// shifts (and, while the sheet is expanded, shrinks) the picture so the robot
+// sits in the free area between them; hit-testing goes through the same
+// projection, so taps still land on what's shown. Until the user moves the
+// camera themselves, the robot is also re-fitted to that area after parts
+// load, so a tall mix (Walk & Roll) fits as well as a short one.
+const MOBILE_FIT_FILL = 0.82;
+
+function getMobileFreeRect() {
+  const W = container.clientWidth || window.innerWidth;
+  const H = container.clientHeight || window.innerHeight;
+  const origin = container.getBoundingClientRect();
+  let top = 0;
+  for (const id of ['topbar', 'mobile-tools']) {
+    const el = document.getElementById(id);
+    if (el?.offsetParent) top = Math.max(top, el.getBoundingClientRect().bottom - origin.top);
+  }
+  let bottom = H;
+  if (mobileSheetEl?.offsetParent) bottom = Math.min(bottom, mobileSheetEl.getBoundingClientRect().top - origin.top);
+  top += 8;
+  bottom -= 8;
+  return { x: 12, y: top, w: W - 24, h: Math.max(80, bottom - top), W, H };
+}
+
+function updateMobileViewOffset() {
+  if (!mobileLayoutActive) {
+    if (camera.view?.enabled) camera.clearViewOffset();
+    return;
+  }
+  const free = getMobileFreeRect();
+  if (!free.W || !free.H) return;
+  // k = canvas px per "unshifted" px; below 1 it zooms out to fit the
+  // smaller area left while the sheet is expanded.
+  const k = mobileFitFreeH ? Math.min(1, free.h / mobileFitFreeH) : 1;
+  const cx = free.x + free.w / 2;
+  const cy = free.y + free.h / 2;
+  camera.setViewOffset(free.W, free.H, free.W / 2 - cx / k, free.H / 2 - cy / k, free.W / k, free.H / k);
+  requestRender();
+}
+
+// The sheet animates its height; keep the picture in step with it.
+function trackSheetForViewOffset() {
+  if (!mobileLayoutActive) return;
+  cancelAnimationFrame(mobileSheetTrack);
+  const end = performance.now() + 450;
+  const step = () => {
+    updateMobileViewOffset();
+    if (performance.now() < end) mobileSheetTrack = requestAnimationFrame(step);
+  };
+  step();
+}
+
+function scheduleMobileFit() {
+  if (!mobileLayoutActive || !mobileAutoFit) return;
+  clearTimeout(mobileFitTimer);
+  // After the last load lands and its pop animation has settled.
+  mobileFitTimer = setTimeout(fitRobotToMobileView, 350);
+}
+
+// Centres the visible robot on the camera target and sizes it to fill
+// MOBILE_FIT_FILL of the free area left with the sheet collapsed (the
+// expanded sheet is handled by updateMobileViewOffset's k).
+function fitRobotToMobileView() {
+  if (!mobileLayoutActive || !mobileAutoFit) return;
+  const box = new THREE.Box3();
+  for (const model of Object.values(loadedMods)) {
+    if (model?.parent && model.visible) box.expandByObject(model);
+  }
+  if (box.isEmpty()) return;
+
+  // The robot's extents as the camera sees them, looking from where it is now.
+  const center = box.getCenter(new THREE.Vector3());
+  const direction = camera.position.clone().sub(controls.target).normalize();
+  const probe = camera.clone();
+  probe.position.copy(center).addScaledVector(direction, 200);
+  probe.lookAt(center);
+  probe.updateMatrixWorld(true);
+  const view = new THREE.Box3();
+  const corner = new THREE.Vector3();
+  for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+    view.expandByPoint(corner.applyMatrix4(probe.matrixWorldInverse));
+  }
+  const width = Math.max(1, view.max.x - view.min.x);
+  const height = Math.max(1, view.max.y - view.min.y);
+  // Aim at the middle of what's seen (at the robot's depth), not at the 3D
+  // box centre, so the silhouette itself ends up centred.
+  const centerDepth = center.clone().applyMatrix4(probe.matrixWorldInverse).z;
+  const target = new THREE.Vector3((view.min.x + view.max.x) / 2, (view.min.y + view.max.y) / 2, centerDepth)
+    .applyMatrix4(probe.matrixWorld);
+
+  const free = getMobileFreeRect();
+  const freeH = mobileSheetEl?.dataset.state === 'expanded' && mobileFitFreeH ? mobileFitFreeH : free.h;
+  let distance = camera.position.distanceTo(controls.target);
+  let zoom;
+  if (camera.isOrthographicCamera) {
+    const unitsPerPx = (2 * orthoViewSize) / free.H; // at zoom 1
+    zoom = Math.min((MOBILE_FIT_FILL * freeH * unitsPerPx) / height, (MOBILE_FIT_FILL * free.w * unitsPerPx) / width);
+    zoom = THREE.MathUtils.clamp(zoom, controls.minZoom, controls.maxZoom);
+  } else {
+    const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+    const fitH = (height * free.H) / (2 * tanHalf * MOBILE_FIT_FILL * freeH);
+    const fitW = (width * free.H) / (2 * tanHalf * MOBILE_FIT_FILL * free.w);
+    distance = THREE.MathUtils.clamp(Math.max(fitH, fitW) + (view.max.z - view.min.z) / 2, controls.minDistance, controls.maxDistance);
+  }
+  mobileFitFreeH = freeH;
+  homeView = { target: target.clone(), direction: direction.clone(), distance, zoom };
+  tweenView({ position: target.clone().addScaledVector(direction, distance), target, zoom });
+  updateMobileViewOffset();
 }
 
 function toggleMobileSheet() {
@@ -1429,7 +1555,7 @@ function zoomView(factor) {
 function recenterView() {
   if (!homeView) return;
   const position = homeView.target.clone().addScaledVector(homeView.direction, homeView.distance);
-  tweenView({ position, target: homeView.target.clone(), zoom: camera.isOrthographicCamera ? 1 : undefined });
+  tweenView({ position, target: homeView.target.clone(), zoom: camera.isOrthographicCamera ? (homeView.zoom ?? 1) : undefined });
 }
 
 function tweenView({ position, target, zoom }) {
