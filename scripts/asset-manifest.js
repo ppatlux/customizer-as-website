@@ -96,13 +96,17 @@ export const ASSET_MANIFEST = {
     { file: 'Arm-straight.glb', folder: 'arms', source: 'https://hprobots.com/wp-content/uploads/2025/08/Arm-straight.glb' }
   ],
   bumper: [
-    { file: 'bumper_oriented.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/bumper_oriented.glb' },
-    { file: 'Bumper_motor_bulldozer.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_rbulldozer.glb' },
     { file: 'Bumper_Race.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_Race.glb' },
     { file: 'Bumper_football.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_football.glb' },
+    { file: 'Bumper_Canholder.glb', folder: 'bumper', source: '' },
+    { file: 'Bumper_Bulldozer.glb', folder: 'bumper', source: '' },
+    { file: 'bumper_oriented.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/bumper_oriented.glb' },
+    { file: 'Bumper_Plower.glb', folder: 'bumper', source: '' },
+    { file: 'Bumper_Forklift.glb', folder: 'bumper', source: '' },
+    { file: 'Bumper_Roller.glb', folder: 'bumper', source: '' },
+    { file: 'Bumper_motor_bulldozer.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_Bulldozer.glb' },
     { file: 'Bumper_motor_collect.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_collect.glb' },
     { file: 'Bumper_motor_ramp.glb', folder: 'bumper', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bumper_motor_ramp.glb' },
-    { file: 'Bumper_Roller.glb', folder: 'bumper', source: '' },
   ],
   bottom: [
     { file: 'Bottom-starter.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/08/Bottom-starter.glb' },
@@ -117,6 +121,7 @@ export const ASSET_MANIFEST = {
     { file: 'Bottom_Biped.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Boat.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Race.glb', folder: 'bottom', source: '' },
+    { file: 'Bottom_Locomotive.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_template.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bottom_template.glb' }
   ],
   //motion
