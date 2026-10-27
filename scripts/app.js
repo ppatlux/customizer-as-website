@@ -278,9 +278,72 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 // Cap at 2: above that the fragment count (this scene is fill-rate bound — big
 // translucent parts, a full-frame shadow pass) climbs faster than the visible
 // sharpness gain, and some of the heavier GLBs already push frame time.
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+// Phones and tablets cap at 1.5: their GPUs are the weakest and their screens
+// the densest, and the difference is hard to see at arm's length.
+const MAX_PIXEL_RATIO = window.matchMedia?.('(pointer: coarse)').matches ? 1.5 : 2;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
 renderer.setClearColor(0xffffff, 0);
 renderer.shadowMap.enabled = true;
+// The key light never moves, so the shadow map only has to be redrawn when
+// the parts change, not every time the camera orbits (see animate()).
+renderer.shadowMap.autoUpdate = false;
+
+// ---- Render on demand ----
+// animate() only draws a frame when something on screen may have changed,
+// instead of 60 times a second while the robot just sits there (that kept
+// the GPU busy and drained laptop/phone batteries). What counts as a change:
+// - the camera moving (OrbitControls' change event, including damping and
+//   tweenView's eased moves);
+// - running animations (variant pops, hide/show ghosts);
+// - for a short while after any user input (clicks, keys, pointer moves,
+//   form changes) — that covers paint, hover highlights and every UI action
+//   without each one having to ask for a frame;
+// - objects being added to or removed from the scene (model loads);
+// - the canvas being resized.
+// requestRender(ms, { shadows }) asks for frames for the next `ms`; shadows
+// also redraws the shadow map. A slow heartbeat redraws everything once a
+// second as a safety net for anything that slips past these.
+const INPUT_RENDER_MS = 600;
+const RENDER_HEARTBEAT_MS = 1000;
+let renderUntil = 0;
+let shadowsUntil = 0;
+let lastFullRender = 0;
+function requestRender(ms = 0, { shadows = true } = {}) {
+  const until = performance.now() + ms;
+  renderUntil = Math.max(renderUntil, until);
+  if (shadows) shadowsUntil = Math.max(shadowsUntil, until);
+}
+for (const type of ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup', 'input', 'change']) {
+  window.addEventListener(type, () => requestRender(INPUT_RENDER_MS), { capture: true, passive: true });
+}
+// Moving the pointer or scrolling changes hover highlights, never what casts
+// a shadow — and an orbit drag is a stream of these, so skip the shadow pass.
+for (const type of ['pointermove', 'wheel']) {
+  window.addEventListener(type, () => requestRender(INPUT_RENDER_MS, { shadows: false }), { capture: true, passive: true });
+}
+for (const method of ['add', 'remove']) {
+  const original = scene[method].bind(scene);
+  scene[method] = (...objects) => {
+    requestRender(INPUT_RENDER_MS);
+    return original(...objects);
+  };
+}
+// Every model load (loadAsync goes through load too) — some land in groups
+// rather than straight in the scene (mix extras), so catch them here.
+{
+  const originalLoad = loader.load.bind(loader);
+  loader.load = (url, onLoad, ...rest) => originalLoad(url, (gltf) => {
+    requestRender(INPUT_RENDER_MS);
+    onLoad?.(gltf);
+  }, ...rest);
+}
+{
+  const originalSetSize = renderer.setSize.bind(renderer);
+  renderer.setSize = (...args) => {
+    originalSetSize(...args); // clears the canvas, so draw again right away
+    requestRender();
+  };
+}
 container.appendChild(renderer.domElement);
 
 const perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
@@ -298,6 +361,7 @@ camera.position.set(-91, 54, 111);
 camera.lookAt(9, 23, -3);
 
 const controls = new OrbitControls(camera, renderer.domElement);
+controls.addEventListener('change', () => requestRender(0, { shadows: false }));
 controls.target.set(9, 23, -3);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
@@ -348,10 +412,10 @@ toggleProjection(true);
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
 keyLight.position.set(100, 200, 100);
 keyLight.castShadow = true;
-// 1024 rather than 2048: shadowMap.autoUpdate is on, so the full shadow pass
-// (every high-poly caster, re-rendered) runs every frame even while just
-// orbiting. Halving the map's dimensions quarters that pass's cost for a
-// barely-perceptible softness change on a single soft ground shadow.
+// 1024 rather than 2048: the full shadow pass (every high-poly caster,
+// re-rendered) runs every frame while parts change or animate. Halving the
+// map's dimensions quarters that pass's cost for a barely-perceptible
+// softness change on a single soft ground shadow.
 keyLight.shadow.mapSize.set(1024, 1024);
 scene.add(keyLight);
 
@@ -5076,6 +5140,7 @@ let arBlobUrl = null;
 function closeArOverlay() {
   arOverlay.classList.remove('show');
   renderingPaused = false;
+  requestRender();
   if (arModelViewerEl) {
     arModelViewerEl.remove();
     arModelViewerEl = null;
@@ -5176,6 +5241,7 @@ async function openArModelFlow() {
     // actually redraw, looking exactly like "nothing happens" until a full
     // page reload.
     renderingPaused = false;
+    requestRender();
   }
 }
 
@@ -7009,10 +7075,20 @@ function startTour(force = false) {
 function animate() {
   requestAnimationFrame(animate);
   if (renderingPaused) return;
-  controls.update();
-  updatePartPops(performance.now());
-  updateGhostAnimation(performance.now());
+  const now = performance.now();
+  controls.update(); // fires 'change' (-> requestRender) while the camera moves
+  // Animations change what casts shadows; keep going one frame past their
+  // end so the final state (e.g. a part hidden as its ghost fades out) lands.
+  if (activePops.size || ghostAnimNodes.size) requestRender(50);
+  updatePartPops(now);
+  updateGhostAnimation(now);
   paintHoverFlush?.();
+  const heartbeat = now - lastFullRender >= RENDER_HEARTBEAT_MS;
+  if (now > renderUntil && !heartbeat) return;
+  if (now <= shadowsUntil || heartbeat) {
+    renderer.shadowMap.needsUpdate = true;
+    lastFullRender = now;
+  }
   renderer.render(scene, camera);
 }
 
