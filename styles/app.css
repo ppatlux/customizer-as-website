@@ -906,6 +906,30 @@ html.vt-fallback.vt-leaving body{
   border:1px solid var(--line);
   box-shadow:var(--shadow-xs);
 }
+/* Short screens (a laptop at 125-150% scaling is only ~600-700px tall): the
+   paint panel alone could fill the column, pushing "Part colors" and
+   "Hide / show parts" below .left-tools' max-height where overflow:hidden cut
+   them off. In the desktop column the panel is the part that gives way — it
+   shrinks and scrolls inside itself — while those two buttons always show.
+   (Scoped to .left-tools: on phones the panel lives in #mobile-tools.) */
+.left-tools .global-paint-panel{
+  flex-shrink:1;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+}
+/* Scroll rather than squash what's inside it. */
+.left-tools .global-paint-panel > *{ flex-shrink:0; }
+/* And a more compact panel there, so it rarely has to scroll at all. */
+@media (max-height: 760px){
+  .left-tools{ gap:8px; }
+  .left-tools .global-paint-panel{ gap:8px; padding:10px; }
+  .left-tools .global-paint-panel .color-picker-sv{ height:72px; }
+  /* Same instructions are in the Paint button's tooltip. */
+  .left-tools .global-paint-panel .bucket-hint{ display:none; }
+}
+
 /* Prominent pill — deliberately the loudest button in this column, since it's
    the primary way to change any color at all now. Paint mode keeps hprobots
    yellow (not the blue --brand) so the button, its P chip and the yellow
