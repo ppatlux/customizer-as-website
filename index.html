@@ -290,17 +290,14 @@
         <button type="button" class="model-hover-popup-icon model-hover-popup-touch" data-role="browse" title="All variants" aria-label="Show all variants">
           <span class="material-icons">grid_view</span>
         </button>
-        <!-- title/aria-label/icon are placeholders — syncPrintButtonBranding() in
-             app.js overwrites all three to match the preferred slicer on load. -->
+        <!-- title/aria-label/icon are placeholders — syncPrintButtonBranding() in app.js overwrites all three to match the preferred slicer on load. -->
         <button type="button" class="model-hover-popup-icon" data-role="print" title="Send to PrusaSlicer" aria-label="Send to PrusaSlicer">
           <span class="material-icons">print</span>
         </button>
         <button type="button" class="model-hover-popup-icon" data-role="download-part" title="Download STL" aria-label="Download STL">
           <span class="material-icons">file_download</span>
         </button>
-        <!-- Touch-only: with no pointer to move away, the popup has no natural
-             dismissal — a tap on empty canvas also closes it, but an explicit
-             control is clearer. -->
+        <!-- Touch-only: with no pointer to move away, the popup has no natural dismissal — a tap on empty canvas also closes it, but an explicitcontrol is clearer. -->
         <button type="button" class="model-hover-popup-icon model-hover-popup-touch" data-role="hover-popup-close" title="Close" aria-label="Close quick controls">
           <span class="material-icons">close</span>
         </button>
@@ -320,8 +317,7 @@
         <div id="brand-mark" aria-hidden="true">
           <img src="./assets/hp%20robots%20customizer.svg" alt="" id="brand-logo">
         </div>
-        <!-- Touch-only from here down (see app.css) -- desktop picks a mix from
-             the new #preset-panel carousel on the right instead. -->
+        <!-- Touch-only from here down (see app.css) -- desktop picks a mix from the new #preset-panel carousel on the right instead. -->
         <button id="preset-toggle" class="preset-toggle" aria-haspopup="listbox" aria-expanded="false" aria-label="Active preset: Starter Kit">
           <span class="material-icons">layers</span>
           <span id="preset-active-label" class="preset-label">Starter Kit</span>
@@ -376,7 +372,6 @@
            colour picker) in here from the desktop #left-tools column, which is
            display:none on touch. Empty / unused on desktop. -->
       <div id="mobile-tools" class="mobile-tools" aria-label="Paint and hide/show modes"></div>
-
       <!-- Desktop reparents this into .right-dock's Parts page at bootstrap
            (see setupRightDockTabs), nested alongside the #panel-essential list
            it controls, same way essPanel itself gets reparented into the
@@ -390,7 +385,6 @@
           <span class="material-icons">construction</span>&nbsp;Advanced
         </button>
       </div>
-
       <!-- Top bar, laid out like the HP Robots coding app (app.hprobots.com):
            home + save + the build's name on the left, round icon buttons on
            the right, and "⋮" popping out a vertical column of round buttons
@@ -400,13 +394,11 @@
            in app.css) folds those into the menu as .menu-compact items. -->
       <header id="topbar" class="topbar" aria-label="Customizer">
         <div class="topbar-group topbar-left">
-          <!-- "Home" is My builds, the customizer's counterpart of the coding
-               app's project list (#builds-overlay, setupSavedBuilds). -->
+          <!-- "Home" is My builds, the customizer's counterpart of the coding app's project list (#builds-overlay, setupSavedBuilds). -->
           <button id="savedBuildsBtn" class="btn btn--lg" type="button" title="My builds" aria-label="My builds" aria-haspopup="dialog" aria-expanded="false" aria-controls="builds-overlay">
             <span class="material-icons">home</span>
           </button>
-          <!-- Saves straight into the loaded build, or asks for a name first
-               (quickSaveBuild). .has-changes shows the unsaved-changes dot. -->
+          <!-- Saves straight into the loaded build, or asks for a name first (quickSaveBuild). .has-changes shows the unsaved-changes dot. -->
           <button id="quickSaveBtn" class="btn btn--lg" type="button" title="Save build" aria-label="Save build">
             <span class="material-icons">save</span>
             <span class="topbar-dot" aria-hidden="true"></span>
@@ -429,17 +421,15 @@
           <button id="exit-maximize" class="btn btn--lg" type="button" title="Exit maximized view" aria-label="Exit maximized view">
             <span class="material-icons">close_fullscreen</span>
           </button>
+            <!-- Label + icon are rewritten by setupFullscreen's updateFullscreenUI. -->
+           <button id="fullscreenBtn" class="topbar-menu-item" type="button" role="menuitem" aria-label="Enter fullscreen">
+              <span class="topbar-menu-label" data-role="label">Fullscreen</span>
+              <span class="topbar-menu-icon"><span class="material-icons" data-role="icon">fullscreen</span></span>
+          </button>
           <button id="randomizeBtn" class="btn btn--lg topbar-wide" type="button" title="Randomize parts" aria-label="Randomize all parts">
             <span class="material-icons">casino</span>
           </button>
-          <button id="shareBtn" class="btn btn--lg" type="button" title="Copy shareable link" aria-label="Copy a link to this build">
-            <span class="material-icons">share</span>
-          </button>
-          <button id="arBtn" class="btn btn--lg topbar-wide" type="button" title="View in AR / on your phone" aria-label="View this build in AR or on your phone">
-            <span class="material-icons">view_in_ar</span>
-          </button>
-          <!-- Whole build -> one 3MF -> preferred slicer (printWholeBuild in
-               app.js); title kept in sync by syncPrintButtonBranding(). -->
+          <!-- Whole build -> one 3MF -> preferred slicer (printWholeBuild in app.js); title kept in sync by syncPrintButtonBranding(). -->
           <button id="printBuildBtn" class="btn btn--lg topbar-wide" type="button" title="Print whole build" aria-label="Print whole build">
             <span class="material-icons">print</span>
           </button>
@@ -452,8 +442,7 @@
               <span class="material-icons">more_vert</span>
             </button>
             <!-- Each item: a round icon button with a label pill beside it
-                 (shown on hover on desktop, always on touch). data-forward
-                 items just click the bar button of that id (setupMoreMenu). -->
+                 (shown on hover on desktop, always on touch). data-forward items just click the bar button of that id (setupMoreMenu). -->
             <div id="more-menu" class="topbar-menu" role="menu" aria-label="More actions">
               <button id="factoryResetBtn" class="topbar-menu-item topbar-menu-item--primary" type="button" role="menuitem">
                 <span class="topbar-menu-label">New build</span>
@@ -495,14 +484,14 @@
                 <span class="topbar-menu-label">Download STEP files</span>
                 <span class="topbar-menu-icon"><span class="material-icons">precision_manufacturing</span></span>
               </button>
-              <!-- Label + icon are rewritten by setupFullscreen's updateFullscreenUI. -->
-              <button id="fullscreenBtn" class="topbar-menu-item" type="button" role="menuitem" aria-label="Enter fullscreen">
-                <span class="topbar-menu-label" data-role="label">Fullscreen</span>
-                <span class="topbar-menu-icon"><span class="material-icons" data-role="icon">fullscreen</span></span>
-              </button>
-              <!-- Settings (#settings-overlay): Preferred Slicer, Camera,
-                   GLB/STEP downloads, Quick Guide. Not on phones, which always
-                   print with EasyPrint and have the downloads above. -->
+                      <button id="shareBtn" class="btn btn--lg" type="button" title="Copy shareable link" aria-label="Copy a link to this build">
+            <span class="material-icons">share</span>
+          </button>
+          <button id="arBtn" class="btn btn--lg topbar-wide" type="button" title="View in AR / on your phone" aria-label="View this build in AR or on your phone">
+            <span class="material-icons">view_in_ar</span>
+          </button>
+              <!-- Settings (#settings-overlay): Preferred Slicer, Camera,    GLB/STEP downloads, Quick Guide. Not on phones, 
+               which always  print with EasyPrint and have the downloads above. -->
               <button id="settingsToggle" class="topbar-menu-item menu-not-phone" type="button" role="menuitem" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-overlay">
                 <span class="topbar-menu-label">Settings</span>
                 <span class="topbar-menu-icon"><span class="material-icons">settings</span></span>
@@ -513,8 +502,7 @@
       </header>
 
       <!-- Bottom-left view controls, like the coding app's zoom/recenter
-           cluster (setupViewControls). Not on phones — pinch to zoom there,
-           and the bottom sheet owns that edge. -->
+           cluster (setupViewControls). Not on phones — pinch to zoom there, and the bottom sheet owns that edge. -->
       <div id="view-controls" class="view-controls" role="group" aria-label="View">
         <button id="zoomInBtn" class="btn btn--lg" type="button" title="Zoom in" aria-label="Zoom in">
           <span class="material-icons">zoom_in</span>
@@ -577,6 +565,11 @@
            own "Paint pieces" toggle are used instead — see the (pointer:coarse) rules
            in app.css. -->
       <div id="left-tools" class="left-tools">
+                <button id="visibilityModeBtn" class="color-sidebar-toggle-btn" type="button" aria-pressed="false" title="Show or hide individual parts (shortcut: V)">
+          <span class="material-icons">visibility</span>
+          <span>Hide / show parts</span>
+          <kbd class="shortcut-kbd shortcut-kbd--blue">V</kbd>
+        </button>
         <div id="global-paint-panel" class="global-paint-panel" aria-label="Paint any piece">
           <button id="globalPaintBtn" class="global-paint-toggle-btn" data-role="bucket-toggle" data-part="__all__" aria-pressed="false" title="Click, then click any piece on the model to paint it (shortcut: P)">
             <span class="material-icons">format_color_fill</span>
@@ -596,11 +589,6 @@
         </button>
         <div id="color-sidebar" class="color-sidebar" aria-label="Part colors"></div>
 
-        <button id="visibilityModeBtn" class="color-sidebar-toggle-btn" type="button" aria-pressed="false" title="Show or hide individual parts (shortcut: V)">
-          <span class="material-icons">visibility</span>
-          <span>Hide / show parts</span>
-          <kbd class="shortcut-kbd shortcut-kbd--blue">V</kbd>
-        </button>
       </div>
 
       <!-- Mobile-only (pointer:coarse) bottom sheet — the touch counterpart of the

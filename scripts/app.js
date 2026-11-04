@@ -68,7 +68,7 @@ const PART_META = [
   { key: 'middle', label: 'Middle', panel: 'advanced' },
   { key: 'face', label: 'Face', panel: 'essential' },
   { key: 'spacer', label: 'Spacer', panel: 'advanced' },
-  { key: 'arms', label: 'Arms', panel: 'advanced' },
+//  { key: 'arms', label: 'Arms', panel: 'advanced' },
   { key: 'bumper', label: 'Bumper', panel: 'essential' },
   { key: 'bottom', label: 'Bottom', panel: 'essential' },
   { key: 'wheels', label: 'Motion', panel: 'advanced' },
@@ -810,6 +810,9 @@ function renderPartSection(part) {
   return `
     <div class="model-section" id="${part.key}-controls" data-panel="${part.panel}"${part.hidden ? ' style="display:none"' : ''}>
       <div class="model-controls-row">
+      <button class="btn btn--sm btn--ghost" id="${part.key}-visibility" data-role="visibility" data-part="${part.key}" aria-label="Toggle visibility for ${part.label}">
+          <span class="material-icons">visibility</span>
+        </button>
         <button class="btn btn--sm btn--ghost" data-role="prev" data-part="${part.key}" aria-label="Previous ${part.label}">
           <span class="material-icons">chevron_left</span>
         </button>
@@ -823,25 +826,10 @@ function renderPartSection(part) {
         <button class="btn btn--sm btn--ghost" data-role="next" data-part="${part.key}" aria-label="Next ${part.label}">
           <span class="material-icons">chevron_right</span>
         </button>
+        
       </div>
-      <div class="pill-container">
-        <!-- Desktop hides this in favor of #color-sidebar's bigger version of the
-             same trigger (see renderColorSidebar) — kept here, not removed, so
-             touch devices (no room for a persistent left sidebar) still have a
-             color entry point right on the part's own row. -->
-        <div class="color-pill color-pill--inline" id="${part.key}-pill-inline" data-role="color-pill" data-part="${part.key}" title="Pick color for ${part.label}"></div>
-        <button class="btn btn--sm btn--ghost" id="${part.key}-visibility" data-role="visibility" data-part="${part.key}" aria-label="Toggle visibility for ${part.label}">
-          <span class="material-icons">visibility</span>
-        </button>
-        <!-- title/aria-label/icon are placeholders — syncPrintButtonBranding() overwrites
-             all three to match the preferred slicer on load. -->
-        <button class="btn btn--sm btn--ghost" data-role="print" data-part="${part.key}" title="Send to PrusaSlicer" aria-label="Send ${part.label} to PrusaSlicer">
-          <span class="material-icons">print</span>
-        </button>
-        <button class="btn btn--sm btn--ghost" data-role="download-part" data-part="${part.key}" title="Download STL" aria-label="Download ${part.label} STL file">
-          <span class="material-icons">file_download</span>
-        </button>
-      </div>
+
+     
       ${part.key === 'top' ? `
       <button class="top-engrave-btn" data-role="engrave" data-part="${part.key}" aria-label="Open engraving tool for ${part.label}">
         <span class="material-icons">draw</span>
@@ -3170,8 +3158,8 @@ function positionVariantGrid(anchorRect) {
 // switch straight from an arm variant to a bumper variant (or back) in one
 // place instead of needing to know they live on separate rows.
 const EXCLUSIVE_VARIANT_GROUPS = {
-  arms: ['arms', 'bumper'],
-  bumper: ['arms', 'bumper']
+  bumper: ['arms', 'bumper'],
+  arms: ['arms', 'bumper']
 };
 
 let variantGridSession = 0;
@@ -4524,7 +4512,6 @@ function makeBuildAction(icon, label, onClick) {
   button.addEventListener('click', onClick);
   return button;
 }
-
 // Two-step delete (tap arms it for 3 s, tap again to confirm) instead of a
 // blocking confirm() — same pattern on desktop and touch.
 function makeDeleteBuildAction(record) {
@@ -4666,7 +4653,6 @@ function loadSavedBuild(record) {
   closeSavedBuilds();
   toast(`Loaded “${escapeHtml(record.name)}”`, 'ok', 1400);
 }
-
 // Puts a whole saved state on screen in place — what bootstrap's restore pass
 // does on page load, but against an already-running scene: start from a clean
 // paint slate (so the saved paint replaces, rather than layers over, what's
@@ -4674,11 +4660,11 @@ function loadSavedBuild(record) {
 // changed and re-show/hide the rest — same moves as applyPreset.
 // keepPaintMode (undo/redo): stay in paint mode and leave the mobile sheet
 // where it is, so stepping back through edits doesn't interrupt painting.
+
 function applyBuildState(state, presetKey, { keepPaintMode = false } = {}) {
   if (!state || typeof state !== 'object') throw new Error('Saved build has no state');
   if (!keepPaintMode) setBucketMode(null);
   if (visibilityEditMode) exitVisibilityEditMode();
-
   isApplyingPreset = true;
   try {
     const previousIdx = { ...currentIdx };

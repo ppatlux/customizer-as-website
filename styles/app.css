@@ -628,8 +628,8 @@ html.vt-fallback.vt-leaving body{
    as a clear "there's more below" cue. */
 .preset-carousel{
   display:grid;
-  grid-template-columns:repeat(2, 1fr);
-  gap:10px;
+  grid-template-columns:repeat(3, 1fr);
+  gap:6px;
   overflow-y:auto;
   overflow-x:hidden;
   padding:2px;

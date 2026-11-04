@@ -1,6 +1,5 @@
 // Local file paths mirror the app's part categories: assets/models/<part-folder>/<file>.
 // `folder` here uses the app's on-screen naming (e.g. "wheels" part -> "motion" folder).
-//
 // `mixonly` is NOT a part category — it's a bag of standalone models used only by
 // ready-made mixes (scripts/presets.js) that list them in an `extras: [...]`
 // array. They never appear as a category, variant, colour swatch, or in the
@@ -46,7 +45,11 @@ export const ASSET_MANIFEST = {
     { file: 'Hat_Pumpkin.glb', folder: 'hat', source: '' },
     { file: 'Hat_SumoBand.glb', folder: 'hat', source: '' },
     { file: 'Hat_Prusa.glb', folder: 'hat', source: '' },
-    { file: 'Hat_Mister.glb', folder: 'hat', source: '' },
+    { file: 'Hat_sombrero.glb', folder: 'hat', source: '' },
+    { file: 'Hat_baseball.glb', folder: 'hat', source: '' },
+    { file: 'Hat_Construction.glb', folder: 'hat', source: '' },
+    { file: 'Hat_police.glb', folder: 'hat', source: '' },
+    { file: 'hat_Mister.glb', folder: 'hat', source: '' },
     { file: 'Hat_dome.glb', folder: 'hat', source: '' },
     { file: 'Hat_Magic.glb', folder: 'hat', source: '' },
     { file: 'Hat_Bricks.glb', folder: 'hat', source: '' },
@@ -122,18 +125,22 @@ export const ASSET_MANIFEST = {
     { file: 'Bottom_Boat.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Race.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_Locomotive.glb', folder: 'bottom', source: '' },
+    { file: 'Bottom_Lid.glb', folder: 'bottom', source: '' },
     { file: 'Bottom_template.glb', folder: 'bottom', source: 'https://hprobots.com/wp-content/uploads/2025/10/Bottom_template.glb' }
   ],
-  //motion
-  wheels: [
+
+  wheels: [   //motion
     { file: 'Wheels-starter.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-starter.glb' },
     { file: 'Wheels-Walk-and-Roll.glb', folder: 'motion', source: 'https://hprobots.com/wp-content/uploads/2025/08/Wheels-Walk-and-Roll.glb' },
-    { file: 'Wheel_Race.glb', folder: 'motion', source: '' }
+    { file: 'Wheel_Race.glb', folder: 'motion', source: '' },
+    { file: 'Motion_Bulldozer.glb', folder: 'motion', source: '' },
   ],
   tail: [],
   // Standalone models for special mixes — see the header comment. Referenced by
   // filename from a preset's `extras: [...]`. Populated by tools/model-placer.
   mixonly: [
+    { file: 'Otto-5.glb', folder: '_mixonly', source: '' },
+    { file: 'Otto-butter.glb', folder: '_mixonly', source: '' },
     { file: 'bottom_extend_pcb_r1_1_.glb', folder: '_mixonly', source: '', print: false },
     { file: 'top_matrix_double-butttons_v2.glb', folder: '_mixonly', source: '' },
     { file: 'HP_KnobEncoder_R1.glb', folder: '_mixonly', source: '', print: false },

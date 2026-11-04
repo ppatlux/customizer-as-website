@@ -39,7 +39,7 @@ export const PRESETS = {
   },
   invent: {
     label: 'Walk & Roll',
-    description: 'from Invent expansion',
+    description: 'from Invent kit',
     parts: {
       top: 'Top-HP-logo.glb', middle: 'Middle-starter.glb', face: 'Face-ultrasonic.glb',
       bottom: 'Bottom-starter.glb', wheels: 'Wheels-Walk-and-Roll.glb', hat: 'Hat_Leprechaun.glb',
@@ -48,8 +48,8 @@ export const PRESETS = {
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: false, bumper: false, tail: false, spacer: false }
   },
   sensor: {
-    label: 'Emote + Sense/Interact',
-    description: 'Hello World!',
+    label: 'Emote',
+    description: 'from Emote kit',
     parts: {
       top: 'Top-sensor-duo.glb', middle: 'Middle-starter.glb', face: 'FaceUSOLED.glb',
       bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb',
@@ -78,8 +78,8 @@ export const PRESETS = {
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: false, arms: true, bumper: false, tail: false, spacer: false }
   },
   thunder: {
-    label: 'Thunder Mouse',
-    description: 'Zap!',
+    label: 'Mouse',
+    description: 'Zap',
     parts: {
       top: 'Top_Hats.glb', middle: 'Middle-starter.glb', face: 'Face_Pika.glb',
       bottom: 'Bottom_Pika.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Pika ears.glb',
@@ -88,8 +88,8 @@ export const PRESETS = {
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: true, hat: true, arms: false, bumper: false, tail: false, spacer: false }
   },
   race: {
-    label: 'Racing ',
-    description: 'Vroom vroooom',
+    label: 'Racer',
+    description: 'Vrooom',
     parts: {
       top: 'Top_lightsdiffuser.glb', middle: 'Middle-starter.glb', face: 'Face_Eyebrows.glb',
       bottom: 'Bottom-starter.glb', wheels: 'Wheel_Race.glb', hat: 'Hat_Race.glb', bumper: 'Bumper_Race.glb'
@@ -98,7 +98,7 @@ export const PRESETS = {
   },
   fast: {
     label: 'Fast & Otto',
-    description: 'for family fun',
+    description: 'Zooom',
     parts: {
       top: 'Top_Race.glb', middle: 'Middle-starter.glb', face: 'Face_Angry.glb',
       bottom: 'Bottom_Race.glb', 
@@ -107,8 +107,8 @@ export const PRESETS = {
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: false, arms: false, bumper: false, tail: false, spacer: false }
   },
   santa: {
-    label: 'Merry Christmas',
-    description: 'Merry Christmas and a Happy New Otto',
+    label: 'Santa',
+    description: 'Ho Ho Ho!',
     parts: {
       top: 'Top_Hats.glb', middle: 'Middle_NOlogo.glb', face: 'FaceSanta.glb',
       bottom: 'Bottom-starter.glb', wheels: 'Wheels-starter.glb', hat: 'Hat_Santa.glb',
@@ -124,10 +124,23 @@ export const PRESETS = {
     },
     visibility: { top: true, middle: true, face: true, bottom: true, wheels: false, hat: true, arms: false, bumper: false, tail: false, spacer: false }
   },
-
+  butter: {
+    label: 'Otto Butter',
+    description: '',
+    parts: {},
+    visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
+    extras: ['Otto-butter.glb']
+  },
+   otto5: {
+    label: 'Otto 5',
+    description: 'Beep bop',
+    parts: {},
+    visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
+    extras: ['Otto-5.glb']
+  },
   console: {
-    label: 'Retro Console',
-    description: 'Beep Boop',
+    label: 'Retro console',
+    description: 'Pixel Tetris',
     parts: {},
     visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
     extras: ['bottom_extend_pcb_r1_1_.glb', 'top_matrix_double-butttons_v2.glb', 'HP_KnobEncoder_R1.glb'],
@@ -135,7 +148,7 @@ export const PRESETS = {
   },
 
   console2: {
-    label: 'Gaming console',
+    label: 'Game console',
     description: 'Pew pew!',
     parts: {},
     visibility: { top: false, hat: false, middle: false, face: false, spacer: false, arms: false, bumper: false, bottom: false, wheels: false, tail: false },
