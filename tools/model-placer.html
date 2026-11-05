@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Placer</title>
+  <meta name="description" content="Internal tool: position a dropped 3D file against reference parts and export it as a customizer-ready .glb">
+  <link rel="stylesheet" href="./model-placer.css">
+  <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"
+    integrity="sha384-yA2h8FH0n05oFfnN0jT8J2B7OWemrtBIs3Qrc59zOTdZqvwBJMp+YJLsYdCa03Cx" crossorigin="anonymous"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header id="topbar">
+    <h1>Model Placer <span>&mdash; internal</span></h1>
+    <div id="topbar-actions">
+      <button id="pickRepoBtn" type="button">Connect repo folder&hellip;</button>
+      <span id="saveStatus"></span>
+    </div>
+  </header>
+
+  <main id="layout">
+    <aside id="sidebar">
+      <div class="card">
+        <h2>Source file</h2>
+        <div class="row">
+          <button id="openFileBtn" type="button">Choose file&hellip;</button>
+          <input type="file" id="fileInput" class="u-hidden"
+            accept=".stl,.step,.stp,.iges,.igs,.3mf,.obj,.glb,.gltf">
+        </div>
+        <div id="dropInfo">Drop a <b>.step / .stp / .stl / .3mf / .obj / .glb</b> file anywhere on the viewport</div>
+        <div class="row" style="margin-top:8px">
+          <label for="unitSel">Source units</label>
+          <select id="unitSel">
+            <option value="1" selected>millimeter</option>
+            <option value="10">centimeter</option>
+            <option value="1000">meter</option>
+            <option value="25.4">inch</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="stepQuality">STEP detail</label>
+          <input type="range" id="stepQuality" min="0" max="100" value="55" style="flex:1">
+          <span id="stepQualityVal" style="font-size:12px;color:var(--text-dim)">med</span>
+        </div>
+        <p class="hint">STEP/IGES are tessellated in-browser (occt-import-js, loaded on first use). Higher detail = smoother curves, bigger file.</p>
+      </div>
+
+      <div class="card">
+        <h2>Placement <span style="text-transform:none;font-weight:400">(author space, mm — +Y is up)</span></h2>
+        <div class="xform-grid">
+          <span></span><span class="head">X</span><span class="head">Y</span><span class="head">Z</span>
+          <span class="axis">pos</span>
+          <input type="number" id="posX" step="0.5" value="0">
+          <input type="number" id="posY" step="0.5" value="0">
+          <input type="number" id="posZ" step="0.5" value="0">
+          <span class="axis">rot&deg;</span>
+          <input type="number" id="rotX" step="1" value="0">
+          <input type="number" id="rotY" step="1" value="0">
+          <input type="number" id="rotZ" step="1" value="0">
+          <span class="axis">scl</span>
+          <input type="number" id="sclX" step="0.01" value="1">
+          <input type="number" id="sclY" step="0.01" value="1">
+          <input type="number" id="sclZ" step="0.01" value="1">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label><input type="checkbox" id="lockScale" checked> uniform scale</label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Quick align</h2>
+        <div class="btn-grid">
+          <button id="qaCenterXZ" type="button">Center X/Z</button>
+          <button id="qaFloor" type="button">Drop to Y&nbsp;0</button>
+          <button id="qaZup" type="button">CAD Z-up &rarr; Y-up</button>
+          <button id="qaSnapRot" type="button">Snap rot 90&deg;</button>
+          <button id="qaOriginCenter" type="button">Origin &rarr; bbox mid</button>
+          <button id="qaReset" type="button">Reset transform</button>
+        </div>
+        <p class="hint">Parts stack along <b>+Y</b>. Load a reference part and line yours up against it &mdash; e.g. hats sit around Y&nbsp;48&ndash;78, tops Y&nbsp;29&ndash;48.</p>
+      </div>
+
+      <div class="card">
+        <h2>Reference parts</h2>
+        <div class="row">
+          <button id="loadStarterBtn" type="button">Load starter build</button>
+          <button id="clearRefsBtn" type="button" class="tiny">Clear</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <select id="refCat" style="flex:1"></select>
+          <select id="refVariant" style="flex:2"></select>
+          <button id="addRefBtn" type="button" class="tiny">Add</button>
+          <button id="editAsSourceBtn" type="button" class="tiny" title="Load this model as the editable source so you can reposition it for a mix (saves as a new mixonly file)">Edit</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label for="refOpacity">Ghost opacity</label>
+          <input type="range" id="refOpacity" min="5" max="90" value="35" style="flex:1">
+        </div>
+        <ul id="refList"><li class="empty">No reference parts loaded</li></ul>
+      </div>
+
+      <div class="card">
+        <h2>Export</h2>
+        <div class="row">
+          <label for="expCat">Category</label>
+          <select id="expCat" style="flex:1"></select>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label for="expName" style="width:100%">Filename</label>
+          <input type="text" id="expName" placeholder="Bottom_MyPart.glb" style="flex:1">
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label><input type="checkbox" id="expMerge" checked> merge to single mesh</label>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="expNormals"> recompute normals</label>
+        </div>
+        <div class="btn-grid" style="margin-top:8px">
+          <button id="downloadGlbBtn" type="button" class="primary">Download .glb</button>
+          <button id="saveRepoBtn" type="button">Save into repo</button>
+          <button id="savePlacementBtn" type="button" class="tiny">Save placement JSON</button>
+          <button id="loadPlacementBtn" type="button" class="tiny">Load placement JSON</button>
+        </div>
+        <p class="hint">"Save into repo" writes <code>assets/models/&lt;folder&gt;/&lt;file&gt;</code> and adds the entry to <code>scripts/asset-manifest.js</code> so it shows up in the customizer. Needs "Connect repo folder" first. Pick Category <b>mixonly</b> for a standalone model that only shows in a ready-made mix (never a category); it writes to <code>assets/models/_mixonly/</code> and is auto-added as a reference.</p>
+        <input type="file" id="placementInput" class="u-hidden" accept=".json">
+      </div>
+
+      <div class="card">
+        <h2>Ready-made mix</h2>
+        <p class="hint">Composes a mix from the <b>Reference parts</b> list &mdash; <code>mixonly</code> refs become the mix's <code>extras</code>, everything else is a build slot (one variant per slot, last added wins, visible unless unchecked there). Save your <code>mixonly</code> <code>.glb</code>s into the repo first (auto-added as references), add any shared parts, then save the mix.</p>
+        <div class="row"><label for="mixKey">Key</label><input type="text" id="mixKey" placeholder="console" style="flex:1"></div>
+        <div class="row" style="margin-top:6px"><label for="mixLabel">Label</label><input type="text" id="mixLabel" placeholder="Retro Console" style="flex:1"></div>
+        <div class="row" style="margin-top:6px"><label for="mixDesc">Description</label><input type="text" id="mixDesc" placeholder="Beep boop" style="flex:1"></div>
+        <div id="mixPreview" class="hint" style="white-space:pre-wrap;margin-top:8px"></div>
+        <div class="btn-grid" style="margin-top:8px">
+          <button id="saveMixBtn" type="button">Save mix into presets.js</button>
+        </div>
+      </div>
+    </aside>
+
+    <section id="viewerPane">
+      <div id="viewerHost"></div>
+      <div id="viewerOverlay">
+        <div class="seg" id="modeSeg">
+          <button data-mode="translate" class="active" type="button">Move (W)</button>
+          <button data-mode="rotate" type="button">Rotate (E)</button>
+          <button data-mode="scale" type="button">Scale (R)</button>
+        </div>
+        <div class="seg" id="spaceSeg">
+          <button data-space="world" class="active" type="button">World</button>
+          <button data-space="local" type="button">Local</button>
+        </div>
+        <span class="pill" id="filePill">no file loaded</span>
+      </div>
+      <div id="dimReadout"></div>
+      <div id="dropZone">Drop to load</div>
+      <div id="toast"></div>
+    </section>
+  </main>
+
+  <script type="module" src="./model-placer.js"></script>
+</body>
+</html>

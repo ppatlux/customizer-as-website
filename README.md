@@ -38,6 +38,7 @@ HTML, CSS and JavaScript with Three.js — so it needs no build step and no back
 | `assets/compatibility.json` | Which part pairs clash (written by the compatibility checker) |
 | `assets/mix-colors.json` | Colours used for the mix thumbnails |
 | `tools/compat-checker.html` | Internal tool for finding and confirming clashing part pairs |
+| `tools/model-placer.html` | Tool for positioning a new 3D model against the robot and saving it as a customizer part |
 
 ## Adding a model
 
@@ -46,6 +47,27 @@ HTML, CSS and JavaScript with Three.js — so it needs no build step and no back
    `<Name>.step` and `<Name>.3mf` next to it, with the same name.
 3. Add an entry for it to `scripts/asset-manifest.js`.
 4. Run the compatibility checker to see whether it clashes with other parts.
+
+## Model Placer
+
+`tools/model-placer.html` turns a 3D file into a part the customizer can use.
+
+1. Start the local server (see below) and open <http://localhost:8000/tools/model-placer.html>
+   in Chrome or Edge.
+2. Drop in a `.step`, `.stp`, `.iges`, `.stl`, `.3mf`, `.obj` or `.glb` file.
+3. Under **Reference parts**, load the starter build or any existing variant. They show as
+   see-through ghosts, so you can line the new model up against the real robot.
+4. Position it with the on-model arrows, the number fields or the quick-align buttons.
+5. Pick its **Category** (top, hat, face...) and a file name, then either:
+   - **Connect repo folder** and **Save into repo**: writes `assets/models/<part>/<name>.glb`,
+   adds it to `scripts/asset-manifest.js` and saves a `.placement.json` next to it so the
+   placement can be edited again later (Chrome/Edge only), or
+   - download the `.glb` and add it by hand (see "Adding a model").
+6. Reload the customizer: the new variant appears under its part.
+
+Models are in millimetres, Y-up, without the customizer's 30 mm lift; the tool takes care of
+this as long as the model is lined up against the reference parts. The **Ready-made mix** card
+saves the reference parts on screen as a new mix in `scripts/presets.js`.
 
 ## Running locally
 
